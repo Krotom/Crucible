@@ -69,8 +69,9 @@ export function resolveRobotDir(appRoot: string): string | null {
 }
 
 /** The command that runs the robot sim with the Crucible bridge on. --no-daemon keeps the whole thing in one process tree. */
-export function simulateCommand(): { command: string; args: string[]; env: Record<string, string> } {
-  const env = { CRUCIBLE_BRIDGE: '1' }
+export function simulateCommand(lockstep = false): { command: string; args: string[]; env: Record<string, string> } {
+  // lockstep (Mode B): the robot's clock and Talon/swerve emulation run under the app's control (docs/NT_CONTRACT.md section 14)
+  const env: Record<string, string> = lockstep ? { CRUCIBLE_BRIDGE: '1', CRUCIBLE_MODE: 'lockstep' } : { CRUCIBLE_BRIDGE: '1' }
   return process.platform === 'win32'
     ? { command: 'cmd.exe', args: ['/c', '.\\gradlew.bat', 'simulateJava', '--no-daemon', '--console=plain'], env }
     : { command: './gradlew', args: ['simulateJava', '--no-daemon', '--console=plain'], env }

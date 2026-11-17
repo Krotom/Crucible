@@ -20,6 +20,7 @@ let lastTick = performance.now()
 let lastPost = 0
 let rateWindow = { wall: performance.now(), sim: 0 }
 let simRate = 0
+let lastSimTime = 0
 
 const post = (m: FromWorker): void => (self as unknown as Worker).postMessage(m)
 
@@ -54,6 +55,7 @@ function tick(): void {
     if (budget > 0.25) budget = 0 // fell behind: drop the backlog instead of spiraling
     rateWindow.sim += n * dt
   }
+  if (engine && bridge) { rateWindow.sim += Math.max(0, engine.time - lastSimTime); lastSimTime = engine.time } // the robot drives the clock: measure how fast it runs
   if (now - rateWindow.wall > 500) {
     simRate = rateWindow.sim / ((now - rateWindow.wall) / 1000)
     rateWindow = { wall: now, sim: 0 }
@@ -74,13 +76,15 @@ async function handle(m: ToWorker): Promise<void> {
         const start = rebuilt ? { x: 1.6, y: 4.0, yaw: 0 } : OFFSEASON.start
         // an opponent robot that holds still at the center line: something to push against and to be blocked by
         const others = m.opponent ? [{ name: 'opponent', alliance: 'red' as const, half: [0.43, 0.43, 0.12] as [number, number, number], mass: 55, start: { x: rebuilt ? 6.5 : 3, y: rebuilt ? 4.0 : 0, yaw: Math.PI } }] : []
-        const robot = m.mode === 'robot'
+        const robot = m.mode !== 'script'
           ? { half: OFFSEASON.bumper, start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls, alliance: 'blue' as const, chassis: OFFSEASON.contact, others }
           : rebuilt ? { ...TEST_ROBOT, start, alliance: 'blue' as const, others } : { ...TEST_ROBOT, others }
-        engine = await Engine.create({ game, robot, seed: m.seed, solverIterations: rebuilt ? 2 : undefined })
+        const lockstep = m.mode === 'lockstep'
+        // lockstep: one exchange is one physics step, so a larger step is a faster and coarser run (5 ms measured 4x real time)
+        engine = await Engine.create({ game, robot, seed: m.seed, solverIterations: rebuilt ? 2 : undefined, dt: lockstep ? m.lockstepDt ?? 0.005 : undefined })
         snapshot = null
-        if (m.mode === 'robot') {
-          bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: 5810 }, () => {}, OFFSEASON)
+        if (m.mode !== 'script') {
+          bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: lockstep ? null : 5810 }, () => {}, OFFSEASON, lockstep ? { dt: engine.dt, speed: speed } : null)
           bridge.start()
           running = true
         }
@@ -98,7 +102,7 @@ async function handle(m: ToWorker): Promise<void> {
       case 'lead': if (bridge) { bridge.autoLead = m.seconds < 0; if (m.seconds >= 0) bridge.lead = m.seconds } break
       case 'ds': bridge?.setDs({ enabled: m.enabled, autonomous: m.autonomous, test: m.test }); break
       case 'joystick': bridge?.setJoystick(m.axes, BigInt(m.buttons), m.pov); break
-      case 'speed': speed = m.value; postFrame(); break
+      case 'speed': speed = m.value; if (bridge?.isLockstep) bridge.speed = m.value; postFrame(); break
       case 'step': if (engine && !bridge) { for (let i = 0; i < m.steps; i++) engine.step(); postFrame() } break
       case 'reset': if (engine) { engine.reset(m.seed); budget = 0; bridge?.seedPose(); postFrame() } break
       case 'save': if (engine) { snapshot = engine.snapshot(); postFrame() } break

@@ -2,7 +2,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('crucibleHost', {
-  startRobot: (): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke('robot:start'),
+  startRobot: (lockstep?: boolean): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke('robot:start', lockstep),
   stopRobot: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('robot:stop'),
   robotStatus: (): Promise<{ running: boolean }> => ipcRenderer.invoke('robot:status'),
   onRobotLog: (cb: (line: string) => void): void => { ipcRenderer.on('robot:log', (_e, line: string) => cb(line)) },

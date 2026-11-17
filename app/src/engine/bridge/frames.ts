@@ -136,6 +136,14 @@ export function encodeJoystick(s: JoystickState): Uint8Array {
   return out
 }
 
+/** Lockstep: run dt seconds of simulated time (see docs/NT_CONTRACT.md section 14). */
+export function encodeStep(seq: bigint, dt: number): Uint8Array {
+  const out = new Uint8Array(16)
+  const v = view(out)
+  v.setBigUint64(0, seq, true); v.setFloat64(8, dt, true)
+  return out
+}
+
 export interface PoseSeed { counter: bigint; x: number; y: number; yawRad: number }
 
 export function encodePoseSeed(s: PoseSeed): Uint8Array {

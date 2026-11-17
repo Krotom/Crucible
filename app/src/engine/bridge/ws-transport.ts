@@ -7,6 +7,7 @@ export const MSG_DS = 3
 export const MSG_JOYSTICK = 4
 export const MSG_POSE_SEED = 5
 export const MSG_HELLO = 6 // robot to app, UTF-8 JSON
+export const MSG_STEP = 8 // app to robot (lockstep): u64 seq, f64 dt. The robot runs dt of simulated time and answers with ToApp(seq)
 export const MSG_STATS = 7 // robot to app: f64 average round trip us, f64 max round trip us, i64 stale ticks
 
 export const DEFAULT_WS_PORT = 5811
@@ -44,17 +45,24 @@ export class WsTransport {
     try { ws = new WebSocket(`ws://${this.host}:${this.port}`) } catch { this.retry(); return }
     ws.binaryType = 'arraybuffer'
     this.ws = ws
-    ws.onopen = () => this.onConnection(true)
+    ws.onopen = () => { if (this.ws === ws) this.onConnection(true) }
     ws.onmessage = (ev) => {
+      if (this.ws !== ws) return
       const b = new Uint8Array(ev.data as ArrayBuffer)
       if (b.length > 0) this.onMessage(b[0], b.subarray(1))
     }
-    ws.onclose = () => { this.onConnection(false); if (!this.stopped) this.retry() }
+    ws.onclose = () => {
+      if (this.ws !== ws) return // a socket that was replaced: its closing says nothing about the current connection
+      this.ws = null
+      this.onConnection(false)
+      if (!this.stopped) this.retry()
+    }
     ws.onerror = () => { /* onclose follows */ }
   }
 
   private retry(): void {
     if (this.stopped) return
-    this.timer = setTimeout(() => this.open(), 500)
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = setTimeout(() => { this.timer = null; if (!this.ws) this.open() }, 500)
   }
 }

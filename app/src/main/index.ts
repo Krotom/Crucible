@@ -21,11 +21,11 @@ function createWindow(): void {
   else win.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
-ipcMain.handle('robot:start', () => {
+ipcMain.handle('robot:start', (_e, lockstep?: boolean) => {
   if (launcher?.running) return { ok: true, message: 'already running' }
   const dir = resolveRobotDir(app.getAppPath())
   if (!dir) return { ok: false, message: 'Robot project not found (set robotDir in app/crucible.config.json)' }
-  const { command, args, env } = simulateCommand()
+  const { command, args, env } = simulateCommand(lockstep === true)
   launcher = new RobotLauncher({
     cwd: dir, command, args, env,
     onLog: (line) => send('robot:log', line),

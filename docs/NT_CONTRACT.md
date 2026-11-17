@@ -288,3 +288,27 @@ ready), and a debounced feeder jam check (the 40 A threshold tripped on the star
   in the frame, but `Pigeon2SimState` (Phoenix 6 26.3) has no acceleration setters, so the robot code never sees them.
 - **Not done:** robot against robot with the second robot driven by robot code (M10); tire load shifts on a slope; a measured bumper friction and restitution (M12).
 
+## 14. M8: Mode B (lockstep), as built
+
+- **Switch:** the robot starts with `CRUCIBLE_BRIDGE=1` and `CRUCIBLE_MODE=lockstep` (the app's launcher does this); its Hello message lists `"modes":["lockstep"]`, and the app flags a robot that says anything else.
+- **Messages (same WebSocket):** type 8 **Step**, app to robot: u64 seq, f64 dt. Everything else is as in Mode A. Sequence: the app sends the seed and `FromApp(0)` (the state the robot starts from), then `Step(1)`. On a Step the robot
+  runs `SimHooks.stepTiming(dt)` (every notifier, the robot loop and the subsystems run in simulated time inside it), lets the swerve layer turn the standing request into module targets, lets every `EmuTalon` compute its voltage from the newest
+  request and the rotor state the app last returned, and answers `ToApp(seq)`. The app applies those voltages, steps the physics for dt, answers `FromApp(seq)`, and sends the next Step. `ToApp(seq)` is the Ack.
+  Driver Station, joystick and pose-seed messages are sent between exchanges, so they land at a known step; a script ties them to sim time with `session.at(t, fn)` (run before the Step that crosses t).
+- **Start-up barrier.** The robot loop's alarms are set from the paused time, so their phase against the steps is the same every run as long as no step comes before the loop's first iteration: the first Step waits for `Robot.simulationInit`
+  and the first `robotPeriodic`, plus 0.3 s of wall time. (Without it, two runs differed from the first step.)
+- **EmuTalon** (`lib/simbridge/EmuTalon.java`): VoltageOut with the open-loop voltage ramp, MotionMagic position and velocity profiles (trapezoid, or an acceleration ramp with jerk), PositionVoltage and VelocityVoltage, Slot0 kS (by the sign of the reference
+  velocity, or of the error), kV, kA, kP, kI, kD, continuous wrap for steering, the stator current limit as a window on the voltage (current = (V - back-EMF) / R), the supply voltage, and **neutral while the robot is disabled**. A profile limit that is 0 or infinite is
+  replaced by one from the motor's free speed, as `TalonFXSim` does, so both modes agree. The seven mechanism IOs have emulated twins (`EmuIOs`) built from the robot's own config classes and chosen where the Phoenix-sim IOs are (`SimBridge.isLockstep()`).
+  Not modeled: brake against coast (0 V is the shorted winding in both), soft limits, supply current limits, differential control, Pro features.
+- **EmuSwerve** (`lib/simbridge/EmuSwerve.java`): turns FieldCentric, RobotCentric, ApplyRobotSpeeds (PathPlanner) and SwerveDriveBrake requests into module states the way the CTRE module does (operator perspective, deadbands, discretize, optimize, cosine
+  scale, wheel-speed desaturation, the coupled azimuth rate backed out of the drive velocity, open-loop volts = speed / speedAt12Volts x 12), drives the module `EmuTalon`s with TunerConstants' gains, and runs a WPILib pose estimator (wheel positions, Pigeon yaw, vision
+  with timestamps) once per exchange. `SwerveDrivetrain.getState()` is final, so the robot code reads `CommandSwerveDrivetrain.state()` (the emulation in lockstep, CTRE's otherwise). **Vision is off in lockstep** (`VisionSubsystem.periodic` returns): the PhotonVision sim
+  draws random noise and reaches the cameras through NetworkTables on the wall clock.
+- **Measured with the real robot project** (test game, the robot driving a script of forward, strafe and stop for 6 s): two runs gave the same engine state hash at every 0.5 s sample, at 3.5 to 4.2x real time with a 5 ms exchange and physics step
+  (1 ms: 1.1 to 1.6x; 2 ms: 2.5x). The 5 ms run ends within 2 cm of the 1 ms run. The cost is about 0.4 to 0.6 ms of robot side and 0.17 ms of physics per simulated millisecond.
+- **Compared with the Phoenix sim (Mode A)** on the intake: the slide (MotionMagic position, 3 to 10 rot) reaches 50% at 0.33 s and 90% at 0.50 s (A) against 0.51 s (B) after the press, the curves within 0.13 rot; the roller (voltage with a 0.3 s ramp) starts about 0.1 s later in A
+  (90% at 1.05 s against 0.96 s), which is the real-time loop's extra latency. Not compared: the shooter velocity loop, the turret and hood, the swerve steer loop against CTRE's.
+- **Known gaps:** `ClosedLoopError` is the profile reference minus the measurement (my reading of Phoenix; not checked); the robot accepts one app at a time (a stray Crucible window on port 5811 steals the connection); only the drive script has been shown repeatable (shooting and ball
+  handling are not yet); the UI buttons are wall-clock timed.
+

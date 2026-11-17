@@ -289,7 +289,7 @@ Every milestone ends with something you can run.
 | M5 | **Ball interaction (done, see [NT_CONTRACT.md](NT_CONTRACT.md) section 11)**: intake capture, stages and beam breaks, shooter launch with drag, spin and foam model, robot colliders vs balls | L | Intake a ball, see the beam break, feed it, shoot it, watch it fly |
 | M6 | **Game module REBUILT + match flow + HUD (done, with assumptions listed in [the rules extract](../rules/REBUILT_RULES_EXTRACT.md) section 10; G403 and G407 included, TOWER not)**: rules extract, your review, implementation and tests | L | A full scripted match scores according to the reviewed rules |
 | M7 | **Contact and pushing (done, see [NT_CONTRACT.md](NT_CONTRACT.md) section 13)**: robot-field and robot-robot contact tuning, BUMP climbing, contact feedback to the robot | M | Wall hits and pushing look and feel right; odometry reacts correctly |
-| M8 | **Mode B**: Talon emulation and swerve sim layer in robot code, clock control, deterministic and faster-than-real-time runs | XL | Two identical scripted runs produce identical logs, at several times real time |
+| M8 | **Mode B (done, see [NT_CONTRACT.md](NT_CONTRACT.md) section 14)**: Talon emulation and swerve sim layer in robot code, clock control, deterministic and faster-than-real-time runs | XL | Two identical scripted runs produce identical logs, at several times real time |
 | M9 | **Scripted runs + analytics**: scripted driver input and autos, cycle times, accuracy, score-over-time reports | L | A batch of runs produces a report |
 | M10 | **Multiple robots** | L | A second robot (scripted or a second robot process) shares the field |
 | M11 | **Video and screenshot export** | S | Record a run to a file |

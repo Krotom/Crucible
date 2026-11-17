@@ -96,6 +96,14 @@ the FUEL counts, the Game Data and the G403/G407 fouls.
   in the readout. The Pigeon gets the real tilt (pitch, roll and their rates). The chassis acceleration (impacts included, in g, 8 g limit) is computed too, but Phoenix 6's
   `Pigeon2SimState` has no acceleration setters, so the robot code cannot read it. Wheels that keep driving against a wall slip, so the robot's wheel odometry runs ahead of its real position.
 
+## Lockstep (Mode B, M8)
+
+Pick **Robot code (lockstep, Mode B)** next to Start sim, then **Launch robot** (it starts the robot with `CRUCIBLE_MODE=lockstep`). The robot's clock is paused and moves only when the app sends a Step, the
+robot's Talons are a Java emulation (`EmuTalon`) and its swerve drivetrain a Java layer (`EmuSwerve`), so a run is **repeatable** (two runs of the same timed inputs give the same physics state at every sample) and can
+go **faster than real time**: the step dropdown sets the simulated time of one exchange and of one physics step (1 ms: 1.5x, 2 ms: 2.5x, 5 ms: 3.5 to 4x real time, measured with the real robot project). The speed
+dropdown paces it (`max` is as fast as it goes). Vision is off in this mode (the PhotonVision sim is not repeatable). Scripted runs tie inputs to the sim clock with `session.at(simTime, fn)`; the buttons are wall-clock timed
+(interactive, not repeatable). The robot accepts one app at a time (the newest connection wins): close other Crucible windows before a run.
+
 ## Robot model
 
 The model folder uses the AdvantageScope layout (`model.glb` for the chassis, `model_N.glb` per component,

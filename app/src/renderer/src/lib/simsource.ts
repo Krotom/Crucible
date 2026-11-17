@@ -23,7 +23,7 @@ export class SimSource {
 
   get active(): boolean { return this.worker !== null }
 
-  start(seed: number, mode: 'script' | 'robot' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent = false): void {
+  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent = false, lockstepDt = 0.005): void {
     this.stop()
     this.store.startLive('Sim')
     this.lastPushed = -1
@@ -32,7 +32,7 @@ export class SimSource {
     this.worker = new SimWorker()
     this.worker.onmessage = (ev: MessageEvent<FromWorker>) => this.onMessage(ev.data)
     this.worker.onerror = (e) => this.onError(e.message)
-    this.send({ type: 'init', seed, mode, host, game, opponent })
+    this.send({ type: 'init', seed, mode, host, game, opponent, lockstepDt })
   }
 
   stop(): void {

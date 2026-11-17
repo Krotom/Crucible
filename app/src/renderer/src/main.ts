@@ -28,6 +28,7 @@ const sim = new SimSource(
 let time = 0
 let playing = false
 let speed = 1
+let lockstepMode = false
 let lastFrame = performance.now()
 let seeking = false
 
@@ -215,13 +216,14 @@ $('start-sim').addEventListener('click', () => {
   live?.stop(); live = null
   $('connect').textContent = 'Connect'
   plot.clear(store)
-  robotMode = $<HTMLSelectElement>('sim-mode').value === 'robot'
+  lockstepMode = $<HTMLSelectElement>('sim-mode').value === 'lockstep'
+  robotMode = $<HTMLSelectElement>('sim-mode').value !== 'script'
   dsEnabled = false
   $('ds-enable').textContent = 'Enable'
   lastInput = null
-  sim.start(seedValue(), robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLInputElement>('opponent').checked)
+  sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLInputElement>('opponent').checked, Number($<HTMLSelectElement>('lockstep-dt').value))
   $('start-sim').textContent = 'Stop sim'
-  setStatus(robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
+  setStatus(lockstepMode ? 'Sim: robot code, lockstep (Mode B)' : robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
   playEl.textContent = 'Play'
   updateTransportEnabled()
 })
@@ -341,7 +343,7 @@ function scheduleListRefresh(): void {
 
 // ---- robot launcher (Electron only: the main process owns the robot process)
 interface CrucibleHost {
-  startRobot(): Promise<{ ok: boolean; message: string }>
+  startRobot(lockstep?: boolean): Promise<{ ok: boolean; message: string }>
   stopRobot(): Promise<{ ok: boolean }>
   robotStatus(): Promise<{ running: boolean }>
   onRobotLog(cb: (line: string) => void): void
@@ -357,7 +359,7 @@ if (host) {
   host.onRobotExit((code) => { robotUp = false; refresh(); $('notice').textContent = `robot sim exited (${code})` })
   btn.addEventListener('click', async () => {
     if (robotUp) { await host.stopRobot(); robotUp = false; refresh(); return }
-    const r = await host.startRobot()
+    const r = await host.startRobot($<HTMLSelectElement>('sim-mode').value === 'lockstep')
     $('notice').textContent = r.message
     robotUp = r.ok
     refresh()

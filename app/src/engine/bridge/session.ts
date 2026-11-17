@@ -8,10 +8,10 @@ import { checkAgainstHello, type RobotDefinition } from '../../robots/definition
 import { decodeStruct } from '../../renderer/src/lib/structs'
 import { Nt4Raw } from './nt4raw'
 import {
-  decodeToApp, encodeDs, encodeFromApp, encodeJoystick, encodePoseSeed, type DsState, type JoystickState,
+  decodeToApp, encodeDs, encodeFromApp, encodeJoystick, encodePoseSeed, encodeStep, type DsState, type JoystickState, type ToApp,
 } from './frames'
 import {
-  DEFAULT_WS_PORT, MSG_DS, MSG_FROM_APP, MSG_HELLO, MSG_JOYSTICK, MSG_POSE_SEED, MSG_STATS, MSG_TO_APP, WsTransport,
+  DEFAULT_WS_PORT, MSG_DS, MSG_FROM_APP, MSG_HELLO, MSG_JOYSTICK, MSG_POSE_SEED, MSG_STATS, MSG_STEP, MSG_TO_APP, WsTransport,
 } from './ws-transport'
 
 const SEED_DELAY_FRAMES = 20
@@ -44,13 +44,35 @@ export interface BridgePorts {
   nt?: number | null
 }
 
+/** Lockstep (Mode B): the app owns the clock. dt is the simulated time of one exchange; speed is the multiple of real time (0 = as fast as it goes). */
+export interface LockstepOptions { dt: number; speed?: number }
+
 export class BridgeSession {
   private ws: WsTransport
   private nt: Nt4Raw | null = null
   private lastRobotTime: number | null = null
   private owed = 0
   private ctrlCounter = 1n
-  paused = false
+  /** Paused: Mode A stops stepping the engine; lockstep stops sending steps (the robot's clock stands still). */
+  get paused(): boolean { return this._paused }
+  set paused(v: boolean) { this._paused = v; if (!v) this.resumeLockstep() }
+  private _paused = false
+  /** Lockstep state: the next Step's sequence number, timed actions, and the wall clock the pacing follows. */
+  private lockstep: LockstepOptions | null
+  private stepSeq = 0n
+  private stepPending = false
+  private lockstepStarted = false
+  private timeline: { t: number; fn: () => void }[] = []
+  private paceWall = 0
+  private paceSim = 0
+  /** Steps exchanged in lockstep, and wall time spent (for the speed readout). */
+  lockstepSteps = 0
+  /** The voltage each motor was last told to apply (lockstep), for logs and tests. */
+  readonly lastMotorVolts = new Map<number, number>()
+  /** Lockstep speed multiple of real time (0 = unlimited). */
+  get speed(): number { return this.lockstep?.speed ?? 0 }
+  set speed(v: number) { if (this.lockstep) { this.lockstep.speed = v; this.paceWall = 0 } }
+  get isLockstep(): boolean { return this.lockstep !== null }
   /** The app is the field system: DS enable, mode, match time and Game Data follow the match phases of the game module. */
   fms = false
   private fmsKey = ''
@@ -68,12 +90,17 @@ export class BridgeSession {
   private resetSeen = new Set<number>()
   status: BridgeStatus = { connected: false, frames: 0, lastSeq: 0n, robotTime: 0, skipped: 0, robotEnabled: false, helloDevices: null, helloIssues: [], components: null }
 
-  constructor(private engine: Engine, host: string, ports: BridgePorts = {}, private onStatus: () => void = () => {}, private def: RobotDefinition | null = null) {
+  constructor(private engine: Engine, host: string, ports: BridgePorts = {}, private onStatus: () => void = () => {}, private def: RobotDefinition | null = null, lockstep: LockstepOptions | null = null) {
+    this.lockstep = lockstep
     this.ws = new WsTransport(host, ports.ws ?? DEFAULT_WS_PORT)
     this.ws.onMessage = (type, body) => this.onMessage(type, body)
     this.ws.onConnection = (c) => {
       this.status.connected = c
-      if (c) { this.lastRobotTime = null; this.owed = 0; this.sendDs(); this.sendJoystick(); this.seedPose() }
+      if (c) {
+        this.lastRobotTime = null; this.owed = 0; this.sendDs(); this.sendJoystick()
+        if (!this.lockstep) this.seedPose()
+        else { this.lockstepStarted = false; this.stepPending = false; this.stepSeq = 0n }
+      }
       this.onStatus()
     }
     if (ports.nt !== null) {
@@ -83,6 +110,12 @@ export class BridgeSession {
   }
 
   start(): void { this.ws.start(); this.nt?.start() }
+
+  /** Lockstep: run this at the given simulated time (before the Step that crosses it is sent), so inputs are tied to the sim clock and a run repeats. */
+  at(simTime: number, fn: () => void): void {
+    this.timeline.push({ t: simTime, fn })
+    this.timeline.sort((a, b) => a.t - b.t)
+  }
 
   /** Starts the field system: the match clock is the engine's, so reset the engine first. */
   startMatch(): void { this.fms = true; this.fmsKey = ''; this.updateFms() }
@@ -121,7 +154,10 @@ export class BridgeSession {
    * back for a few frames so the robot has already seen the new wheel positions: a seed sent first would be followed by a
    * jump in the wheel distances that odometry integrates as motion.
    */
-  seedPose(): void { this.seedAtFrame = this.status.frames + SEED_DELAY_FRAMES }
+  seedPose(): void {
+    if (this.lockstep) { if (this.lockstepStarted) this.sendSeed(); return } // between exchanges, so it lands at a known step
+    this.seedAtFrame = this.status.frames + SEED_DELAY_FRAMES
+  }
 
   private sendSeed(): void {
     const f = this.engine.getFrame()
@@ -139,11 +175,13 @@ export class BridgeSession {
   // ---- messages from the robot
 
   private onMessage(type: number, body: Uint8Array): void {
-    if (type === MSG_TO_APP) this.onToApp(body)
+    if (type === MSG_TO_APP) { if (this.lockstep) this.onToAppLockstep(body); else this.onToApp(body) }
     else if (type === MSG_HELLO) {
       const text = new TextDecoder().decode(body)
       this.status.helloDevices = text
       if (this.def) this.status.helloIssues = checkAgainstHello(this.def, text)
+      if (this.lockstep && !text.includes('"lockstep"')) this.status.helloIssues = [...this.status.helloIssues, 'the robot is not in lockstep mode (start it with CRUCIBLE_MODE=lockstep)']
+      else if (this.lockstep && !this.lockstepStarted) this.beginLockstep()
       this.onStatus()
     } else if (type === MSG_STATS && body.byteLength >= 16) {
       // the robot times each ToApp frame against the arrival of its answer; that round trip is how stale the answer is when applied
@@ -153,6 +191,66 @@ export class BridgeSession {
         if (this.autoLead) this.lead = Math.min(MAX_LEAD_S, this.rtt)
       }
     }
+  }
+
+  // ---- lockstep (Mode B)
+
+  private beginLockstep(): void {
+    this.lockstepStarted = true
+    this.sendSeed()
+    this.sendFromApp(0n, 12) // the state the robot starts from; steps are numbered from 1
+    this.stepSeq = 0n
+    this.paceWall = 0
+    this.sendStep()
+  }
+
+  private sendFromApp(seq: bigint, battery: number): void {
+    const dt = this.engine.drivetrain
+    this.ws.send(MSG_FROM_APP, encodeFromApp({
+      seq, simTime: this.engine.time, batteryVolts: battery, motors: this.engine.predictMotorStates(0),
+      cancoders: dt?.cancoderStates() ?? [], pigeons: dt ? [dt.pigeonState()] : [],
+    }))
+  }
+
+  private sendStep(): void {
+    if (!this.lockstep || !this.ws.connected) return
+    if (this._paused) { this.stepPending = true; return }
+    while (this.timeline.length > 0 && this.timeline[0].t <= this.engine.time + 1e-9) this.timeline.shift()!.fn()
+    this.updateFms()
+    if (this._paused) { this.stepPending = true; return } // a timed action may have paused the run
+    this.stepPending = false
+    this.ws.send(MSG_STEP, encodeStep(++this.stepSeq, this.lockstep.dt))
+  }
+
+  private resumeLockstep(): void { if (this.lockstep && this.lockstepStarted && this.stepPending) { this.paceWall = 0; this.sendStep() } }
+
+  /** One exchange: apply the robot's voltages, step the physics for dt, answer with the new state, then pace and send the next Step. */
+  private onToAppLockstep(bytes: Uint8Array): void {
+    const f: ToApp | null = decodeToApp(bytes)
+    if (!f || !this.lockstep) return
+    const s = this.status
+    s.frames++; s.lastSeq = f.seq; s.robotTime = f.simTime; s.robotEnabled = (f.flags & 1) !== 0
+    for (const m of f.motors) {
+      this.engine.setMotorVolts(m.id, m.appliedVolts)
+      this.lastMotorVolts.set(m.id, m.appliedVolts)
+      const reset = (m.flags & MOTOR_FLAG_RESET) !== 0
+      if (reset && !this.resetSeen.has(m.id)) this.engine.resetMechanism(m.id)
+      if (reset) this.resetSeen.add(m.id); else this.resetSeen.delete(m.id)
+    }
+    const n = Math.max(1, Math.round(this.lockstep.dt / this.engine.dt))
+    for (let i = 0; i < n; i++) this.engine.step()
+    this.lockstepSteps++
+    this.sendFromApp(f.seq, f.batteryVolts)
+    if (s.frames % 200 === 0) this.onStatus()
+    // pacing: hold the sim clock to speed x wall clock (unlimited when 0)
+    const speed = this.lockstep.speed ?? 0
+    if (speed > 0) {
+      const now = performance.now()
+      if (this.paceWall === 0) { this.paceWall = now; this.paceSim = this.engine.time }
+      const due = this.paceWall + ((this.engine.time - this.paceSim) / speed) * 1000
+      if (due - now > 1) { setTimeout(() => this.sendStep(), due - now); return }
+    }
+    this.sendStep()
   }
 
   private onToApp(bytes: Uint8Array): void {

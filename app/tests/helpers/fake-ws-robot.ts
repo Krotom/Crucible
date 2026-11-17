@@ -23,6 +23,8 @@ export class FakeRobotWs {
   port = 0
   connections = 0
   onConnect: () => void = () => {}
+  /** called for every message the app sends, after it is recorded (a lockstep robot answers Step here) */
+  onMessage: (m: WsMessage) => void = () => {}
 
   async start(): Promise<void> {
     this.server.on('upgrade', (req, socket) => {
@@ -67,7 +69,11 @@ export class FakeRobotWs {
       const payload = Buffer.from(b.subarray(off, off + len))
       if (mask) for (let i = 0; i < len; i++) payload[i] ^= mask[i & 3]
       this.buf = b.subarray(off + len)
-      if (opcode === 2 && payload.length > 0) this.messages.push({ type: payload[0], body: new Uint8Array(payload.subarray(1)) })
+      if (opcode === 2 && payload.length > 0) {
+        const m = { type: payload[0], body: new Uint8Array(payload.subarray(1)) }
+        this.messages.push(m)
+        this.onMessage(m)
+      }
     }
   }
 }
