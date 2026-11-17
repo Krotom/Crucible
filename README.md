@@ -16,3 +16,5 @@ The robot this is built around lives in the OffSeasonCode repository (swerve, tu
 ## Status
 
 M0 (feasibility spikes), M1 (viewer: live NT4 and `.wpilog` playback, 3D robot, plots) M2 (deterministic engine core with a test game) M3 (robot-code-in-the-loop drivetrain) M4 (all mechanisms under app authority, robot definition file) and M5 (ball interaction: capture, stages, shooting) are done. The app lives in [app/](app/README.md); the plan is in [docs/PLAN.md](docs/PLAN.md).
+
+M6 has started: the [REBUILT rules extract](rules/REBUILT_RULES_EXTRACT.md) is written and waits for review before any rules are encoded.
