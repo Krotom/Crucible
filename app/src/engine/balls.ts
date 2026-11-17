@@ -118,9 +118,12 @@ export class BallSystem {
   private surfaceSpeed(s: number): number {
     let idx = 0
     for (let i = 0; i < this.stageStart.length; i++) if (s >= this.stageStart[i]) idx = i
-    const st = this.spec.stages[idx]
-    const m = this.host.mechanism(st.driver)
-    return m ? st.direction * m.rps * TWO_PI * st.radius : 0
+    let v = 0
+    for (const d of this.spec.stages[idx].drivers) {
+      const m = this.host.mechanism(d.driver)
+      if (m) v += d.direction * m.rps * TWO_PI * d.radius
+    }
+    return v
   }
 
   private moveStages(): void {

@@ -65,12 +65,26 @@ ballHandling:
     rollerDirection: 1
     minRollerRps: 5
     maxRelativeSpeed: 4.0
+  # a stage moves at the summed surface speed of its drivers; the intake roller feeds the first stage while intaking and the indexer
+  # (which the code runs negative to feed) moves everything forward while shooting. Order from the team (not confirmed):
+  # intake -> revolver/spindexer (the indexer motor) -> feeder -> turret -> shooter. The CAD's "revolver" subassembly is a drum with
+  # its own reduction that this straight queue only approximates.
   stages:
-    - { name: intake,  length: 0.30, driver: intakeRoller, direction: 1,  radius: 0.0254 }
-    - { name: indexer, length: 0.40, driver: indexer,      direction: -1, radius: 0.0254 }   # the code runs the indexer negative to feed
-    - { name: feeder,  length: 0.25, driver: feeder,       direction: 1,  radius: 0.0254 }
+    - name: intake
+      length: 0.30
+      drivers:
+        - { driver: intakeRoller, direction: 1,  radius: 0.0254 }
+        - { driver: indexer,      direction: -1, radius: 0.0254 }
+    - name: revolver
+      length: 0.40
+      drivers:
+        - { driver: indexer, direction: -1, radius: 0.0254 }
+    - name: feeder
+      length: 0.25
+      drivers:
+        - { driver: feeder, direction: 1, radius: 0.0254 }
   beams:
-    - { name: indexerEntry, position: 0.30 }
+    - { name: revolverEntry, position: 0.30 }
     - { name: feederEntry,  position: 0.70 }
     - { name: exit,         position: 0.95 }
   shooter:

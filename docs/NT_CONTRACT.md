@@ -251,8 +251,12 @@ the wire.
 - **All of the numbers are guesses** (stage lengths, roller radii, efficiency, exit elevation, backspin) until the CAD is measured and a shot table
   exists (M12).
 
-**Measured with the real robot code through the app** (test game, robot at (2.65, 2.66)): three balls caught while driving, the indexer queued them,
-and with the shooter at speed one shot left 0.75 s after the shoot command, peaked at 1.9 m and came down in the hub volume (+3 points). This needed two
-changes to the robot's constants that are not committed: the shooter gains (kV 0.119 would hold the flywheel near 30 rps, short of the 43-50 rps the shot
-table asks for; kV 0.24 and kP 0.2 reached 44 rps) and the feeder jam threshold (40 A trips on the startup current of a 7 V command, so the feeder
-reverses every time; 400 A let it run). Without them the shooter never becomes ready and the feeder never feeds.
+**Stage order** (from the team, not confirmed): intake -> revolver/spindexer (the indexer motor) -> feeder -> turret -> shooter. A stage moves at the summed
+surface speed of its drivers; the first stage is moved by the intake roller while intaking and by the indexer while shooting. The CAD's revolver is a drum with
+its own reduction, which this straight queue only approximates. The robot has no beam-break sensor on `main` or `protonme` (the CAD has no sensor parts either);
+the teammate branch `origin/Burak` reads a `DigitalInput(0)` at the shooter exit, active low, to count shots, so DIO 0 is the natural channel for the exit beam if that branch is merged.
+
+**Measured with the real robot code through the app** (test game, robot near (2.6, 2.6)): three balls caught while driving and queued, then, with the shooter at
+speed, all three launched in sequence (the first scored 3 in the hub in one run; shots are uncalibrated guesses, so they do not all land). This needed two fixes in the
+robot code, now committed on `protonme`: shooter kV 0.119 -> 0.24 and kP 0.01 -> 0.2 (the flywheel stalled near 30 rps against a 43-50 rps target, so the shooter was never
+ready), and a debounced feeder jam check (the 40 A threshold tripped on the startup current of every feed command, so the feeder reversed every time).

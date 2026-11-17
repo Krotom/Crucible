@@ -174,6 +174,16 @@ describe('stages and beam breaks', () => {
     expect(e.ballSystem!.beams[1]).toBe(false)
   })
 
+  it('a piece still in the intake stage is moved on by the indexer when the roller is off (the shooting state)', async () => {
+    const e = await withHeldBall()
+    e.setMotorVolts(ID.intakeRoller, 0)
+    e.run(0.6) // the roller coasts down
+    e.ballSystem!.held = [0.1]
+    e.setMotorVolts(ID.indexer, -9)
+    e.run(1.2)
+    expect(e.ballSystem!.held[0]).toBeGreaterThan(0.5)
+  })
+
   it('the indexer carries it to the feeder, the feeder to the exit; beams follow it', async () => {
     const e = await withHeldBall()
     e.setMotorVolts(ID.intakeRoller, 0)

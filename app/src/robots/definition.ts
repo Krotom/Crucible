@@ -145,7 +145,13 @@ function parseBalls(b: Obj, names: Set<string>): BallHandlingSpec {
     stages: stages.map((x, k) => {
       const o = obj(x, `ballHandling.stages[${k}]`)
       const ww = `ballHandling.stages[${k}]`
-      return { name: str(o, 'name', ww), length: num(o, 'length', ww), driver: mech(o, 'driver', ww, names), direction: sign(o, 'direction', ww), radius: num(o, 'radius', ww) }
+      const drivers = o.drivers
+      if (!Array.isArray(drivers) || drivers.length === 0) throw new Error(`robot definition: ${ww}.drivers must be a list`)
+      return {
+        name: str(o, 'name', ww),
+        length: num(o, 'length', ww),
+        drivers: drivers.map((d, j) => { const dd = obj(d, `${ww}.drivers[${j}]`); const w2 = `${ww}.drivers[${j}]`; return { driver: mech(dd, 'driver', w2, names), direction: sign(dd, 'direction', w2), radius: num(dd, 'radius', w2) } }),
+      }
     }),
     beams: beams.map((x, k) => { const o = obj(x, `ballHandling.beams[${k}]`); return { name: str(o, 'name', `ballHandling.beams[${k}]`), position: num(o, 'position', `ballHandling.beams[${k}]`) } }),
     shooter: {

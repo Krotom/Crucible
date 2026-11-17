@@ -140,8 +140,11 @@ export interface BallHandlingSpec {
     /** pieces moving faster than this relative to the robot are not caught, m/s */
     maxRelativeSpeed: number
   }
-  /** Stages from the intake mouth to the shooter, each with a driving mechanism; pieces ride at the roller surface speed. */
-  stages: { name: string; length: number; driver: string; direction: 1 | -1; radius: number }[]
+  /**
+   * Stages from the intake mouth to the shooter. A piece in a stage rides at the summed surface speed of the stage's drivers (a
+   * stage can be moved by more than one roller: the intake roller while intaking, the indexer while shooting).
+   */
+  stages: { name: string; length: number; drivers: { driver: string; direction: 1 | -1; radius: number }[] }[]
   /** Beam breaks at positions along the stage path (m from the intake mouth); true while a piece overlaps them. */
   beams: { name: string; position: number }[]
   shooter: {
