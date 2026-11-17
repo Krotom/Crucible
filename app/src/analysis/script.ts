@@ -49,7 +49,7 @@ export interface RunScript {
   /** exchange and physics step, seconds (default 0.005) */
   step?: 0.001 | 0.002 | 0.005
   start?: { x: number; y: number; yaw: number }
-  /** REBUILT: FUEL staged in the neutral zone (default 150) and preloaded in the robot (default from the robot definition) */
+  /** REBUILT: FUEL staged in the neutral zone (default 408, the manual's count) and preloaded in the robot (default from the robot definition) */
   neutralFuel?: number
   preload?: number
   bots?: BotScript[]

@@ -1,0 +1,5 @@
+pile r1.1 2ms          fuel 408  dt 2 ms  iters 2  ->  1.281 ms/step  1.56x real time  (avg awake 241, pieces 456, robot x 15.99)
+pile r0.85 2ms         fuel 408  dt 2 ms  iters 2  ->  1.258 ms/step  1.59x real time  (avg awake 239, pieces 456, robot x 15.98)
+pile r0.85 rest.25     fuel 408  dt 2 ms  iters 2  ->  1.209 ms/step  1.65x real time  (avg awake 239, pieces 456, robot x 15.98)
+no pile 2ms            fuel 408  dt 2 ms  iters 2  ->  1.493 ms/step  1.34x real time  (avg awake 317, pieces 456, robot x 15.99)
+pile r0.85 3ms         fuel 408  dt 3 ms  iters 2  ->  1.369 ms/step  2.19x real time  (avg awake 236, pieces 456, robot x 15.99)

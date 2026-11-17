@@ -240,7 +240,29 @@ export interface RobotSpec {
   script: ScriptSegment[]
 }
 
+import type { PileOptions } from './pile'
+
+/** Performance and accuracy knobs of the physics solver (see tests/bench.test.ts for how to measure them). All optional; the defaults are what the engine has always used. */
+export interface EngineTuning {
+  /** continuous collision detection for pieces: 'all' (default), 'none', 'fast' (only while a piece moves faster than fastSpeed) or 'soft' (predictive, cheaper) */
+  ccd?: 'all' | 'none' | 'fast' | 'soft'
+  /** speed above which 'fast' CCD is on, m/s (default 3) */
+  fastSpeed?: number
+  /** prediction distance for 'soft' CCD, meters (default 0.05) */
+  softCcd?: number
+  maxCcdSubsteps?: number
+  /** Rapier's internal Gauss-Seidel iterations per solver iteration */
+  pgsIterations?: number
+  /** contact spring frequency (Hz) and allowed penetration / prediction distance, as fractions of the length unit */
+  contactFrequency?: number
+  allowedError?: number
+  predictionDistance?: number
+  /** freeze pieces at rest and thaw them near the robot or a moving piece (src/engine/pile.ts): a big pile no longer wakes as one island */
+  pile?: PileOptions | true
+}
+
 export interface EngineConfig {
+  tuning?: EngineTuning
   game: GameModule
   robot: RobotSpec
   seed: number
@@ -273,6 +295,7 @@ export interface EngineSnapshot {
   mechanisms?: Record<number, unknown>
   balls?: { held: number[]; shots: number; captured: number }
   otherHandles?: number[]
+  pile?: { rest: [number, number][] }
   botStates?: unknown[]
   contact?: { acc: number; quiet: number; peak: number; count: number; vx: number; vy: number; against: 'field' | 'robot' }
 }

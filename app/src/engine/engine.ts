@@ -6,11 +6,12 @@ import type { Collider, ColliderDesc, Cuboid, RigidBody, World } from '@dimforge
 import type { MotorState } from './bridge/frames'
 import { BallSystem, type BallHost } from './balls'
 import { BotController, type BotHost } from './bots'
+import { PileManager, type PileHost } from './pile'
 import { Drivetrain } from './drivetrain'
 import { MechanismModel } from './mechanism'
 import { Hasher, Rng } from './rng'
 import type {
-  Alliance, BoxSpec, EngineConfig, OtherRobotSpec, EngineSnapshot, GameContext, GameEvent, GameModule, PieceSpawn, PieceSpec, RenderFrame,
+  Alliance, BoxSpec, EngineConfig, EngineTuning, OtherRobotSpec, EngineSnapshot, GameContext, GameEvent, GameModule, PieceSpawn, PieceSpec, RenderFrame,
   RobotSpec, Score, ScoreEntry, SensorSpec, Vec3,
 } from './types'
 
@@ -96,6 +97,9 @@ export class Engine {
   private robotSpec: RobotSpec
   private seed: number
   private solverIterations: number | undefined
+  private tuning: EngineTuning
+  private pile: PileManager | null = null
+  private pieceById = new Map<number, Piece>()
 
   private world!: World
   private robot!: RigidBody
@@ -134,6 +138,7 @@ export class Engine {
     this.robotSpec = cfg.robot
     this.seed = cfg.seed
     this.solverIterations = cfg.solverIterations
+    this.tuning = cfg.tuning ?? {}
     this.rng = new Rng(cfg.seed)
     this.pieceSpecs = cfg.game.pieces()
     this.pieceSpecs.forEach((p, i) => this.specByName.set(p.id, i))
@@ -164,6 +169,8 @@ export class Engine {
   get scoreTotals(): Record<Alliance, number> { return { ...this.scores } }
   get log(): readonly ScoreEntry[] { return this.scoreLog }
   get pieceCount(): number { return this.pieces.length }
+  /** pieces the pile manager holds as fixed bodies right now (0 without tuning.pile) */
+  get frozenCount(): number { return this.pile?.frozen.size ?? 0 }
   get scriptDuration(): number { return this.scriptEnd }
 
   // ---------------------------------------------------------------- building
@@ -173,9 +180,11 @@ export class Engine {
     this.world?.free()
     this.world = new RAPIER.World({ x: 0, y: 0, z: -GRAVITY })
     this.world.timestep = this.dt
-    if (this.solverIterations) this.world.integrationParameters.numSolverIterations = this.solverIterations
+    this.applyTuning()
     this.pieces = []
     this.pieceByHandle.clear()
+    this.pieceById.clear()
+    this.pile = this.tuning.pile ? new PileManager(this.pileHost(), this.tuning.pile === true ? {} : this.tuning.pile) : null
     this.nextPieceId = 1
     this.stepCount = 0
     this.scores = { red: 0, blue: 0, none: 0 }
@@ -373,14 +382,17 @@ export class Engine {
     const volume = (4 / 3) * Math.PI * spec.radius ** 3
     const v = s.velocity ?? [0, 0, 0]
     const w = s.angularVelocity ?? [0, 0, 0]
+    // with the pile manager a piece that starts at rest starts frozen (a fixed body), so a big layout costs nothing until it is touched
+    const frozen = this.pile !== null && (s.asleep ?? false)
     const body = this.world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic()
+      (frozen ? RAPIER.RigidBodyDesc.fixed() : RAPIER.RigidBodyDesc.dynamic())
         .setTranslation(s.position[0], s.position[1], s.position[2])
         .setLinvel(v[0], v[1], v[2])
         .setAngvel({ x: w[0], y: w[1], z: w[2] })
         .setAngularDamping(spec.rollingDamping)
         .setSleeping(s.asleep ?? false)
-        .setCcdEnabled(true),
+        .setCcdEnabled(this.tuning.ccd === undefined || this.tuning.ccd === 'all' || this.tuning.ccd === 'fast')
+        .setSoftCcdPrediction(this.tuning.ccd === 'soft' ? this.tuning.softCcd ?? 0.05 : 0),
     )
     this.world.createCollider(
       RAPIER.ColliderDesc.ball(spec.radius)
@@ -396,6 +408,8 @@ export class Engine {
     const piece: Piece = { id, spec, specIndex: idx, handle: body.handle, x: s.position[0], y: s.position[1], z: s.position[2] }
     this.pieces.push(piece)
     this.pieceByHandle.set(body.handle, piece)
+    this.pieceById.set(id, piece)
+    if (frozen) this.pile!.addFrozen(id, s.position[0], s.position[1])
     return id
   }
 
@@ -405,6 +419,8 @@ export class Engine {
     const body = this.world.getRigidBody(this.pieces[i].handle)
     if (body) this.world.removeRigidBody(body)
     this.pieceByHandle.delete(this.pieces[i].handle)
+    this.pieceById.delete(id)
+    this.pile?.remove(id)
     this.pieces.splice(i, 1)
     for (const set of this.sensorInside.values()) set.delete(id)
   }
@@ -467,6 +483,7 @@ export class Engine {
     this.world.step()
     this.stepCount++
     this.senseChassis(v0)
+    this.pile?.step()
     this.checkSensors()
     this.ballSystem?.step()
     this.flushRemovals()
@@ -601,9 +618,47 @@ export class Engine {
     })
   }
 
+  /** What the pile manager needs from the world. */
+  private pileHost(): PileHost {
+    return {
+      dt: this.dt,
+      forEachActive: (cb) => this.forEachActivePiece((p, b) => cb(p.id, b)),
+      position: (id) => { const p = this.pieceById.get(id); return p ? [p.x, p.y] : null },
+      freeze: (id) => {
+        const p = this.pieceById.get(id)
+        if (!p) return
+        const b = this.world.getRigidBody(p.handle)
+        const t = b.translation()
+        p.x = t.x; p.y = t.y; p.z = t.z
+        b.setLinvel({ x: 0, y: 0, z: 0 }, false)
+        b.setAngvel({ x: 0, y: 0, z: 0 }, false)
+        b.setBodyType(RAPIER.RigidBodyType.Fixed, false)
+      },
+      thaw: (id) => {
+        const p = this.pieceById.get(id)
+        if (p) this.world.getRigidBody(p.handle).setBodyType(RAPIER.RigidBodyType.Dynamic, true)
+      },
+      robot: () => { const t = this.robot.translation(); const v = this.robot.linvel(); return { x: t.x, y: t.y, speed: Math.hypot(v.x, v.y) } },
+    }
+  }
+
+  private applyTuning(): void {
+    const ip = this.world.integrationParameters
+    const t = this.tuning
+    if (this.solverIterations) ip.numSolverIterations = this.solverIterations
+    if (t.pgsIterations !== undefined) ip.numInternalPgsIterations = t.pgsIterations
+    if (t.maxCcdSubsteps !== undefined) ip.maxCcdSubsteps = t.maxCcdSubsteps
+    if (t.contactFrequency !== undefined) ip.contact_natural_frequency = t.contactFrequency
+    if (t.allowedError !== undefined) ip.normalizedAllowedLinearError = t.allowedError
+    if (t.predictionDistance !== undefined) ip.normalizedPredictionDistance = t.predictionDistance
+  }
+
   private applyAirDrag(): void {
+    const fastCcd = this.tuning.ccd === 'fast'
+    const fastSpeed = this.tuning.fastSpeed ?? 3
     this.forEachActivePiece((p, b) => {
       const sp = p.spec
+      if (fastCcd) { const lv = b.linvel(); b.enableCcd(lv.x * lv.x + lv.y * lv.y + lv.z * lv.z > fastSpeed * fastSpeed) }
       if (sp.dragCoefficient === 0 && !sp.magnus && !sp.restitutionCurve) return
       const v = b.linvel()
       const speed = Math.hypot(v.x, v.y, v.z)
@@ -749,6 +804,7 @@ export class Engine {
       drivetrain: this.drivetrain?.save(),
       balls: this.ballSystem?.save(),
       otherHandles: this.others.map((o) => o.body.handle),
+      pile: this.pile ? { rest: [...this.pile.rest.entries()] } : undefined,
       botStates: this.others.map((o) => o.ctrl?.save() ?? null),
       contact: { ...this.contact },
       mechanisms: Object.fromEntries([...this.mechanisms].map(([id, m]) => [id, m.save()])),
@@ -759,7 +815,7 @@ export class Engine {
     this.world.free()
     this.world = RAPIER.World.restoreSnapshot(s.world)
     this.world.timestep = this.dt
-    if (this.solverIterations) this.world.integrationParameters.numSolverIterations = this.solverIterations
+    this.applyTuning()
     this.stepCount = s.stepCount
     this.rng.state = s.rng
     this.nextPieceId = s.nextPieceId
@@ -769,6 +825,12 @@ export class Engine {
       return { id: p.id, spec: this.pieceSpecs[idx], specIndex: idx, handle: p.handle, x: t.x, y: t.y, z: t.z }
     })
     this.pieceByHandle = new Map(this.pieces.map((p) => [p.handle, p]))
+    this.pieceById = new Map(this.pieces.map((p) => [p.id, p]))
+    if (this.tuning.pile) {
+      this.pile = new PileManager(this.pileHost(), this.tuning.pile === true ? {} : this.tuning.pile)
+      for (const p of this.pieces) if (this.world.getRigidBody(p.handle).isFixed()) this.pile.addFrozen(p.id, p.x, p.y)
+      for (const [id, n] of s.pile?.rest ?? []) this.pile.rest.set(id, n)
+    }
     this.robot = this.world.getRigidBody(s.robotHandle)
     this.robotCollider = this.robot.collider(0)
     this.others.forEach((o, i) => {
@@ -805,6 +867,7 @@ export class Engine {
     }
     addBody(this.robot)
     for (const o of this.others) { addBody(o.body); if (o.ctrl) { const st = o.ctrl.state; h.add(st.wp); h.add(st.carried); h.add(st.fired); h.add(st.taken); h.add(st.nextAct) } }
+    if (this.pile) h.add(this.pile.frozen.size)
     if (this.contact.count > 0) { h.add(this.contact.count); h.add(this.contact.peak) }
     this.drivetrain?.hashInto((x) => h.add(x))
     for (const m of this.mechanisms.values()) { h.add(m.angle); h.add(m.speed) }

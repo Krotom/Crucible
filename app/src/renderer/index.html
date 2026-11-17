@@ -66,7 +66,7 @@
             <label class="field"><span>Robot</span><select id="sim-mode"><option value="script">Scripted robot</option><option value="robot">Robot code (real time)</option><option value="lockstep">Robot code (lockstep, Mode B)</option></select></label>
             <label class="field"><span>Opponent</span><select id="opponent" title="Another robot on the field: a blocker holds still (push it, get blocked by it); a cycler picks up FUEL and fires it at its own HUB"><option value="none">None</option><option value="blocker">Blocker</option><option value="cycler">Red cycler</option></select></label>
             <div class="row2">
-              <label class="field"><span>Step</span><select id="lockstep-dt" title="Lockstep: simulated time of one exchange and of one physics step (larger is faster and coarser)"><option value="0.001">1 ms</option><option value="0.002">2 ms</option><option value="0.005" selected>5 ms</option></select></label>
+              <label class="field"><span>Step</span><select id="step-dt" title="Physics step (in lockstep also the time of one exchange): larger is faster and coarser"><option value="0.001">1 ms</option><option value="0.002" selected>2 ms</option><option value="0.005">5 ms</option></select></label>
               <label class="field"><span>Seed</span><input id="seed" value="42" inputmode="numeric" /></label>
             </div>
             <button id="start-sim" class="primary wide">Start sim</button>

@@ -71,9 +71,9 @@ async function handle(m: ToWorker): Promise<void> {
         bridge?.stop()
         bridge = null
         const rebuilt = m.game === 'rebuilt'
-        // REBUILT in real time: 150 FUEL in the neutral zone (the manual has up to 408; more than about 200 does not run in real time
-        // while the robot plows through the pile) and 2 solver iterations; see rules/REBUILT_RULES_EXTRACT.md section 7
-        const game = rebuilt ? createRebuiltGame({ preload: OFFSEASON.balls?.preload ?? 0, neutralFuel: 150 }) : createTestGame()
+        // REBUILT: the manual's 408 FUEL in the neutral zone. A pile of that size stays real time because resting FUEL is frozen (src/engine/pile.ts),
+        // CCD runs only on fast pieces, 2 solver iterations, and a 2 ms step by default; see rules/REBUILT_RULES_EXTRACT.md section 7
+        const game = rebuilt ? createRebuiltGame({ preload: OFFSEASON.balls?.preload ?? 0, neutralFuel: 408 }) : createTestGame()
         const start = rebuilt ? { x: 1.6, y: 4.0, yaw: 0 } : OFFSEASON.start
         // an opponent robot that holds still at the center line: something to push against and to be blocked by
         const others = m.opponent === 'cycler' ? botsToOthers([redCycler()]) : m.opponent === 'blocker' ? [{ name: 'opponent', alliance: 'red' as const, half: [0.43, 0.43, 0.12] as [number, number, number], mass: 55, start: { x: rebuilt ? 6.5 : 3, y: rebuilt ? 4.0 : 0, yaw: Math.PI } }] : []
@@ -81,8 +81,8 @@ async function handle(m: ToWorker): Promise<void> {
           ? { half: OFFSEASON.bumper, start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls, alliance: 'blue' as const, chassis: OFFSEASON.contact, others }
           : rebuilt ? { ...TEST_ROBOT, start, alliance: 'blue' as const, others } : { ...TEST_ROBOT, others }
         const lockstep = m.mode === 'lockstep'
-        // lockstep: one exchange is one physics step, so a larger step is a faster and coarser run (5 ms measured 4x real time)
-        engine = await Engine.create({ game, robot, seed: m.seed, solverIterations: rebuilt ? 2 : undefined, dt: lockstep ? m.lockstepDt ?? 0.005 : undefined })
+        // the physics step: larger is faster and coarser (REBUILT with 408 FUEL: 1 ms about 0.9x, 2 ms 1.6x, 5 ms 4x real time while plowing the whole pile); in lockstep one exchange is one step
+        engine = await Engine.create({ game, robot, seed: m.seed, solverIterations: rebuilt ? 2 : undefined, dt: m.stepDt ?? 0.002, tuning: rebuilt ? { pile: true, ccd: 'fast' } : undefined })
         snapshot = null
         if (m.mode !== 'script') {
           bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: lockstep ? null : 5810 }, () => {}, OFFSEASON, lockstep ? { dt: engine.dt, speed: speed } : null)

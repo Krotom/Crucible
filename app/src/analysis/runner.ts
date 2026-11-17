@@ -14,7 +14,7 @@ import { botsToOthers } from './bots'
 export async function createWorld(script: RunScript): Promise<Engine> {
   const rebuilt = script.game === 'rebuilt'
   const preload = script.preload ?? OFFSEASON.balls?.preload ?? 0
-  const game = rebuilt ? createRebuiltGame({ preload, neutralFuel: script.neutralFuel ?? 150 }) : createTestGame()
+  const game = rebuilt ? createRebuiltGame({ preload, neutralFuel: script.neutralFuel ?? 408 }) : createTestGame()
   const start = script.start ?? (rebuilt ? { x: 1.6, y: 4.0, yaw: 0 } : OFFSEASON.start)
   const balls = OFFSEASON.balls ? { ...OFFSEASON.balls, preload } : undefined
   const others: OtherRobotSpec[] = botsToOthers(script.bots ?? [])
@@ -22,7 +22,7 @@ export async function createWorld(script: RunScript): Promise<Engine> {
     half: OFFSEASON.bumper, start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls,
     alliance: 'blue', chassis: OFFSEASON.contact, others,
   }
-  return Engine.create({ game, robot, seed: script.seed, solverIterations: rebuilt ? 2 : undefined, dt: script.step ?? 0.005 })
+  return Engine.create({ game, robot, seed: script.seed, solverIterations: rebuilt ? 2 : undefined, dt: script.step ?? 0.005, tuning: rebuilt ? { pile: true, ccd: 'fast' } : undefined })
 }
 
 /** Records and runs the script on an engine whose lockstep session is built but not started; resolves with the report once the run ends. */
