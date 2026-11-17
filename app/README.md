@@ -1,8 +1,8 @@
-# Crucible app (M1: viewer)
+# Crucible app (M1 viewer, M2 engine core)
 
 Electron + TypeScript + three.js. At this stage the app is a viewer for an existing robot: it connects to a running
-robot over NetworkTables 4 or opens a `.wpilog`, shows the robot in 3D and plots numeric topics. The physics engine
-and the sim bridge come in M2 and M3.
+robot over NetworkTables 4 or opens a `.wpilog`, shows the robot in 3D and plots numeric topics. It also runs the
+physics engine core on a test game (M2); the bridge to your robot code comes in M3.
 
 ## Run
 
@@ -26,6 +26,27 @@ If Electron reports "Electron uninstall", its binary was not downloaded; run `no
   automatically (`Swerve/Pose`, `Mechanism3d/Components`). Orbit with the left mouse button, pan with the right one.
 - **Plot:** click a numeric topic in the list to add or remove it; each line is decimated to 6000 points.
 
+## Simulation (M2)
+
+**Start sim** runs the engine in a Web Worker with the `game-test` module (a made-up 8 x 5 m field: walls, a block, a goal bin that
+scores 2 points in auto and 1 in teleop, and 30 balls dropped from a seeded random layout) and a scripted robot that drives
+a lap through the pile. Balls are real rigid bodies (restitution, friction, rolling damping, quadratic air drag, CCD), the
+robot is a kinematic body that shoves them.
+
+- Play/Pause, speed (0.25x to 8x), Step (10 ms), Reset (with the seed box), Save state / Load state (an in-memory snapshot).
+- The top-right readout shows phase, sim time, rate, score, ball counts and a **state hash**. The same seed gives the same
+  hash at the same step on every run, in Node and in the app; restoring a saved state replays the identical future.
+- The sim also publishes `/Sim/*` topics (pose, speed, scores, ball counts) into the topic list and plots.
+- The orange wireframe on the robot is its collision box.
+
+Engine layout (`src/engine`, no DOM): `engine.ts` (Rapier world, fixed step 1 ms, plug-in host, scoring, match flow, snapshots),
+`types.ts` (the `GameModule` interface), `rng.ts` (seeded RNG and state hash), `worker.ts` + `protocol.ts` (real-time loop and
+messages). `src/games/test.ts` is the test game. Material coefficients are factors that multiply with the surface they touch
+(a ball restitution of 0.55 on a floor of 1.0 rebounds to 0.55^2 of the drop height).
+
+Not in yet: robot-vs-wall contact (the scripted robot ignores walls), speed-dependent foam restitution, Magnus lift, capture
+volumes and shooting (M5), the real robot definition (M4).
+
 ## Robot model
 
 The model folder uses the AdvantageScope layout (`model.glb` for the chassis, `model_N.glb` per component,
@@ -48,7 +69,8 @@ To check the renderer in a plain browser against a real log: `CRUCIBLE_SAMPLE_LO
 | `src/renderer/src/lib/nt4.ts` | NT4 client |
 | `src/renderer/src/lib/scene.ts` | three.js scene in WPILib coordinates (Z up) |
 | `src/renderer/src/lib/plot.ts` | uPlot panel |
-| `tests/` | unit tests; `real-log.test.ts` runs only when `CRUCIBLE_SAMPLE_LOG` is set |
+| `src/engine`, `src/games` | physics engine and game modules (see Simulation) |
+| `tests/` | unit tests (engine: ballistics, drag, bounce, determinism, snapshots, scoring, golden hash); `real-log.test.ts` runs only when `CRUCIBLE_SAMPLE_LOG` is set |
 
 ## Known limits (M1)
 

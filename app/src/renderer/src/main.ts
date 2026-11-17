@@ -2,6 +2,7 @@ import './style.css'
 import { Nt4Live, type NtStatus } from './lib/nt4'
 import { PlotPanel } from './lib/plot'
 import { SceneView } from './lib/scene'
+import { SimSource } from './lib/simsource'
 import { DataStore } from './lib/store'
 import { isNumericType, type Value } from './lib/structs'
 import { parseWpilog } from './lib/wpilog'
@@ -11,6 +12,12 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const store = new DataStore()
 const view = new SceneView($('view'))
 let live: Nt4Live | null = null
+let robotHalfZ = 0.12
+const sim = new SimSource(
+  store,
+  (r) => { robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf); sim.send({ type: 'speed', value: speed }) },
+  (m) => setStatus(`Sim error: ${m}`),
+)
 
 // ---- playback state
 let time = 0
@@ -99,11 +106,23 @@ function setStatus(text: string, ok = false): void {
 
 function updateTransportEnabled(): void {
   const isLog = store.mode === 'log'
+  const isSim = sim.active
   $<HTMLInputElement>('seek').disabled = !isLog
-  $<HTMLButtonElement>('play').disabled = !isLog
+  $<HTMLButtonElement>('play').disabled = !(isLog || isSim)
+  $('sim-buttons').hidden = !isSim
+  $('simhud').hidden = !isSim
+}
+
+function stopSim(): void {
+  if (!sim.active) return
+  sim.stop()
+  view.clearSim()
+  $('start-sim').textContent = 'Start sim'
+  updateTransportEnabled()
 }
 
 async function openLogFile(file: File): Promise<void> {
+  stopSim()
   live?.stop(); live = null
   $('connect').textContent = 'Connect'
   setStatus(`Reading ${file.name}…`)
@@ -141,6 +160,7 @@ window.addEventListener('drop', (e) => {
 
 const statusText: Record<NtStatus, string> = { connecting: 'Connecting…', connected: 'Live', closed: 'Disconnected' }
 $('connect').addEventListener('click', () => {
+  stopSim()
   if (live) {
     live.stop(); live = null
     $('connect').textContent = 'Connect'
@@ -162,6 +182,7 @@ const seekEl = $<HTMLInputElement>('seek')
 const playEl = $<HTMLButtonElement>('play')
 playEl.addEventListener('click', togglePlay)
 function togglePlay(): void {
+  if (sim.active) { sim.send({ type: 'run', running: !sim.running }); return }
   if (store.mode !== 'log') return
   if (!playing && time >= store.tMax) time = store.tMin
   playing = !playing
@@ -170,12 +191,50 @@ function togglePlay(): void {
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLSelectElement)) { e.preventDefault(); togglePlay() }
 })
-$<HTMLSelectElement>('speed').addEventListener('change', (e) => { speed = Number((e.target as HTMLSelectElement).value) })
+$<HTMLSelectElement>('speed').addEventListener('change', (e) => {
+  speed = Number((e.target as HTMLSelectElement).value)
+  if (sim.active) sim.send({ type: 'speed', value: speed })
+})
 seekEl.addEventListener('pointerdown', () => { seeking = true })
 seekEl.addEventListener('pointerup', () => { seeking = false })
 seekEl.addEventListener('input', () => seekTo(store.tMin + Number(seekEl.value) * (store.tMax - store.tMin)))
 $('clear-plot').addEventListener('click', () => plot.clear(store))
 $('focus').addEventListener('click', () => view.focusRobot())
+
+// ---- simulation
+const seedValue = (): number => (Number($<HTMLInputElement>('seed').value) || 0) >>> 0
+$('start-sim').addEventListener('click', () => {
+  if (sim.active) { stopSim(); store.clear(); plot.clear(store); setStatus('No data'); return }
+  live?.stop(); live = null
+  $('connect').textContent = 'Connect'
+  plot.clear(store)
+  sim.start(seedValue())
+  $('start-sim').textContent = 'Stop sim'
+  setStatus('Sim: game-test (paused)', true)
+  playEl.textContent = 'Play'
+  updateTransportEnabled()
+})
+$('sim-step').addEventListener('click', () => sim.send({ type: 'step', steps: 10 }))
+$('sim-reset').addEventListener('click', () => sim.send({ type: 'reset', seed: seedValue() }))
+$('sim-save').addEventListener('click', () => sim.send({ type: 'save' }))
+$('sim-load').addEventListener('click', () => sim.send({ type: 'load' }))
+
+function simFrame(): void {
+  playEl.textContent = sim.running ? 'Pause' : 'Play'
+  $<HTMLButtonElement>('sim-load').disabled = !sim.hasSnapshot
+  const f = sim.latest
+  if (!f) return
+  time = f.time
+  $('time').textContent = `sim ${f.time.toFixed(2)} s`
+  $('simhud').textContent = [
+    `phase  ${f.phase}`,
+    `time   ${f.time.toFixed(2)} s  (${sim.running ? sim.simRate.toFixed(2) + 'x real time' : 'paused'})`,
+    `score  blue ${f.scores.blue}  red ${f.scores.red}`,
+    `balls  ${f.pieceCount} (${f.awakeCount} moving)`,
+    `hash   ${f.hash}`,
+  ].join('\n')
+  plot.build(store)
+}
 
 // ---- frame loop
 let lastList = 0
@@ -183,7 +242,9 @@ function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
 
-  if (store.mode === 'log') {
+  if (sim.active) {
+    simFrame()
+  } else if (store.mode === 'log') {
     if (playing) {
       time += dt * speed
       if (time >= store.tMax) { time = store.tMax; playing = false; playEl.textContent = 'Play' }
@@ -199,13 +260,18 @@ function frame(now: number): void {
   }
 
   // scene
-  const pose = poseSel.value ? store.valueAt(poseSel.value, time) : undefined
-  if (pose instanceof Float64Array) {
-    if (store.series.get(poseSel.value)!.type === 'struct:Pose3d') view.setRobotPose3d(pose)
-    else view.setRobotPose2d(pose)
+  if (sim.active) {
+    if (sim.latest) view.setSimFrame(sim.latest, robotHalfZ)
+    view.setComponentPoses(undefined)
+  } else {
+    const pose = poseSel.value ? store.valueAt(poseSel.value, time) : undefined
+    if (pose instanceof Float64Array) {
+      if (store.series.get(poseSel.value)!.type === 'struct:Pose3d') view.setRobotPose3d(pose)
+      else view.setRobotPose2d(pose)
+    }
+    const comps = compSel.value ? store.valueAt(compSel.value, time) : undefined
+    view.setComponentPoses(comps instanceof Float64Array ? comps : undefined)
   }
-  const comps = compSel.value ? store.valueAt(compSel.value, time) : undefined
-  view.setComponentPoses(comps instanceof Float64Array ? comps : undefined)
   view.render()
   plot.setCursor(time)
 
@@ -233,4 +299,4 @@ view.loadRobotModel().then((msg) => { $('notice').textContent = msg }).catch((e)
 requestAnimationFrame(frame)
 
 // exposed for debugging in the browser console and for automated checks
-;(window as unknown as Record<string, unknown>).crucible = { store, view, plot, openLogFile, seekTo, get time() { return time } }
+;(window as unknown as Record<string, unknown>).crucible = { store, view, plot, sim, openLogFile, seekTo, get time() { return time } }

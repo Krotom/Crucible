@@ -12,6 +12,9 @@
       <button id="open-log">Open log…</button>
       <input id="file" type="file" accept=".wpilog" hidden />
       <span class="sep"></span>
+      <label>Seed <input id="seed" value="42" size="5" /></label>
+      <button id="start-sim">Start sim</button>
+      <span class="sep"></span>
       <label>NT host <input id="host" value="127.0.0.1" size="14" /></label>
       <button id="connect">Connect</button>
       <span id="status" class="status">No data</span>
@@ -30,6 +33,7 @@
             <label>Components <select id="comp-select"></select></label>
             <button id="focus">Focus robot</button>
           </div>
+          <pre id="simhud" class="simhud" hidden></pre>
           <div id="drop" class="drop">Drop a .wpilog here</div>
         </div>
         <div id="transport">
@@ -38,8 +42,14 @@
           <span id="time">0.00 / 0.00 s</span>
           <select id="speed">
             <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="1" selected>1x</option>
-            <option value="2">2x</option><option value="4">4x</option>
+            <option value="2">2x</option><option value="4">4x</option><option value="8">8x</option>
           </select>
+          <span id="sim-buttons" hidden>
+            <button id="sim-step" title="Advance 10 ms">Step</button>
+            <button id="sim-reset">Reset</button>
+            <button id="sim-save">Save state</button>
+            <button id="sim-load" disabled>Load state</button>
+          </span>
           <button id="clear-plot">Clear plot</button>
         </div>
         <div id="plot"></div>

@@ -28,6 +28,7 @@ aside { display: flex; flex-direction: column; border-right: 1px solid var(--lin
 #view canvas { display: block; }
 .hud { position: absolute; top: 8px; left: 8px; display: flex; gap: 12px; padding: 6px 10px; background: rgba(22, 26, 32, 0.85); border: 1px solid var(--line); border-radius: 6px; }
 .hud select { max-width: 260px; }
+.simhud { position: absolute; right: 8px; top: 8px; margin: 0; padding: 8px 10px; background: rgba(22, 26, 32, 0.85); border: 1px solid var(--line); border-radius: 6px; font: 12px/1.5 ui-monospace, Consolas, monospace; pointer-events: none; }
 .drop { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 22px; background: rgba(16, 18, 22, 0.8); border: 2px dashed var(--accent); pointer-events: none; }
 .drop.show { display: flex; }
 #transport { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--panel); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }

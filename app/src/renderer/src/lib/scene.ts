@@ -1,6 +1,7 @@
 // Three.js scene in WPILib coordinates (Z up, +X forward, field origin at a corner), so poses apply without conversion.
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import type { FieldDefinition, PieceSpec, RenderFrame } from '../../../engine/types'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
@@ -13,7 +14,11 @@ export class SceneView {
   readonly scene = new THREE.Scene()
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.05, 200)
   readonly controls: OrbitControls
+  private base = new THREE.Group()
   private robot = new THREE.Group()
+  private simGroup: THREE.Group | null = null
+  private pieceMeshes: THREE.InstancedMesh[] = []
+  private robotBox: THREE.LineSegments | null = null
   private components: THREE.Group[] = []
   private ro: ResizeObserver
 
@@ -28,6 +33,7 @@ export class SceneView {
     sun.position.set(6, -8, 12)
     this.scene.add(sun)
 
+    this.scene.add(this.base)
     this.addField()
     this.scene.add(this.robot)
 
@@ -48,11 +54,11 @@ export class SceneView {
       new THREE.MeshStandardMaterial({ color: 0x1b2027, roughness: 1 }),
     )
     floor.position.set(FIELD_LENGTH / 2, FIELD_WIDTH / 2, -0.001)
-    this.scene.add(floor)
+    this.base.add(floor)
     const grid = new THREE.GridHelper(Math.max(FIELD_LENGTH, FIELD_WIDTH) * 2, Math.round(Math.max(FIELD_LENGTH, FIELD_WIDTH) * 2), 0x2d343d, 0x232830)
     grid.rotation.x = Math.PI / 2
     grid.position.set(FIELD_LENGTH / 2, FIELD_WIDTH / 2, 0)
-    this.scene.add(grid)
+    this.base.add(grid)
     const outline = new THREE.LineLoop(
       new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(0, 0, 0.002), new THREE.Vector3(FIELD_LENGTH, 0, 0.002),
@@ -60,8 +66,8 @@ export class SceneView {
       ]),
       new THREE.LineBasicMaterial({ color: 0x5b6573 }),
     )
-    this.scene.add(outline)
-    this.scene.add(new THREE.AxesHelper(0.8))
+    this.base.add(outline)
+    this.base.add(new THREE.AxesHelper(0.8))
   }
 
   /** Loads model.glb (chassis) and model_N.glb (components) from /model, the AdvantageScope layout. Returns a status line. */
@@ -109,6 +115,79 @@ export class SceneView {
   }
 
   get componentCount(): number { return this.components.length }
+
+  /** Replaces the placeholder field with a game module's field: colliders, sensors, and instanced game pieces. */
+  setSimField(field: FieldDefinition, pieces: PieceSpec[], robotHalf: [number, number, number]): void {
+    this.clearSim()
+    this.base.visible = false
+    const g = new THREE.Group()
+    for (const b of field.colliders) {
+      const isFloor = b.label === 'floor'
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(b.half[0] * 2, b.half[1] * 2, b.half[2] * 2),
+        new THREE.MeshStandardMaterial({ color: isFloor ? 0x1b2027 : 0x55606e, roughness: 0.9, transparent: !isFloor, opacity: isFloor ? 1 : 0.7 }),
+      )
+      mesh.position.set(b.center[0], b.center[1], b.center[2])
+      mesh.rotation.z = b.yaw ?? 0
+      g.add(mesh)
+    }
+    for (const sn of field.sensors) {
+      const geo = new THREE.BoxGeometry(sn.half[0] * 2, sn.half[1] * 2, sn.half[2] * 2)
+      const color = sn.alliance === 'red' ? 0xff5566 : sn.alliance === 'blue' ? 0x4cc2ff : 0x7bed9f
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false }))
+      const w = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color }))
+      for (const o of [m, w]) { o.position.set(sn.center[0], sn.center[1], sn.center[2]); o.rotation.z = sn.yaw ?? 0; g.add(o) }
+    }
+    const grid = new THREE.GridHelper(Math.max(field.length, field.width) * 2, Math.round(Math.max(field.length, field.width) * 2), 0x2d343d, 0x232830)
+    grid.rotation.x = Math.PI / 2
+    grid.position.set(field.length / 2, field.width / 2, 0.001)
+    g.add(grid)
+    for (const spec of pieces) {
+      const im = new THREE.InstancedMesh(new THREE.SphereGeometry(spec.radius, 16, 12), new THREE.MeshStandardMaterial({ color: spec.color, roughness: 0.6 }), 4000)
+      im.count = 0
+      im.frustumCulled = false
+      g.add(im)
+      this.pieceMeshes.push(im)
+    }
+    this.scene.add(g)
+    this.simGroup = g
+    // the actual collision box of the robot, for checking it against the model
+    this.robotBox = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(robotHalf[0] * 2, robotHalf[1] * 2, robotHalf[2] * 2)),
+      new THREE.LineBasicMaterial({ color: 0xff9f43 }),
+    )
+    this.robotBox.position.z = 0
+    this.robot.add(this.robotBox)
+    this.controls.target.set(field.length / 2, field.width / 2, 0)
+    this.camera.position.set(field.length / 2, -field.width * 0.9, field.width * 1.1)
+    this.controls.update()
+  }
+
+  clearSim(): void {
+    if (this.simGroup) { this.scene.remove(this.simGroup); this.simGroup = null }
+    this.pieceMeshes = []
+    if (this.robotBox) { this.robot.remove(this.robotBox); this.robotBox = null }
+    this.base.visible = true
+  }
+
+  get simActive(): boolean { return this.simGroup !== null }
+
+  /** Draws one engine frame: robot pose (the robot body origin sits at collider center height, so drop it to the floor) and pieces. */
+  setSimFrame(f: RenderFrame, robotHalfZ: number): void {
+    this.robot.position.set(f.robot[0], f.robot[1], f.robot[2] - robotHalfZ)
+    this.robot.quaternion.set(f.robot[4], f.robot[5], f.robot[6], f.robot[3])
+    if (this.robotBox) this.robotBox.position.z = robotHalfZ
+    const counts = new Array(this.pieceMeshes.length).fill(0)
+    const m = new THREE.Matrix4()
+    for (let i = 0; i < f.pieceCount; i++) {
+      const k = f.pieceSpecIndex[i]
+      const im = this.pieceMeshes[k]
+      if (!im || counts[k] >= im.instanceMatrix.count) continue
+      m.makeTranslation(f.piecePositions[i * 3], f.piecePositions[i * 3 + 1], f.piecePositions[i * 3 + 2])
+      im.setMatrixAt(counts[k]++, m)
+    }
+    this.pieceMeshes.forEach((im, k) => { im.count = counts[k]; im.instanceMatrix.needsUpdate = true })
+  }
 
   /** Moves the orbit target onto the robot, keeping the current viewing offset. */
   focusRobot(): void {
