@@ -4,6 +4,7 @@
 import RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import type { RigidBody, World } from '@dimforge/rapier3d-deterministic-compat'
 import type { MotorState } from './bridge/frames'
+import { BallSystem, type BallHost } from './balls'
 import { Drivetrain } from './drivetrain'
 import { MechanismModel } from './mechanism'
 import { Hasher, Rng } from './rng'
@@ -24,6 +25,19 @@ export function initRapier(): Promise<void> {
 }
 
 interface Piece { id: number; spec: PieceSpec; specIndex: number; handle: number }
+
+/** Piecewise-linear interpolation of [x, y] points, clamped at the ends. */
+export function interp(points: [number, number][], x: number): number {
+  if (x <= points[0][0]) return points[0][1]
+  for (let i = 1; i < points.length; i++) {
+    if (x <= points[i][0]) {
+      const [x0, y0] = points[i - 1]
+      const [x1, y1] = points[i]
+      return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0)
+    }
+  }
+  return points[points.length - 1][1]
+}
 
 function yawQuat(yaw: number): { x: number; y: number; z: number; w: number } {
   return { x: 0, y: 0, z: Math.sin(yaw / 2), w: Math.cos(yaw / 2) }
@@ -66,6 +80,9 @@ export class Engine {
   /** Mechanism physics by Talon CAN id. */
   readonly mechanisms = new Map<number, MechanismModel>()
   private mechanismVolts = new Map<number, number>()
+  private mechanismByName = new Map<string, MechanismModel>()
+  /** The hybrid ball model (intake capture, stages, shooter) when the robot has ball handling. */
+  ballSystem: BallSystem | null = null
 
   private constructor(cfg: EngineConfig) {
     this.dt = cfg.dt ?? 0.001
@@ -76,7 +93,12 @@ export class Engine {
     this.pieceSpecs = cfg.game.pieces()
     this.pieceSpecs.forEach((p, i) => this.specByName.set(p.id, i))
     this.drivetrain = cfg.robot.drivetrain ? new Drivetrain(cfg.robot.drivetrain) : null
-    for (const m of cfg.robot.mechanisms ?? []) this.mechanisms.set(m.id, new MechanismModel(m))
+    for (const m of cfg.robot.mechanisms ?? []) {
+      const model = new MechanismModel(m)
+      this.mechanisms.set(m.id, model)
+      this.mechanismByName.set(m.name, model)
+    }
+    if (cfg.robot.balls) this.ballSystem = new BallSystem(cfg.robot.balls, this.ballHost())
     this.scriptEnd = cfg.robot.script.reduce((t, s) => t + s.duration, 0)
   }
 
@@ -143,6 +165,7 @@ export class Engine {
     const driven = this.drivetrain !== null
     this.drivetrain?.reset()
     for (const m of this.mechanisms.values()) m.reset()
+    this.ballSystem?.reset()
     const desc = driven
       ? RAPIER.RigidBodyDesc.dynamic().enabledTranslations(true, true, false).enabledRotations(false, false, true).setCanSleep(false)
       : RAPIER.RigidBodyDesc.kinematicVelocityBased()
@@ -161,6 +184,32 @@ export class Engine {
   }
 
   // ---------------------------------------------------------------- pieces
+
+  /** What the ball model needs from the engine. */
+  private ballHost(): BallHost {
+    return {
+      dt: this.dt,
+      robotPose: () => {
+        const t = this.robot.translation()
+        const q = this.robot.rotation()
+        const v = this.robot.linvel()
+        return { x: t.x, y: t.y, yaw: 2 * Math.atan2(q.z, q.w), vx: v.x, vy: v.y }
+      },
+      mechanism: (name) => this.mechanismByName.get(name),
+      eachPiece: (cb) => {
+        for (const p of this.pieces) {
+          const b = this.world.getRigidBody(p.handle)
+          const t = b.translation()
+          const v = b.linvel()
+          cb(p.id, p.spec.id, [t.x, t.y, t.z], [v.x, v.y, v.z])
+        }
+      },
+      pieceRadius: (spec) => this.pieceSpecs[this.specByName.get(spec)!].radius,
+      removePiece: (id) => this.removePiece(id),
+      spawn: (s) => this.spawn(s),
+      emit: (e) => this.emit(e),
+    }
+  }
 
   /** Adds a piece to the world and returns its id. */
   spawn(s: PieceSpawn): number {
@@ -257,6 +306,7 @@ export class Engine {
     this.world.step()
     this.stepCount++
     this.checkSensors()
+    this.ballSystem?.step()
     this.flushRemovals()
     this.updatePhase()
   }
@@ -298,17 +348,41 @@ export class Engine {
     this.robot.setAngvel({ x: 0, y: 0, z: omega }, true)
   }
 
+  /** Per-step piece forces and material: quadratic air drag, Magnus lift from spin, and speed-dependent foam restitution. */
   private applyAirDrag(): void {
     for (const p of this.pieces) {
-      if (p.spec.dragCoefficient === 0) continue
+      const sp = p.spec
+      if (sp.dragCoefficient === 0 && !sp.magnus && !sp.restitutionCurve) continue
       const b = this.world.getRigidBody(p.handle)
       if (b.isSleeping()) continue
       const v = b.linvel()
       const speed = Math.hypot(v.x, v.y, v.z)
+      if (sp.restitutionCurve) b.collider(0).setRestitution(sp.restitution * interp(sp.restitutionCurve, speed))
       b.resetForces(false)
       if (speed < 1e-9) continue
-      const k = -0.5 * AIR_DENSITY * p.spec.dragCoefficient * Math.PI * p.spec.radius ** 2 * speed
-      b.addForce({ x: k * v.x, y: k * v.y, z: k * v.z }, false)
+      const area = Math.PI * sp.radius ** 2
+      let fx = 0
+      let fy = 0
+      let fz = 0
+      if (sp.dragCoefficient !== 0) {
+        const k = -0.5 * AIR_DENSITY * sp.dragCoefficient * area * speed
+        fx = k * v.x; fy = k * v.y; fz = k * v.z
+      }
+      if (sp.magnus) {
+        const w = b.angvel()
+        // lift along w x v, with C_L = min(max, gain * r * |w| / v)
+        const cx = w.y * v.z - w.z * v.y
+        const cy = w.z * v.x - w.x * v.z
+        const cz = w.x * v.y - w.y * v.x
+        const cm = Math.hypot(cx, cy, cz)
+        if (cm > 1e-12) {
+          const spin = (sp.radius * Math.hypot(w.x, w.y, w.z)) / speed
+          const cl = Math.min(sp.magnus.max, sp.magnus.gain * spin)
+          const k = (0.5 * AIR_DENSITY * cl * area * speed * speed) / cm
+          fx += k * cx; fy += k * cy; fz += k * cz
+        }
+      }
+      b.addForce({ x: fx, y: fy, z: fz }, false)
     }
   }
 
@@ -400,6 +474,7 @@ export class Engine {
       phaseIndex: this.phaseIndex,
       gameState: JSON.parse(JSON.stringify(this.gameState)),
       drivetrain: this.drivetrain?.save(),
+      balls: this.ballSystem?.save(),
       mechanisms: Object.fromEntries([...this.mechanisms].map(([id, m]) => [id, m.save()])),
     }
   }
@@ -423,6 +498,7 @@ export class Engine {
     this.gameState = JSON.parse(JSON.stringify(s.gameState))
     this.removeQueue = []
     if (this.drivetrain && s.drivetrain) this.drivetrain.load(s.drivetrain)
+    if (this.ballSystem && s.balls) this.ballSystem.load(s.balls)
     for (const [id, m] of this.mechanisms) if (s.mechanisms?.[id]) m.load(s.mechanisms[id])
   }
 
@@ -444,6 +520,7 @@ export class Engine {
     addBody(this.robot)
     this.drivetrain?.hashInto((x) => h.add(x))
     for (const m of this.mechanisms.values()) { h.add(m.angle); h.add(m.speed) }
+    if (this.ballSystem) { for (const s of this.ballSystem.held) h.add(s); h.add(this.ballSystem.shots); h.add(this.ballSystem.captured) }
     for (const p of this.pieces) { h.add(p.id); addBody(this.world.getRigidBody(p.handle)) }
     return h.digest()
   }
@@ -474,6 +551,11 @@ export class Engine {
       piecePositions: pos,
       pieceSpecIndex: spec,
       hash: this.hash(),
+      held: this.ballSystem ? [...this.ballSystem.held] : [],
+      beams: this.ballSystem ? [...this.ballSystem.beams] : [],
+      capture: this.ballSystem ? this.ballSystem.captureBox() : null,
+      shots: this.ballSystem?.shots ?? 0,
+      captured: this.ballSystem?.captured ?? 0,
     }
   }
 }

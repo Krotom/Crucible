@@ -70,6 +70,13 @@ app's physics, defined in `robots/offseason/robot.yaml`; the readout lists any m
 Drivetrain numbers are in `src/robots/offseason.ts`: gear ratios, wheel radius, coupling and module positions come from
 `TunerConstants.java`; the mass (52 kg) and tire friction (1.2) are guesses until measured.
 
+## Balls (M5)
+
+With the robot code in the loop, the intake catches balls (the green box is the capture volume), they ride the stages to the shooter, and a ball
+launched from the turret flies with drag, spin and foam bounce. The readout shows pieces held, the three beam breaks (`#` = blocked), pieces
+caught and shots. In the test game, the elevated cyan "hub" volume at (4.6, 4.0) is where the robot code aims its turret and scores 3 points
+in teleop. The ball numbers are in the `ballHandling` section of `robots/offseason/robot.yaml` and are guesses until measured.
+
 ## Robot model
 
 The model folder uses the AdvantageScope layout (`model.glb` for the chassis, `model_N.glb` per component,
@@ -94,6 +101,7 @@ To check the renderer in a plain browser against a real log: `CRUCIBLE_SAMPLE_LO
 | `src/renderer/src/lib/plot.ts` | uPlot panel |
 | `src/engine`, `src/games` | physics engine and game modules (see Simulation) |
 | `src/engine/bridge`, `src/engine/drivetrain.ts` | sim bridge (frames, NT client, session) and the swerve model |
+| `src/engine/balls.ts` | the hybrid ball model: capture, stages, beam breaks, launch |
 | `src/engine/mechanism.ts`, `motors.ts` | rotary mechanism physics and motor constants |
 | `robots/offseason/robot.yaml`, `src/robots/` | robot definition and its loader/checker |
 | `src/main/robot.ts` | robot process launcher for the Electron main process |

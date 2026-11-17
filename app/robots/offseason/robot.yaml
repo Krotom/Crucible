@@ -46,3 +46,44 @@ mechanisms:
   # the setpoints are corrected.
   - { id: 33, name: intakeDriver,  motor: krakenX60, count: 2, gearRatio: 3.75,    inertia: 0.002 }
   - { id: 35, name: intakeRoller,  motor: krakenX60, count: 1, gearRatio: 1.4,     inertia: 0.005 }
+
+# Ball handling (the hybrid ball model): the intake capture volume, the stages a piece rides through, the beam breaks and the
+# shooter. All of it is GUESS until measured from the CAD and the robot: the box and stage lengths follow the CAD intake
+# (rollers near x 0.6) loosely; roller radius 1 in; wheel radius 2.25 in compliant wheels / 2; efficiency, exit elevation
+# and backspin are the shot-calibration knobs (milestone M12).
+ballHandling:
+  piece: ball
+  intake:
+    driver: intakeDriver
+    metersPerRotation: 0.0785   # CAD: 10-tooth pinion, 25 mm pitch diameter
+    travel: 0.293               # CAD: the open pose
+    slideAxis: [0.98370, 0.0, -0.17967]   # CAD: 10.35 deg below horizontal
+    openBox: { center: [0.56, 0.0, 0.11], half: [0.16, 0.32, 0.12] }
+    minExtension: 0.8
+    roller: intakeRoller
+    rollerRadius: 0.0254
+    rollerDirection: 1
+    minRollerRps: 5
+    maxRelativeSpeed: 4.0
+  stages:
+    - { name: intake,  length: 0.30, driver: intakeRoller, direction: 1,  radius: 0.0254 }
+    - { name: indexer, length: 0.40, driver: indexer,      direction: -1, radius: 0.0254 }   # the code runs the indexer negative to feed
+    - { name: feeder,  length: 0.25, driver: feeder,       direction: 1,  radius: 0.0254 }
+  beams:
+    - { name: indexerEntry, position: 0.30 }
+    - { name: feederEntry,  position: 0.70 }
+    - { name: exit,         position: 0.95 }
+  shooter:
+    turret: turret
+    hood: hood
+    flywheel: shooter
+    axis: [-0.137, -0.1364]     # CAD: turret ring gear center
+    exitForward: 0.15
+    exitHeight: 0.62
+    wheelRadius: 0.0286
+    efficiency: 0.7
+    elevationAtHoodZeroDeg: 80
+    hoodDegPerRotation: 10      # Mechanism3d
+    backspin: 0.2
+    minFeedSpeed: 0.5
+    minFlywheelRps: 5

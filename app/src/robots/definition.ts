@@ -2,6 +2,7 @@
 import { parse } from 'yaml'
 import type { DrivetrainSpec } from '../engine/drivetrain'
 import type { MechanismSpec } from '../engine/mechanism'
+import type { BallHandlingSpec, Vec3 } from '../engine/types'
 import { MOTORS } from '../engine/motors'
 
 export interface RobotDefinition {
@@ -11,6 +12,7 @@ export interface RobotDefinition {
   start: { x: number; y: number; yaw: number }
   drivetrain: DrivetrainSpec
   mechanisms: MechanismSpec[]
+  balls?: BallHandlingSpec
 }
 
 type Obj = Record<string, unknown>
@@ -89,6 +91,8 @@ export function parseDefinition(text: string): RobotDefinition {
     return spec
   })
 
+  const balls = root.ballHandling === undefined ? undefined : parseBalls(obj(root.ballHandling, 'ballHandling'), new Set(mechanisms.map((m) => m.name)))
+
   return {
     name: str(root, 'robot', 'file'),
     mass: drivetrain.mass,
@@ -96,6 +100,60 @@ export function parseDefinition(text: string): RobotDefinition {
     start: { x: num(start, 'x', 'chassis.start'), y: num(start, 'y', 'chassis.start'), yaw: num(start, 'yaw', 'chassis.start') },
     drivetrain,
     mechanisms,
+    balls,
+  }
+}
+
+function vec3(v: unknown, where: string): Vec3 {
+  if (!Array.isArray(v) || v.length !== 3 || v.some((x) => typeof x !== 'number')) throw new Error(`robot definition: ${where} must be three numbers`)
+  return v as Vec3
+}
+
+function mech(o: Obj, key: string, where: string, names: Set<string>): string {
+  const name = str(o, key, where)
+  if (!names.has(name)) throw new Error(`robot definition: ${where}.${key} "${name}" is not a mechanism in the list above`)
+  return name
+}
+
+function sign(o: Obj, key: string, where: string): 1 | -1 {
+  const v = num(o, key, where)
+  if (v !== 1 && v !== -1) throw new Error(`robot definition: ${where}.${key} must be 1 or -1`)
+  return v
+}
+
+function parseBalls(b: Obj, names: Set<string>): BallHandlingSpec {
+  const i = obj(b.intake, 'ballHandling.intake')
+  const sh = obj(b.shooter, 'ballHandling.shooter')
+  const box = obj(i.openBox, 'ballHandling.intake.openBox')
+  const stages = b.stages
+  const beams = b.beams
+  if (!Array.isArray(stages) || stages.length === 0) throw new Error('robot definition: ballHandling.stages must be a list')
+  if (!Array.isArray(beams)) throw new Error('robot definition: ballHandling.beams must be a list')
+  const axis = sh.axis
+  if (!Array.isArray(axis) || axis.length !== 2 || axis.some((x) => typeof x !== 'number')) throw new Error('robot definition: ballHandling.shooter.axis must be two numbers')
+  const w = 'ballHandling.intake'
+  const s = 'ballHandling.shooter'
+  return {
+    piece: str(b, 'piece', 'ballHandling'),
+    intake: {
+      driver: mech(i, 'driver', w, names), metersPerRotation: num(i, 'metersPerRotation', w), travel: num(i, 'travel', w),
+      slideAxis: vec3(i.slideAxis, `${w}.slideAxis`),
+      openBox: { center: vec3(box.center, `${w}.openBox.center`), half: vec3(box.half, `${w}.openBox.half`) },
+      minExtension: num(i, 'minExtension', w), roller: mech(i, 'roller', w, names), rollerRadius: num(i, 'rollerRadius', w),
+      rollerDirection: sign(i, 'rollerDirection', w), minRollerRps: num(i, 'minRollerRps', w), maxRelativeSpeed: num(i, 'maxRelativeSpeed', w),
+    },
+    stages: stages.map((x, k) => {
+      const o = obj(x, `ballHandling.stages[${k}]`)
+      const ww = `ballHandling.stages[${k}]`
+      return { name: str(o, 'name', ww), length: num(o, 'length', ww), driver: mech(o, 'driver', ww, names), direction: sign(o, 'direction', ww), radius: num(o, 'radius', ww) }
+    }),
+    beams: beams.map((x, k) => { const o = obj(x, `ballHandling.beams[${k}]`); return { name: str(o, 'name', `ballHandling.beams[${k}]`), position: num(o, 'position', `ballHandling.beams[${k}]`) } }),
+    shooter: {
+      turret: mech(sh, 'turret', s, names), hood: mech(sh, 'hood', s, names), flywheel: mech(sh, 'flywheel', s, names),
+      axis: [axis[0] as number, axis[1] as number], exitForward: num(sh, 'exitForward', s), exitHeight: num(sh, 'exitHeight', s),
+      wheelRadius: num(sh, 'wheelRadius', s), efficiency: num(sh, 'efficiency', s), elevationAtHoodZeroDeg: num(sh, 'elevationAtHoodZeroDeg', s),
+      hoodDegPerRotation: num(sh, 'hoodDegPerRotation', s), backspin: num(sh, 'backspin', s), minFeedSpeed: num(sh, 'minFeedSpeed', s), minFlywheelRps: num(sh, 'minFlywheelRps', s),
+    },
   }
 }
 

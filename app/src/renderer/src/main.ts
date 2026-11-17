@@ -266,6 +266,7 @@ function simFrame(): void {
     `time   ${f.time.toFixed(2)} s  (${sim.running ? sim.simRate.toFixed(2) + 'x real time' : 'paused'})`,
     `score  blue ${f.scores.blue}  red ${f.scores.red}`,
     `balls  ${f.pieceCount} (${f.awakeCount} moving)`,
+    ...(f.capture ? [`robot  holds ${f.held.length}  beams ${f.beams.map((b) => (b ? '#' : '.')).join('')}  caught ${f.captured}  shots ${f.shots}${f.capture.active ? '  INTAKE ON' : ''}`] : []),
     `hash   ${f.hash}`,
     ...(sim.bridge ? [
       `robot  ${sim.bridge.connected ? 'connected' : 'waiting for robot'}${sim.bridge.frames ? `, ${sim.bridge.frames} frames, ${sim.bridge.robotEnabled ? 'enabled' : 'disabled'}` : ''}`,

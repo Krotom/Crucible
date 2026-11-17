@@ -167,11 +167,11 @@ describe('scripted robot', () => {
 })
 
 describe('golden run', () => {
-  // The state hash of game-test, seed 42, after 8 s. The same value comes out of the app's worker in Electron/Chromium
+  // The state hash of game-test (with foam and Magnus balls and the hub), seed 42, after 8 s. The same value comes out of the app's worker in Electron/Chromium
   // and out of Node, so a change here means the physics or the game changed (update it on purpose, never to silence a failure).
   it('matches the recorded hash', async () => {
     const e = await Engine.create({ game: createTestGame(), robot: TEST_ROBOT, seed: 42 })
     e.run(8)
-    expect(e.hash()).toBe('d621ab8a911ca618')
+    expect(e.hash()).toBe('1651c2934f5eec69')
   })
 })

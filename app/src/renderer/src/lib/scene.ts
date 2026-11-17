@@ -19,6 +19,7 @@ export class SceneView {
   private simGroup: THREE.Group | null = null
   private pieceMeshes: THREE.InstancedMesh[] = []
   private robotBox: THREE.LineSegments | null = null
+  private captureBox: THREE.LineSegments | null = null
   private components: THREE.Group[] = []
   private ro: ResizeObserver
 
@@ -158,6 +159,10 @@ export class SceneView {
     )
     this.robotBox.position.z = 0
     this.robot.add(this.robotBox)
+    // the intake capture volume, drawn in the world (green while it is catching pieces)
+    this.captureBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(2, 2, 2)), new THREE.LineBasicMaterial({ color: 0x555d66 }))
+    this.captureBox.visible = false
+    g.add(this.captureBox)
     this.controls.target.set(field.length / 2, field.width / 2, 0)
     this.camera.position.set(field.length / 2, -field.width * 0.9, field.width * 1.1)
     this.controls.update()
@@ -167,6 +172,7 @@ export class SceneView {
     if (this.simGroup) { this.scene.remove(this.simGroup); this.simGroup = null }
     this.pieceMeshes = []
     if (this.robotBox) { this.robot.remove(this.robotBox); this.robotBox = null }
+    this.captureBox = null
     this.base.visible = true
   }
 
@@ -177,6 +183,16 @@ export class SceneView {
     this.robot.position.set(f.robot[0], f.robot[1], f.robot[2] - robotHalfZ)
     this.robot.quaternion.set(f.robot[4], f.robot[5], f.robot[6], f.robot[3])
     if (this.robotBox) this.robotBox.position.z = robotHalfZ
+    if (this.captureBox) {
+      const c = f.capture
+      this.captureBox.visible = c !== null
+      if (c) {
+        this.captureBox.position.set(c.center[0], c.center[1], c.center[2])
+        this.captureBox.rotation.z = c.yaw
+        this.captureBox.scale.set(c.half[0], c.half[1], c.half[2])
+        ;(this.captureBox.material as THREE.LineBasicMaterial).color.set(c.active ? 0x7bed9f : 0x555d66)
+      }
+    }
     const counts = new Array(this.pieceMeshes.length).fill(0)
     const m = new THREE.Matrix4()
     for (let i = 0; i < f.pieceCount; i++) {

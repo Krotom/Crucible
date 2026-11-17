@@ -74,6 +74,9 @@ export class SimSource {
     s.liveSeries('/Sim/Score/Red', 'int').push(t, f.scores.red)
     s.liveSeries('/Sim/Balls/Count', 'int').push(t, f.pieceCount)
     s.liveSeries('/Sim/Balls/Awake', 'int').push(t, f.awakeCount)
+    s.liveSeries('/Sim/Balls/Held', 'int').push(t, f.held.length)
+    s.liveSeries('/Sim/Balls/Shots', 'int').push(t, f.shots)
+    f.beams.forEach((b, i) => s.liveSeries(`/Sim/Beam${i}`, 'boolean').push(t, b))
     s.liveSeries('/Sim/Phase', 'string').push(t, f.phase)
     s.touchLive(t)
   }

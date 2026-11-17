@@ -63,7 +63,7 @@ async function handle(m: ToWorker): Promise<void> {
         bridge = null
         const game = createTestGame()
         const robot = m.mode === 'robot'
-          ? { half: OFFSEASON.bumper, start: OFFSEASON.start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms }
+          ? { half: OFFSEASON.bumper, start: OFFSEASON.start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls }
           : TEST_ROBOT
         engine = await Engine.create({ game, robot, seed: m.seed })
         snapshot = null

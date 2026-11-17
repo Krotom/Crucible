@@ -44,6 +44,10 @@ export interface PieceSpec {
   dragCoefficient: number
   /** Angular damping standing in for rolling resistance. */
   rollingDamping: number
+  /** Magnus lift from spin: C_L = min(max, gain * spin parameter), spin parameter = r * w / v. Omit for no lift. */
+  magnus?: { gain: number; max: number }
+  /** Foam: restitution multiplier by speed, piecewise linear [m/s, factor]; harder hits bounce less. Omit for a constant. */
+  restitutionCurve?: [number, number][]
   color: number
 }
 
@@ -65,6 +69,8 @@ export interface MatchFlowSpec {
 }
 
 export type GameEvent =
+  | { type: 'piece-captured'; pieceId: number; spec: string }
+  | { type: 'piece-launched'; spec: string; speed: number }
   | { type: 'piece-entered-sensor'; sensor: SensorSpec; pieceId: number; spec: string }
   | { type: 'piece-left-sensor'; sensor: SensorSpec; pieceId: number; spec: string }
   | { type: 'phase-changed'; from: string | null; to: string }
@@ -108,7 +114,59 @@ export interface ScriptSegment {
   omega: number
 }
 
+/**
+ * How the robot takes in and shoots game pieces (the hybrid ball model): pieces outside the robot are rigid bodies; an intake
+ * capture volume turns them into entries of a virtual queue that rides through the stages, and the shooter spawns a rigid body
+ * with a computed launch state. Mechanism names refer to `RobotSpec.mechanisms`.
+ */
+export interface BallHandlingSpec {
+  piece: string
+  intake: {
+    /** mechanism that slides the intake out (position in rotations), and the metres of travel per rotation and in total */
+    driver: string
+    metersPerRotation: number
+    travel: number
+    /** unit slide direction in the robot frame (forward and down) */
+    slideAxis: Vec3
+    /** the capture box with the intake fully out, robot frame (+X forward, Z from the floor) */
+    openBox: { center: Vec3; half: Vec3 }
+    /** captures only while the intake is at least this fraction out */
+    minExtension: number
+    roller: string
+    rollerRadius: number
+    /** sign of the roller speed that pulls pieces in */
+    rollerDirection: 1 | -1
+    minRollerRps: number
+    /** pieces moving faster than this relative to the robot are not caught, m/s */
+    maxRelativeSpeed: number
+  }
+  /** Stages from the intake mouth to the shooter, each with a driving mechanism; pieces ride at the roller surface speed. */
+  stages: { name: string; length: number; driver: string; direction: 1 | -1; radius: number }[]
+  /** Beam breaks at positions along the stage path (m from the intake mouth); true while a piece overlaps them. */
+  beams: { name: string; position: number }[]
+  shooter: {
+    turret: string
+    hood: string
+    flywheel: string
+    /** turret axis in the robot frame, and where the piece leaves relative to it */
+    axis: [number, number]
+    exitForward: number
+    exitHeight: number
+    wheelRadius: number
+    /** piece speed over flywheel surface speed (compression and slip) */
+    efficiency: number
+    elevationAtHoodZeroDeg: number
+    hoodDegPerRotation: number
+    /** spin parameter at launch (backspin), r * w / v */
+    backspin: number
+    /** the last stage must push at least this fast, m/s, and the flywheel must turn at least this fast, rps */
+    minFeedSpeed: number
+    minFlywheelRps: number
+  }
+}
+
 export interface RobotSpec {
+  balls?: BallHandlingSpec
   /** When set, the robot is a dynamic body driven by this swerve model (voltages in, forces out) instead of the script. */
   drivetrain?: DrivetrainSpec
   /** Rotary mechanisms driven by Talons, by CAN id (voltages in, rotor states out). */
@@ -148,6 +206,7 @@ export interface EngineSnapshot {
   gameState: Record<string, unknown>
   drivetrain?: unknown
   mechanisms?: Record<number, unknown>
+  balls?: { held: number[]; shots: number; captured: number }
 }
 
 /** What the renderer needs each frame. */
@@ -164,4 +223,11 @@ export interface RenderFrame {
   piecePositions: Float32Array
   pieceSpecIndex: Uint8Array
   hash: string
+  /** pieces inside the robot, their positions along the stage path (m from the intake mouth), and the beam breaks */
+  held: number[]
+  beams: boolean[]
+  /** the intake capture volume in the world (for drawing), null when there is no ball handling */
+  capture: { center: Vec3; yaw: number; half: Vec3; active: boolean } | null
+  shots: number
+  captured: number
 }
