@@ -1,4 +1,4 @@
-; BALTA Crucible installer (NSIS 3, Modern UI 2). Built by scripts/build-installer.mjs, which stages the application and passes
+﻿; BALTA Crucible installer (NSIS 3, Modern UI 2). Built by scripts/build-installer.mjs, which stages the application and passes
 ;   /DVERSION=1.0.0 /DSTAGE=<staged app folder> /DOUTFILE=<installer path> /DRES=<this folder>
 Unicode true
 ManifestDPIAware true
