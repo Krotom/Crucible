@@ -1,0 +1,122 @@
+package frc.robot;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import com.ctre.phoenix6.sim.CANcoderSimState;
+import com.ctre.phoenix6.sim.ChassisReference;
+import com.ctre.phoenix6.sim.Pigeon2SimState;
+import com.ctre.phoenix6.sim.TalonFXSimState;
+import com.ctre.phoenix6.unmanaged.Unmanaged;
+
+import edu.wpi.first.hal.HAL;
+import edu.wpi.first.wpilibj.Notifier;
+import edu.wpi.first.wpilibj.simulation.DriverStationSim;
+import frc.robot.subsystems.swerve.generated.TunerConstants;
+import frc.robot.subsystems.swerve.generated.TunerConstants.TunerSwerveDrivetrain;
+
+/**
+ * M0 spike S4: build the CTRE swerve drivetrain WITHOUT calling updateSimState (so CTRE's internal sim never runs) and
+ * feed the module drive/steer motors, CANcoders and Pigeon from "the app" instead. Does the odometry follow?
+ */
+class SwerveSpikeTest {
+    @BeforeAll
+    static void setup() {
+        HAL.initialize(500, 0);
+        DriverStationSim.setEnabled(true);
+        DriverStationSim.setDsAttached(true);
+        DriverStationSim.notifyNewData();
+    }
+
+    // from TunerConstants (private there): 2 in wheels, 7.03125:1 drive, 26.0909:1 steer
+    private static final double WHEEL_RADIUS_M = 0.0508;
+    private static final double DRIVE_RATIO = 7.03125;
+    private static final double STEER_RATIO = 26.09090909090909;
+
+    @Test
+    void s4_swerveFromExternalStates() throws Exception {
+        var dt = new TunerSwerveDrivetrain(TunerConstants.DrivetrainConstants,
+                TunerConstants.FrontLeft, TunerConstants.FrontRight, TunerConstants.BackLeft, TunerConstants.BackRight);
+
+        TalonFXSimState[] drive = new TalonFXSimState[4], steer = new TalonFXSimState[4];
+        CANcoderSimState[] enc = new CANcoderSimState[4];
+        for (int i = 0; i < 4; i++) {
+            var m = dt.getModule(i);
+            drive[i] = m.getDriveMotor().getSimState();
+            steer[i] = m.getSteerMotor().getSimState();
+            enc[i] = m.getEncoder().getSimState();
+            boolean rightSide = (i == 1 || i == 3); // FR, BR are configured inverted
+            drive[i].Orientation = rightSide ? ChassisReference.Clockwise_Positive : ChassisReference.CounterClockwise_Positive;
+            drive[i].setMotorType(TalonFXSimState.MotorType.KrakenX60);
+            steer[i].setMotorType(TalonFXSimState.MotorType.KrakenX60);
+        }
+        Pigeon2SimState pigeon = dt.getPigeon2().getSimState();
+        // the CANcoder REPORTS raw + MagnetOffset, so to report azimuth 0 the bridge must set raw = azimuth - MagnetOffset
+        final double[] magnetOffset = new double[4];
+        for (int i = 0; i < 4; i++) {
+            var cfg = new com.ctre.phoenix6.configs.CANcoderConfiguration();
+            dt.getModule(i).getEncoder().getConfigurator().refresh(cfg);
+            magnetOffset[i] = cfg.MagnetSensor.MagnetOffset;
+            System.out.printf("S4 module %d CANcoder MagnetOffset = %.4f rot%n", i, magnetOffset[i]);
+        }
+
+        // the "world": drive straight at 1 m/s from t=0.5 s, then rotate at 90 deg/s from t=4.0 s
+        final double period = 0.005;
+        final double[] t = { 0 };
+        final double[] rotorPos = { 0 }, yaw = { 0 };
+        final double[] truthX = { 0 };
+        double[] vNow = { 0 }, wNow = { 0 };
+
+        Notifier world = new Notifier(() -> {
+            Unmanaged.feedEnable(100);
+            t[0] += period;
+            double v = (t[0] >= 0.5 && t[0] < 4.0) ? 1.0 : 0.0;
+            double w = (t[0] >= 4.0) ? 90.0 : 0.0;
+            vNow[0] = v; wNow[0] = w;
+            double wheelRps = v / (2 * Math.PI * WHEEL_RADIUS_M);
+            double rotorRps = wheelRps * DRIVE_RATIO;
+            rotorPos[0] += rotorRps * period;
+            truthX[0] += v * period;
+            yaw[0] += w * period;
+            for (int i = 0; i < 4; i++) {
+                drive[i].setRawRotorPosition(rotorPos[0]);
+                drive[i].setRotorVelocity(rotorRps);
+                steer[i].setRawRotorPosition(0);
+                steer[i].setRotorVelocity(0);
+                enc[i].setRawPosition(0.0 - magnetOffset[i]); // azimuth 0
+                enc[i].setVelocity(0);
+            }
+            pigeon.setRawYaw(yaw[0]);
+            pigeon.setAngularVelocityZ(w);
+        });
+        world.startPeriodic(period);
+
+        long start = System.nanoTime();
+        double lagSum = 0; int lagN = 0;
+        while ((System.nanoTime() - start) / 1e9 < 6.5) {
+            Thread.sleep(250);
+            var s = dt.getState();
+            double now = t[0];
+            System.out.printf("S4 t=%.2f truth x=%.3f yaw=%.1f | odometry x=%.3f y=%.3f heading=%.1f deg | odometry rate %.0f Hz%n",
+                    now, truthX[0], yaw[0], s.Pose.getX(), s.Pose.getY(), s.Pose.getRotation().getDegrees(),
+                    s.OdometryPeriod > 0 ? 1.0 / s.OdometryPeriod : 0.0);
+            if (now > 1.5 && now < 3.9) { lagSum += (truthX[0] - s.Pose.getX()); lagN++; }
+            if (now > 1.4 && now < 1.8) {
+                for (int i = 0; i < 4; i++) {
+                    var mod = dt.getModule(i);
+                    System.out.printf("S4   module %d: reported distance=%.3f m angle=%.1f deg speed=%.3f m/s | drive pos signal=%.3f steer pos signal=%.4f cancoder pos=%.4f abs=%.4f%n", i,
+                        s.ModulePositions[i].distanceMeters, s.ModulePositions[i].angle.getDegrees(), s.ModuleStates[i].speedMetersPerSecond,
+                        mod.getDriveMotor().getPosition().getValueAsDouble(), mod.getSteerMotor().getPosition().getValueAsDouble(),
+                        mod.getEncoder().getPosition().getValueAsDouble(), mod.getEncoder().getAbsolutePosition().getValueAsDouble());
+                }
+            }
+        }
+        world.stop();
+        world.close();
+        double avgGap = lagN > 0 ? lagSum / lagN : Double.NaN;
+        System.out.printf("S4 RESULT: while driving at 1 m/s the odometry trailed the truth by %.3f m on average = %.0f ms of lag%n", avgGap, avgGap * 1000.0);
+        var f = dt.getState();
+        System.out.printf("S4 final: truth x=%.3f, odometry x=%.3f y=%.3f; truth yaw=%.1f, odometry heading=%.1f deg%n",
+                truthX[0], f.Pose.getX(), f.Pose.getY(), yaw[0], f.Pose.getRotation().getDegrees());
+    }
+}

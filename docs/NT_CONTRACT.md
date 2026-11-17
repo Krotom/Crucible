@@ -110,7 +110,9 @@ Published by the app under `/SimWorld/`, not part of the control loop:
 
 ## 6. Mode B (lockstep) additions (milestone M8)
 
-Not built first. Additional topics:
+Not built first. **Transport change from M0:** NT cannot do a round trip faster than ~5 ms, so lockstep frames, `Step`
+and `Ack` run on a dedicated local WebSocket (the Hello topic advertises its port; ~0.09 ms round trip measured, ~7.9k
+exchanges per second). NT keeps the human-visible and AdvantageScope topics. The logical messages are the same as below:
 
 | Topic | Direction | Notes |
 |---|---|---|
@@ -123,15 +125,21 @@ Sequence per step: the app sends `Step(seq, dt)`; the robot applies `FromApp(seq
 then sets `Ack = seq`; the app reads `ToApp(seq)`, steps the physics by `dt`, publishes `FromApp(seq)` and sends the
 next `Step`. In this mode all Talon control uses the Java emulation, not the Phoenix sim (see PLAN.md section 3).
 
-## 7. Things the spikes will decide
+## 7. What the spikes decided (see spikes/M0_RESULTS.md)
 
-- **S1:** NT4 round-trip time and throughput between Electron and the robot process at 100 to 1000 frames/s; whether
-  200 Hz exchange is comfortable; whether `raw` frames of a few hundred bytes are fine.
-- **S2:** that applying `setRawRotorPosition` and friends from an app frame reproduces today's `TalonFXSim` behavior.
-- **S4:** the CTRE swerve path: whether the odometry thread accepts externally set module, CANcoder and Pigeon states,
-  and how much lag that adds.
-- Frame size and the choice between `raw` and a WPILib `struct` array if AdvantageScope-visible frames turn out to be
-  worth the overhead.
+- **S1:** NT4 delivers server-to-client updates no faster than about 5 ms, so an NT round trip floors near 5 ms.
+  A 5 ms exchange period is fine for Mode A. `raw` frames of a few hundred bytes work. Large binary messages can
+  arrive fragmented (the Java WebSocket client splits them): reassemble before parsing. Faster-than-real-time needs
+  the side channel in section 6.
+- **S2:** applying `setRawRotorPosition` and friends from an app frame reproduces today's `TalonFXSim` behavior
+  (hood step response 0.62 s vs 0.59 s). Set the sim state's motor type to match the real device and the
+  `Orientation` for inverted mechanisms.
+- **S4:** the CTRE swerve accepts externally set drive/steer rotor states, CANcoder positions and Pigeon yaw with
+  essentially zero lag. **CANcoder rule:** the app sends the *reported* azimuth; the bridge sets
+  `raw = azimuth - MagnetOffset`, because the device reports `raw + MagnetOffset`. Drive sim states of inverted
+  (right-side) modules use `Orientation = Clockwise_Positive`.
+- Open: choice between `raw` and a WPILib `struct` array if AdvantageScope-visible frames turn out to be worth the
+  overhead.
 
 ## 8. Versioning
 

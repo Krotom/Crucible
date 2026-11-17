@@ -1,4 +1,4 @@
-# OffSeasonSim
+# Crucible
 
 A physics simulation app for FRC robot code: it receives motor outputs over NetworkTables, simulates the drivetrain,
 mechanisms, game pieces and field (with game-specific scoring), and returns sensor values. Like AdvantageScope for

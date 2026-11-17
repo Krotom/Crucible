@@ -1,7 +1,7 @@
-# OffSeasonSim — plan
+# Crucible — plan
 
-Status: draft v1, 2026-11-17. Working title (rename freely). Companion docs: [NT_CONTRACT.md](NT_CONTRACT.md),
-[spikes/S5_LOCKSTEP_TALON.md](spikes/S5_LOCKSTEP_TALON.md), and (to be written) `rules/REBUILT_RULES_EXTRACT.md`.
+Status: draft v2, 2026-11-17, after M0 (spikes done, all GO). Companion docs: [NT_CONTRACT.md](NT_CONTRACT.md),
+[spikes/M0_RESULTS.md](spikes/M0_RESULTS.md), [spikes/S5_LOCKSTEP_TALON.md](spikes/S5_LOCKSTEP_TALON.md), and (to be written) `rules/REBUILT_RULES_EXTRACT.md`.
 
 ## 1. Goal
 
@@ -37,6 +37,13 @@ connecting to a real robot, FTC.
 | Distribution | Private team tool. Windows first. |
 | Pace | Side project, no deadline: milestones, each one stoppable with something usable. |
 | Calibration data | None yet. Ship calibration knobs and a fitting workflow now; fit when data exists. |
+| Name and home | **Crucible**, private repo `Krotom/Crucible`. |
+| Field geometry and rules | Researched from the official game documents at M6 (rules extract), then reviewed by you before encoding. |
+| Robot CAD | You supply the full current CAD; until then the definition file carries the values from the robot code. |
+| Multi-robot (M10) | Scripted bots first. |
+| Robot process | The app launches the robot sim itself (and can attach to one you started). |
+| Gamepad | Defaults to the existing `UniversalController` mapping; PathPlanner autos run inside the robot code, so the app does not replay them. |
+| Mode B transport | Dedicated local WebSocket side channel (NT floors at ~5 ms per round trip, see M0). |
 
 ## 3. What the spike found (S5) and why timing has two modes
 
@@ -68,7 +75,7 @@ Consequences:
 ## 4. Architecture
 
 ```
- ┌────────────────────── robot process (Java) ──────────────────────┐        ┌───────────────────── OffSeasonSim (Electron) ─────────────────────┐
+ ┌────────────────────── robot process (Java) ──────────────────────┐        ┌───────────────────── Crucible (Electron) ─────────────────────┐
  │ robot code  ── IO interfaces ── *IOSim ──► sim-bridge library     │        │ main process: robot launcher, file I/O, settings                    │
  │ Phoenix sim (Talon control loops, current limits)                 │  NT4   │ physics worker: NT4 client ─► engine (Rapier + models) ─► NT4       │
  │ WPILib HAL sim + DriverStationSim                                 │◄──────►│ renderer: three.js scene, panels, timeline, plots                   │
@@ -273,7 +280,7 @@ Every milestone ends with something you can run.
 
 | # | Milestone | Size | Done when |
 |---|---|---|---|
-| M0 | **Spikes**: S1 NT4 round-trip and throughput from Electron; S2 minimal bridge on the hood in real time; S3 Rapier determinism and hundreds-of-balls performance; S4 CTRE swerve driven by externally set module, CANcoder and Pigeon states; S5 lockstep vs Talon (done) | M | A written go or no-go for each spike, with measurements, and `NT_CONTRACT.md` updated |
+| M0 | **Spikes (done, all GO, see [M0_RESULTS](spikes/M0_RESULTS.md))**: S1 NT4 round-trip and throughput from Electron; S2 minimal bridge on the hood in real time; S3 Rapier determinism and hundreds-of-balls performance; S4 CTRE swerve driven by externally set module, CANcoder and Pigeon states; S5 lockstep vs Talon (done) | M | A written go or no-go for each spike, with measurements, and `NT_CONTRACT.md` updated |
 | M1 | **Viewer skeleton**: Electron app, NT4 client, 3D scene with your robot model, live view of existing topics (`Swerve/Pose`, `Mechanism3d/Components`), `.wpilog` playback and a basic plot panel | M | You can open a log of your robot and watch it live in the app |
 | M2 | **Engine core with a test game**: fixed-step loop, Rapier world, plug-in host, `game-test`, ball spawning and bounce, scripted robot body, snapshots | L | Balls bounce deterministically in the app with a scripted kinematic robot |
 | M3 | **Bridge + drivetrain authority**: robot-side bridge, per-module swerve model, Driver Station and gamepad control, robot odometry matches physics truth | L | Drive the robot with a gamepad in the app; robot code's odometry agrees with the app |
@@ -318,27 +325,27 @@ We have no measured data yet, so v1 is built to be tunable and honest about it:
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Talon sim vs lockstep (measured) | No faster-than-real-time with real Phoenix sim | Two-mode design; Mode B emulates controllers |
-| CTRE swerve will not accept externally set module states, or its odometry thread lags | Full drivetrain authority is harder than planned | Spike S4 first; fallback is the sim drivetrain layer from Mode B used in Mode A too |
-| NT latency or atomicity | Jittery or torn frames | Single packed frame per direction with sequence numbers; S1 measures round trip; fallback to a dedicated local channel for frames only |
+| CTRE swerve will not accept externally set module states, or its odometry thread lags | Full drivetrain authority is harder than planned | Resolved by S4: accepted with ~0 lag. Keep the CANcoder MagnetOffset rule in the bridge tests |
+| NT latency or atomicity | Jittery or torn frames | Single packed frame per direction with sequence numbers. Measured (S1): NT floors at ~5 ms per round trip, fine for Mode A; Mode B uses a dedicated WebSocket channel |
 | Physics fidelity without data | Wrong behavior that looks right | Knobs plus calibration milestone; sanity checks; clear labels on estimates |
 | Rules accuracy | Wrong scoring | Researched extract, your review gate, tests mirroring the extract |
 | Scope | Never finishing | Milestones with stopping points; each one usable |
-| Rapier determinism or performance in WASM and Electron | Mode B or large ball counts fail | Spike S3; physics in a worker; deterministic build; budget ball count from the rules |
+| Rapier determinism or performance in WASM and Electron | Mode B or large ball counts fail | S3: the deterministic build is deterministic and snapshots restore exactly; 100 to 300 active balls fine, 600+ dense plow ~0.5 to 1x. Keep physics in a worker, budget active balls, sleep settled ones, ball step 2 to 4 ms |
 | Foam deformation modeling cost | Time sink | Start with a speed-dependent restitution curve; visual squish last |
 | Phoenix and WPILib version changes | Bridge breaks | Keep the bridge small and versioned; protocol version in the handshake |
 
 ## 14. Open questions
 
-1. App name and repository home (local folder only for now; a private GitHub repo?).
-2. Field geometry source for REBUILT colliders: official field CAD (visual) plus simplified colliders built from the
-   official drawings, or something you already have?
-3. Estimated robot mass, bumper footprint and wheel type, to seed the definition file until measured.
-4. How should the first multi-robot version look: scripted bots, a second robot process, or both?
-5. Gamepad mapping: reuse your `UniversalController` mapping, or define one in the app?
-6. Should scripted input reuse PathPlanner autos where possible?
-7. Should the sim truth also be logged through AdvantageKit on the robot side (a topic the robot logs), or only
-   in the app's own log?
-8. Do you want the app to start the robot sim for you (recommended) or attach to one you start yourself?
+Resolved: app name and repo (Crucible, `Krotom/Crucible`), field geometry source (official documents, researched at
+M6), multi-robot (scripted bots), gamepad mapping (`UniversalController` default), PathPlanner autos (they run inside
+the robot code), app launches the robot sim (yes).
+
+Still open:
+
+1. Full current robot CAD (you will supply it); mass, bumper footprint and wheel type until then.
+2. Should the sim truth also be logged through AdvantageKit on the robot side, or only in the app's own log?
+3. Mode B: how much of the Talon emulation can be shared with the existing `TalonFXSim` code (decide at M8).
+4. Ball-count budget per game: set when the REBUILT rules extract says how many fuel are on the field.
 
 ## 15. Prior art to review (not yet reviewed in this session)
 
@@ -355,7 +362,7 @@ about them above is from memory and needs checking.
 ## 16. Proposed repository layout
 
 ```
-OffSeasonSim/
+Crucible/
   docs/                 PLAN.md, NT_CONTRACT.md, spikes/, rules/
   packages/
     engine/             game-agnostic physics and world (TypeScript, no UI)

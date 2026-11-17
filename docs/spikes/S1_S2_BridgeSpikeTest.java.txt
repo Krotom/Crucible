@@ -1,0 +1,287 @@
+package frc.robot;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import com.ctre.phoenix6.hardware.TalonFX;
+import com.ctre.phoenix6.sim.ChassisReference;
+import com.ctre.phoenix6.sim.TalonFXSimState;
+import com.ctre.phoenix6.unmanaged.Unmanaged;
+
+import edu.wpi.first.hal.HAL;
+import edu.wpi.first.math.system.plant.DCMotor;
+import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.networktables.PubSubOption;
+import edu.wpi.first.networktables.RawPublisher;
+import edu.wpi.first.networktables.RawSubscriber;
+import edu.wpi.first.networktables.TimestampedRaw;
+import edu.wpi.first.wpilibj.Notifier;
+import edu.wpi.first.wpilibj.RobotController;
+import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.simulation.DriverStationSim;
+import frc.robot.Constants.HoodConstants;
+import frc.robot.subsystems.hood.HoodIO;
+import frc.robot.subsystems.hood.HoodIOInterface.HoodInputs;
+
+/**
+ * M0 spikes S1 and S2: NT4 round trip between a Java "robot bridge" and a Node "app", then the real hood Talon sim
+ * closed through the app. Throwaway; source archived in the Crucible repo under docs/spikes.
+ */
+class BridgeSpikeTest {
+    private static final String APP = "C:/Users/ProtonMe/wpiproj26/Crucible/spikes/s1s2-app.js";
+    private static final ByteOrder LE = ByteOrder.LITTLE_ENDIAN;
+
+    private NetworkTableInstance inst;
+    private RawPublisher toApp;
+    private RawSubscriber fromApp;
+    private Process node;
+
+    @BeforeAll
+    static void setup() {
+        HAL.initialize(500, 0);
+        DriverStationSim.setEnabled(true);
+        DriverStationSim.setDsAttached(true);
+        DriverStationSim.notifyNewData();
+    }
+
+    @AfterEach
+    void teardown() {
+        if (node != null) node.destroy();
+        if (inst != null) { inst.stopServer(); inst.close(); }
+    }
+
+    private void start(int port, String... extraArgs) throws Exception {
+        inst = NetworkTableInstance.create();
+        inst.startServer("", "", port - 1, port);
+        toApp = inst.getRawTopic("/SimBridge/main/ToApp/Frame").publish("raw");
+        fromApp = inst.getRawTopic("/SimBridge/main/FromApp/Frame")
+                .subscribe("raw", new byte[0], PubSubOption.keepDuplicates(true), PubSubOption.pollStorage(4096));
+        String[] base = { "node", APP, "--port", String.valueOf(port) };
+        String[] cmd = new String[base.length + extraArgs.length];
+        System.arraycopy(base, 0, cmd, 0, base.length);
+        System.arraycopy(extraArgs, 0, cmd, base.length, extraArgs.length);
+        node = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+        CountDownLatch ready = new CountDownLatch(1);
+        Thread t = new Thread(() -> {
+            try (var r = new BufferedReader(new InputStreamReader(node.getInputStream()))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    System.out.println("NODE " + line);
+                    if (line.startsWith("READY")) ready.countDown();
+                }
+            } catch (Exception ignored) { /* process ended */ }
+        });
+        t.setDaemon(true);
+        t.start();
+        if (!ready.await(15, TimeUnit.SECONDS)) throw new IllegalStateException("node app did not become ready");
+        Thread.sleep(500); // let the subscription reach the server
+    }
+
+    private static byte[] toAppFrame(long seq, double simTime, int id, double volts, int motorFlags) {
+        ByteBuffer b = ByteBuffer.allocate(52).order(LE);
+        b.putInt(0x31464253).putInt(0).putLong(seq).putDouble(simTime).putDouble(12.0).putShort((short) 1).putShort((short) 1);
+        b.putInt(id).putDouble(volts).putInt(motorFlags);
+        return b.array();
+    }
+
+    private static long seqOf(byte[] f) { return ByteBuffer.wrap(f).order(LE).getLong(8); }
+
+    private static String pct(long[] ns) {
+        long[] s = Arrays.stream(ns).filter(v -> v >= 0).sorted().toArray();
+        if (s.length == 0) return "no samples";
+        return String.format("n=%d  p50=%.2f ms  p95=%.2f ms  p99=%.2f ms  max=%.2f ms", s.length,
+                s[s.length / 2] / 1e6, s[(int) (s.length * 0.95)] / 1e6, s[(int) (s.length * 0.99)] / 1e6, s[s.length - 1] / 1e6);
+    }
+
+    // ---------------------------------------------------------------------------------------------- S1
+    @Test
+    void s1_roundTrip() throws Exception {
+        start(5815, "--mode", "echo");
+
+        // (a) strict ping-pong: how fast can one exchange complete?
+        int n = 3000;
+        long[] rtt = new long[n];
+        long t0 = System.nanoTime();
+        for (int k = 0; k < n; k++) {
+            long sent = System.nanoTime();
+            toApp.set(toAppFrame(k, 0, 40, 6.0, 0));
+            inst.flush();
+            boolean got = false;
+            while (!got) {
+                for (TimestampedRaw r : fromApp.readQueue()) if (seqOf(r.value) == k) { rtt[k] = System.nanoTime() - sent; got = true; }
+                if (System.nanoTime() - sent > 2_000_000_000L) throw new IllegalStateException("no reply for " + k);
+            }
+        }
+        double secs = (System.nanoTime() - t0) / 1e9;
+        System.out.printf("S1 ping-pong: %d exchanges in %.2f s = %.0f exchanges/s; RTT %s%n", n, secs, n / secs, pct(rtt));
+
+        // (b) paced like the real bridge: 200 Hz and 1000 Hz
+        for (int hz : new int[] { 200, 1000 }) {
+            int frames = hz * 4;
+            long period = 1_000_000_000L / hz;
+            long[] sentAt = new long[frames];
+            long[] rt = new long[frames];
+            Arrays.fill(rt, -1);
+            long start = System.nanoTime() + 50_000_000L;
+            for (int k = 0; k < frames; k++) {
+                long due = start + k * period;
+                while (System.nanoTime() < due) { /* spin */ }
+                sentAt[k] = System.nanoTime();
+                toApp.set(toAppFrame(100000L * hz + k, 0, 40, 6.0, 0));
+                inst.flush();
+                for (TimestampedRaw r : fromApp.readQueue()) {
+                    long s = seqOf(r.value) - 100000L * hz;
+                    if (s >= 0 && s < frames && rt[(int) s] < 0) rt[(int) s] = System.nanoTime() - sentAt[(int) s];
+                }
+            }
+            Thread.sleep(300);
+            for (TimestampedRaw r : fromApp.readQueue()) {
+                long s = seqOf(r.value) - 100000L * hz;
+                if (s >= 0 && s < frames && rt[(int) s] < 0) rt[(int) s] = System.nanoTime() - sentAt[(int) s];
+            }
+            long missing = Arrays.stream(rt).filter(v -> v < 0).count();
+            long late = Arrays.stream(rt).filter(v -> v > period).count();
+            System.out.printf("S1 paced %4d Hz for 4 s: RTT %s; no reply: %d; replies later than one period: %d%n", hz, pct(rt), missing, late);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------- S1b
+    /** Control: the same ping-pong over a plain WebSocket (no NetworkTables) between Java and Node. */
+    @Test
+    void s1b_webSocketControl() throws Exception {
+        node = new ProcessBuilder("node", "C:/Users/ProtonMe/wpiproj26/Crucible/spikes/s1b-ws-echo.js", "5820").redirectErrorStream(true).start();
+        CountDownLatch ready = new CountDownLatch(1);
+        Thread th = new Thread(() -> {
+            try (var r = new BufferedReader(new InputStreamReader(node.getInputStream()))) {
+                String line;
+                while ((line = r.readLine()) != null) { System.out.println("NODE " + line); if (line.startsWith("READY")) ready.countDown(); }
+            } catch (Exception ignored) { }
+        });
+        th.setDaemon(true);
+        th.start();
+        if (!ready.await(15, TimeUnit.SECONDS)) throw new IllegalStateException("ws echo not ready");
+
+        final java.util.concurrent.atomic.AtomicLongArray arrivedAt = new java.util.concurrent.atomic.AtomicLongArray(200000);
+        final java.util.concurrent.atomic.AtomicInteger arrived = new java.util.concurrent.atomic.AtomicInteger();
+        final java.io.ByteArrayOutputStream acc = new java.io.ByteArrayOutputStream();
+        final AtomicInteger fragments = new AtomicInteger();
+        var listener = new java.net.http.WebSocket.Listener() {
+            @Override public java.util.concurrent.CompletionStage<?> onBinary(java.net.http.WebSocket w, ByteBuffer data, boolean last) {
+                byte[] chunk = new byte[data.remaining()];
+                data.get(chunk);
+                acc.write(chunk, 0, chunk.length);
+                if (!last) fragments.incrementAndGet();
+                if (last) {
+                    ByteBuffer bb = ByteBuffer.wrap(acc.toByteArray()).order(LE);
+                    acc.reset();
+                    long seq = bb.getLong(8);
+                    if (seq >= 0 && seq < arrivedAt.length()) arrivedAt.set((int) seq, System.nanoTime());
+                    arrived.incrementAndGet();
+                }
+                w.request(1);
+                return null;
+            }
+            @Override public void onError(java.net.http.WebSocket w, Throwable error) { System.out.println("S1b listener error: " + error); }
+        };
+        var ws = java.net.http.HttpClient.newHttpClient().newWebSocketBuilder()
+                .buildAsync(java.net.URI.create("ws://127.0.0.1:5820/"), listener).get(10, TimeUnit.SECONDS);
+        ws.request(1);
+        Thread.sleep(300);
+
+        int n = 5000;
+        long[] rtt = new long[n];
+        long t0 = System.nanoTime();
+        for (int k = 0; k < n; k++) {
+            long sent = System.nanoTime();
+            ws.sendBinary(ByteBuffer.wrap(toAppFrame(k, 0, 40, 6.0, 0)), true).join(); // a send fails silently if the last one is still pending
+            while (arrivedAt.get(k) == 0) { if (System.nanoTime() - sent > 2_000_000_000L) throw new IllegalStateException("no echo " + k); }
+            rtt[k] = arrivedAt.get(k) - sent;
+        }
+        double secs = (System.nanoTime() - t0) / 1e9;
+        System.out.println("S1b fragmented deliveries: " + fragments.get());
+        System.out.printf("S1b WebSocket ping-pong (52-byte frames): %d exchanges in %.2f s = %.0f exchanges/s; RTT %s%n", n, secs, n / secs, pct(rtt));
+        ws.sendClose(java.net.http.WebSocket.NORMAL_CLOSURE, "");
+    }
+
+    // ---------------------------------------------------------------------------------------------- S2
+    /** Subclass only to reach the protected motor so we can drive its sim state from the app. */
+    static class HoodProbe extends HoodIO {
+        TalonFX motor() { return hoodMotor; }
+    }
+
+    @Test
+    void s2_hoodThroughApp() throws Exception {
+        DCMotor m = DCMotor.getKrakenX44(1);
+        System.out.printf("S2 motor constants: R=%.5f ohm, Kt=%.6f N*m/A, Kv=%.4f rad/s/V%n", m.rOhms, m.KtNMPerAmp, m.KvRadPerSecPerVolt);
+        start(5816, "--mode", "hood", "--r", String.valueOf(m.rOhms), "--kt", String.valueOf(m.KtNMPerAmp),
+                "--kv", String.valueOf(m.KvRadPerSecPerVolt), "--ratio", String.valueOf(HoodConstants.GEAR_RATIO), "--inertia", "0.02");
+
+        var probe = new HoodProbe();
+        var in = new HoodInputs();
+        TalonFXSimState sim = probe.motor().getSimState();
+        sim.setMotorType(TalonFXSimState.MotorType.KrakenX44);
+        sim.Orientation = ChassisReference.Clockwise_Positive; // the hood is configured clockwise-positive
+
+        final int id = 40;
+        long[] sentAt = new long[100000];
+        long[] rtt = new long[100000];
+        Arrays.fill(rtt, -1);
+        AtomicInteger seqRef = new AtomicInteger();
+        AtomicInteger stale = new AtomicInteger();
+        long[] lastApplied = { -1 };
+
+        Notifier bridge = new Notifier(() -> {
+            Unmanaged.feedEnable(100);
+            sim.setSupplyVoltage(RobotController.getBatteryVoltage());
+            // 1) apply the newest reply we have to the Talon's sim state
+            TimestampedRaw[] q = fromApp.readQueue();
+            if (q.length > 0) {
+                for (TimestampedRaw r : q) {
+                    long s = seqOf(r.value);
+                    if (s >= 0 && s < rtt.length && rtt[(int) s] < 0) rtt[(int) s] = System.nanoTime() - sentAt[(int) s];
+                }
+                ByteBuffer last = ByteBuffer.wrap(q[q.length - 1].value).order(LE);
+                lastApplied[0] = last.getLong(8);
+                sim.setRawRotorPosition(last.getDouble(44));
+                sim.setRotorVelocity(last.getDouble(52));
+            } else {
+                stale.incrementAndGet();
+            }
+            // 2) publish this period's applied voltage
+            int seq = seqRef.getAndIncrement();
+            sentAt[seq] = System.nanoTime();
+            toApp.set(toAppFrame(seq, Timer.getFPGATimestamp(), id, sim.getMotorVoltage(), 0));
+            inst.flush();
+        });
+        bridge.startPeriodic(0.005);
+        Thread.sleep(500);
+
+        probe.setPosition(2.0);
+        long t0 = System.nanoTime();
+        double reached = -1;
+        for (int i = 0; i < 600; i++) {
+            Thread.sleep(5);
+            probe.updateInputs(in);
+            double t = (System.nanoTime() - t0) / 1e9;
+            if (reached < 0 && Math.abs(in.position - 2.0) < 0.05) reached = t;
+            if (i % 40 == 0) System.out.printf("S2 t=%.2fs position=%.3f velocity=%.2f volts=%.2f%n", t, in.position, in.velocity, in.appliedVolts);
+        }
+        bridge.stop();
+        bridge.close();
+        probe.updateInputs(in);
+        System.out.printf("S2 RESULT: reached within 0.05 of 2.0 at %s; final %.3f; reference with in-process TalonFXSim physics: 0.59 s%n",
+                reached < 0 ? "never" : String.format("%.2f s", reached), in.position);
+        System.out.printf("S2 bridge: %d frames sent, %d periods with no new reply; RTT %s%n", seqRef.get(), stale.get(),
+                pct(Arrays.copyOf(rtt, seqRef.get())));
+    }
+}
