@@ -5,6 +5,7 @@ import RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import type { Collider, ColliderDesc, Cuboid, RigidBody, World } from '@dimforge/rapier3d-deterministic-compat'
 import type { MotorState } from './bridge/frames'
 import { BallSystem, type BallHost } from './balls'
+import { BotController, type BotHost } from './bots'
 import { Drivetrain } from './drivetrain'
 import { MechanismModel } from './mechanism'
 import { Hasher, Rng } from './rng'
@@ -111,7 +112,7 @@ export class Engine {
   private gameState: Record<string, unknown> = {}
   private removeQueue: number[] = []
   private scriptEnd = 0
-  private others: { spec: OtherRobotSpec; body: RigidBody; collider: Collider; inertia: number }[] = []
+  private others: { spec: OtherRobotSpec; body: RigidBody; collider: Collider; inertia: number; ctrl: BotController | null }[] = []
   private robotCollider!: Collider
   /** the force the tires and the slope put on the chassis last step (to tell contact forces from drive forces) */
   private driveForce = { fx: 0, fy: 0 }
@@ -268,7 +269,29 @@ export class Engine {
           .setTranslation(spec.start.x, spec.start.y, spec.half[2]).setRotation(yawQuat(spec.start.yaw)),
       )
       const collider = this.world.createCollider(this.bumperCollider(spec.half, spec.mass, undefined, true), body)
-      this.others.push({ spec, body, collider, inertia: (spec.mass * (4 * spec.half[0] ** 2 + 4 * spec.half[1] ** 2)) / 12 })
+      this.others.push({ spec, body, collider, inertia: (spec.mass * (4 * spec.half[0] ** 2 + 4 * spec.half[1] ** 2)) / 12, ctrl: spec.ai ? new BotController(spec.ai) : null })
+    }
+  }
+
+  /** What a bot controller needs from the world. */
+  private botHost(): BotHost {
+    return {
+      time: this.time,
+      pieceNear: (x, y, r) => {
+        let best: number | null = null
+        let bestD = r
+        for (const p of this.pieces) {
+          const t = this.world.getRigidBody(p.handle).translation()
+          if (t.z > 0.3) continue // only FUEL on the floor
+          const d = Math.hypot(t.x - x, t.y - y)
+          if (d < bestD) { bestD = d; best = p.id }
+        }
+        return best
+      },
+      removePiece: (id) => this.removePiece(id),
+      spawn: (s) => this.spawn(s),
+      rand: this.rng.fn(),
+      pieceSpec: this.robotSpec.balls?.piece ?? this.pieceSpecs[0].id,
     }
   }
 
@@ -486,13 +509,19 @@ export class Engine {
       const sp = o.spec
       const b = o.body
       let vx = 0, vy = 0, omega = 0
-      let acc = 0
-      for (const seg of sp.script ?? []) {
-        if (this.time < acc + seg.duration) { vx = seg.vx; vy = seg.vy; omega = seg.omega; break }
-        acc += seg.duration
-      }
       const q = b.rotation()
       const yaw = 2 * Math.atan2(q.z, q.w)
+      if (o.ctrl) {
+        const p = b.translation()
+        const cmd = o.ctrl.command({ x: p.x, y: p.y, yaw }, this.botHost())
+        vx = cmd.vx; vy = cmd.vy; omega = cmd.omega
+      } else {
+        let acc = 0
+        for (const seg of sp.script ?? []) {
+          if (this.time < acc + seg.duration) { vx = seg.vx; vy = seg.vy; omega = seg.omega; break }
+          acc += seg.duration
+        }
+      }
       const c = Math.cos(yaw), sn = Math.sin(yaw)
       const v = b.linvel()
       const w = b.angvel().z
@@ -679,8 +708,16 @@ export class Engine {
   }
 
   private emit(e: GameEvent): void {
+    for (const o of this.observers) o(e, this.time)
     this.applyScores(this.game.onEvent(e, this.gameContext()))
   }
+
+  /** Watches every game event (captures, launches, sensor entries, impacts, phase changes) without taking part: for analytics and logs. Returns a function that removes it. */
+  observe(fn: (e: GameEvent, time: number) => void): () => void {
+    this.observers.push(fn)
+    return () => { this.observers = this.observers.filter((o) => o !== fn) }
+  }
+  private observers: ((e: GameEvent, time: number) => void)[] = []
 
   private applyScores(scores: Score[]): void {
     for (const s of scores) {
@@ -712,6 +749,7 @@ export class Engine {
       drivetrain: this.drivetrain?.save(),
       balls: this.ballSystem?.save(),
       otherHandles: this.others.map((o) => o.body.handle),
+      botStates: this.others.map((o) => o.ctrl?.save() ?? null),
       contact: { ...this.contact },
       mechanisms: Object.fromEntries([...this.mechanisms].map(([id, m]) => [id, m.save()])),
     }
@@ -738,6 +776,7 @@ export class Engine {
       o.collider = o.body.collider(0)
     })
     if (s.contact) this.contact = { ...s.contact }
+    this.others.forEach((o, i) => { const st = s.botStates?.[i]; if (o.ctrl && st) o.ctrl.load(st as never) })
     this.sensorInside = new Map(Object.entries(s.sensorInside).map(([k, v]) => [k, new Set(v)]))
     this.scores = { ...s.scores }
     this.scoreLog = s.scoreLog.map((e) => ({ ...e }))
@@ -765,7 +804,7 @@ export class Engine {
       h.add(w.x); h.add(w.y); h.add(w.z)
     }
     addBody(this.robot)
-    for (const o of this.others) addBody(o.body)
+    for (const o of this.others) { addBody(o.body); if (o.ctrl) { const st = o.ctrl.state; h.add(st.wp); h.add(st.carried); h.add(st.fired); h.add(st.taken); h.add(st.nextAct) } }
     if (this.contact.count > 0) { h.add(this.contact.count); h.add(this.contact.peak) }
     this.drivetrain?.hashInto((x) => h.add(x))
     for (const m of this.mechanisms.values()) { h.add(m.angle); h.add(m.speed) }

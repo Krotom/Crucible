@@ -176,7 +176,7 @@ describe('G407: launch into your HUB only with your bumpers partly in your ALLIA
     const e = (elevDeg * Math.PI) / 180
     return { position: [x, HUB_Y, 0.62], velocity: [-speed * Math.cos(e), 0, speed * Math.sin(e)] }
   }
-  const launched = (s: ReturnType<typeof shot>) => ({ type: 'piece-launched' as const, spec: 'ball', speed: 7, position: s.position, velocity: s.velocity })
+  const launched = (s: ReturnType<typeof shot>) => ({ type: 'piece-launched' as const, spec: 'ball', speed: 7, position: s.position, velocity: s.velocity, pieceId: 0 })
 
   it('fines a robot outside its zone shooting down into its own HUB', () => {
     // from x = 7.5, aim back at the HUB (center x = 4.625): range 2.9 m; solve the speed for a 55 degree arc

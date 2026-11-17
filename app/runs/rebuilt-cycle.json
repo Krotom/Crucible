@@ -1,0 +1,74 @@
+{
+  "name": "rebuilt-cycle",
+  "game": "rebuilt",
+  "seed": 1,
+  "duration": 24,
+  "step": 0.005,
+  "events": [
+    {
+      "t": 0.3,
+      "ds": "enable"
+    },
+    {
+      "t": 1,
+      "buttons": [
+        "A"
+      ]
+    },
+    {
+      "t": 1.2,
+      "sticks": {
+        "forward": 0.5
+      }
+    },
+    {
+      "t": 5.5,
+      "sticks": {}
+    },
+    {
+      "t": 6.5,
+      "sticks": {
+        "forward": -0.5
+      }
+    },
+    {
+      "t": 9,
+      "sticks": {}
+    },
+    {
+      "t": 10,
+      "buttons": []
+    },
+    {
+      "t": 10.5,
+      "sticks": {
+        "shoot": 1
+      }
+    },
+    {
+      "t": 16,
+      "sticks": {}
+    },
+    {
+      "t": 16.5,
+      "buttons": [
+        "A"
+      ]
+    },
+    {
+      "t": 17,
+      "sticks": {
+        "forward": 0.5
+      }
+    },
+    {
+      "t": 20,
+      "sticks": {}
+    }
+  ],
+  "start": {
+    "x": 1.6,
+    "y": 2.5,
+    "yaw": 0
+  }
+}

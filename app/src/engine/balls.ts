@@ -185,10 +185,10 @@ export class BallSystem {
     // backspin: the spin axis is horizontal and perpendicular to the heading, so the Magnus force lifts the ball
     const w = (sh.backspin * speed) / this.radius
     const angularVelocity: Vec3 = [w * shd, -w * ch, 0]
-    this.host.spawn({ spec: this.spec.piece, position, velocity, angularVelocity })
+    const pieceId = this.host.spawn({ spec: this.spec.piece, position, velocity, angularVelocity })
     this.held.pop()
     this.shots++
-    this.host.emit({ type: 'piece-launched', spec: this.spec.piece, speed, position, velocity })
+    this.host.emit({ type: 'piece-launched', spec: this.spec.piece, speed, position, velocity, pieceId })
   }
 
   get captureIsActive(): boolean { return this.captureActive }

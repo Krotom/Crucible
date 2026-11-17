@@ -15,7 +15,7 @@
       <label>Seed <input id="seed" value="42" size="5" /></label>
       <button id="launch-robot" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
       <select id="game-select"><option value="test">Test game</option><option value="rebuilt">REBUILT</option></select>
-      <label title="A second robot that holds still on the field: push it, get blocked by it"><input type="checkbox" id="opponent" /> opponent</label>
+      <select id="opponent" title="Another robot on the field: a blocker holds still (push it, get blocked by it); a cycler picks up FUEL and fires it at its own HUB"><option value="none">no opponent</option><option value="blocker">blocker</option><option value="cycler">red cycler</option></select>
       <select id="sim-mode"><option value="script">Scripted robot</option><option value="robot">Robot code (real time)</option><option value="lockstep">Robot code (lockstep, Mode B)</option></select>
       <select id="lockstep-dt" title="Lockstep: simulated time of one exchange, and of one physics step (larger is faster and coarser)"><option value="0.001">1 ms step</option><option value="0.002">2 ms step</option><option value="0.005" selected>5 ms step</option></select>
       <button id="start-sim">Start sim</button>

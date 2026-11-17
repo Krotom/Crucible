@@ -221,7 +221,7 @@ $('start-sim').addEventListener('click', () => {
   dsEnabled = false
   $('ds-enable').textContent = 'Enable'
   lastInput = null
-  sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLInputElement>('opponent').checked, Number($<HTMLSelectElement>('lockstep-dt').value))
+  sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLSelectElement>('opponent').value as 'none' | 'blocker' | 'cycler', Number($<HTMLSelectElement>('lockstep-dt').value))
   $('start-sim').textContent = 'Stop sim'
   setStatus(lockstepMode ? 'Sim: robot code, lockstep (Mode B)' : robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
   playEl.textContent = 'Play'

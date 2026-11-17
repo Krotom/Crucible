@@ -23,7 +23,7 @@ export class SimSource {
 
   get active(): boolean { return this.worker !== null }
 
-  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent = false, lockstepDt = 0.005): void {
+  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent: 'none' | 'blocker' | 'cycler' = 'none', lockstepDt = 0.005): void {
     this.stop()
     this.store.startLive('Sim')
     this.lastPushed = -1

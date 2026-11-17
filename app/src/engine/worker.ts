@@ -1,6 +1,7 @@
 // Physics worker: owns the engine and runs it against the wall clock at a chosen speed, posting frames at about 60 Hz.
 // The engine itself never reads the clock; only this loop decides how many steps to run per tick.
 import { Engine } from './engine'
+import { botsToOthers, redCycler } from '../analysis/bots'
 import type { FromWorker, ToWorker } from './protocol'
 import type { EngineSnapshot } from './types'
 import { createRebuiltGame } from '../games/rebuilt'
@@ -75,7 +76,7 @@ async function handle(m: ToWorker): Promise<void> {
         const game = rebuilt ? createRebuiltGame({ preload: OFFSEASON.balls?.preload ?? 0, neutralFuel: 150 }) : createTestGame()
         const start = rebuilt ? { x: 1.6, y: 4.0, yaw: 0 } : OFFSEASON.start
         // an opponent robot that holds still at the center line: something to push against and to be blocked by
-        const others = m.opponent ? [{ name: 'opponent', alliance: 'red' as const, half: [0.43, 0.43, 0.12] as [number, number, number], mass: 55, start: { x: rebuilt ? 6.5 : 3, y: rebuilt ? 4.0 : 0, yaw: Math.PI } }] : []
+        const others = m.opponent === 'cycler' ? botsToOthers([redCycler()]) : m.opponent === 'blocker' ? [{ name: 'opponent', alliance: 'red' as const, half: [0.43, 0.43, 0.12] as [number, number, number], mass: 55, start: { x: rebuilt ? 6.5 : 3, y: rebuilt ? 4.0 : 0, yaw: Math.PI } }] : []
         const robot = m.mode !== 'script'
           ? { half: OFFSEASON.bumper, start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls, alliance: 'blue' as const, chassis: OFFSEASON.contact, others }
           : rebuilt ? { ...TEST_ROBOT, start, alliance: 'blue' as const, others } : { ...TEST_ROBOT, others }

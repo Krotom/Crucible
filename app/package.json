@@ -10,7 +10,9 @@
     "preview": "electron-vite preview",
     "web": "vite --config vite.web.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "batch": "node scripts/batch.mjs",
+    "calibrate": "node scripts/calibrate.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

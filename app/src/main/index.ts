@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { resolveRobotDir, RobotLauncher, simulateCommand } from './robot'
 
@@ -37,6 +38,15 @@ ipcMain.handle('robot:start', (_e, lockstep?: boolean) => {
 
 ipcMain.handle('robot:stop', async () => { await launcher?.stop(); return { ok: true } })
 ipcMain.handle('robot:status', () => ({ running: launcher?.running ?? false }))
+
+// screenshots and videos: the renderer hands over the bytes, the user picks where they go (Pictures for PNG, Videos for WebM)
+ipcMain.handle('file:save', async (_e, name: string, data: ArrayBuffer, kind: 'png' | 'webm') => {
+  const dir = app.getPath(kind === 'png' ? 'pictures' : 'videos')
+  const r = await dialog.showSaveDialog(win!, { defaultPath: join(dir, name), filters: kind === 'png' ? [{ name: 'PNG image', extensions: ['png'] }] : [{ name: 'WebM video', extensions: ['webm'] }] })
+  if (r.canceled || !r.filePath) return { ok: false }
+  await writeFile(r.filePath, Buffer.from(data))
+  return { ok: true, path: r.filePath }
+})
 
 app.whenReady().then(() => {
   createWindow()

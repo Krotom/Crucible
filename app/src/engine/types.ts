@@ -76,7 +76,7 @@ export interface MatchFlowSpec {
 
 export type GameEvent =
   | { type: 'piece-captured'; pieceId: number; spec: string }
-  | { type: 'piece-launched'; spec: string; speed: number; position: Vec3; velocity: Vec3 }
+  | { type: 'piece-launched'; spec: string; speed: number; position: Vec3; velocity: Vec3; pieceId: number }
   | { type: 'piece-entered-sensor'; sensor: SensorSpec; pieceId: number; spec: string }
   | { type: 'piece-left-sensor'; sensor: SensorSpec; pieceId: number; spec: string }
   | { type: 'phase-changed'; from: string | null; to: string }
@@ -201,6 +201,13 @@ export interface ChassisContact {
   chamfer?: number
 }
 
+/** What a scripted robot does by itself (src/engine/bots.ts): follow a route, or cycle (pick up FUEL, drive to a firing spot, fire at its HUB). */
+export interface BotAI {
+  route?: { x: number; y: number }[]
+  speed?: number
+  cycle?: { pickup: { x: number; y: number }; at: { x: number; y: number }; intakeSeconds: number; count: number; rate: number; /** where the HUB is: x, y and the height to aim through */ target: Vec3; /** relative spread of speed and direction */ spread?: number }
+}
+
 /** Another robot on the field: a body that is pushed around and, with a script, drives (traction-limited like any robot). */
 export interface OtherRobotSpec {
   name: string
@@ -213,6 +220,8 @@ export interface OtherRobotSpec {
   mu?: number
   /** robot-relative driving; empty means the robot holds still (brakes) and can only be pushed */
   script?: ScriptSegment[]
+  /** drives itself (overrides script) */
+  ai?: BotAI
 }
 
 export interface RobotSpec {
@@ -264,6 +273,7 @@ export interface EngineSnapshot {
   mechanisms?: Record<number, unknown>
   balls?: { held: number[]; shots: number; captured: number }
   otherHandles?: number[]
+  botStates?: unknown[]
   contact?: { acc: number; quiet: number; peak: number; count: number; vx: number; vy: number; against: 'field' | 'robot' }
 }
 
