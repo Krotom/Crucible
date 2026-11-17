@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: http://localhost:* blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'" />
+    <title>Crucible</title>
+  </head>
+  <body>
+    <header>
+      <strong class="brand">Crucible</strong>
+      <button id="open-log">Open log…</button>
+      <input id="file" type="file" accept=".wpilog" hidden />
+      <span class="sep"></span>
+      <label>NT host <input id="host" value="127.0.0.1" size="14" /></label>
+      <button id="connect">Connect</button>
+      <span id="status" class="status">No data</span>
+      <span class="grow"></span>
+      <span id="notice" class="notice"></span>
+    </header>
+    <main>
+      <aside id="topics-panel">
+        <input id="filter" placeholder="Filter topics" />
+        <div id="topics"></div>
+      </aside>
+      <section id="center">
+        <div id="view">
+          <div class="hud">
+            <label>Robot pose <select id="pose-select"></select></label>
+            <label>Components <select id="comp-select"></select></label>
+            <button id="focus">Focus robot</button>
+          </div>
+          <div id="drop" class="drop">Drop a .wpilog here</div>
+        </div>
+        <div id="transport">
+          <button id="play">Play</button>
+          <input id="seek" type="range" min="0" max="1" step="0.001" value="0" />
+          <span id="time">0.00 / 0.00 s</span>
+          <select id="speed">
+            <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="1" selected>1x</option>
+            <option value="2">2x</option><option value="4">4x</option>
+          </select>
+          <button id="clear-plot">Clear plot</button>
+        </div>
+        <div id="plot"></div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -12,3 +12,7 @@ Working title; status: **planning**. No code yet.
 - `docs/rules/`: the REBUILT rules extract (to be written, then reviewed before any rules are encoded)
 
 The robot this is built around lives in the OffSeasonCode repository (swerve, turreted shooter, rack-and-pinion intake).
+
+## Status
+
+M0 (feasibility spikes) and M1 (viewer: live NT4 and `.wpilog` playback, 3D robot, plots) are done. The app lives in [app/](app/README.md); the plan is in [docs/PLAN.md](docs/PLAN.md).
