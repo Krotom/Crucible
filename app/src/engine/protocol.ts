@@ -2,7 +2,9 @@
 import type { FieldDefinition, PieceSpec, RenderFrame } from './types'
 
 export type ToWorker =
-  | { type: 'init'; seed: number }
+  | { type: 'init'; seed: number; mode: 'script' | 'robot'; host?: string }
+  | { type: 'ds'; enabled: boolean; autonomous: boolean; test: boolean }
+  | { type: 'joystick'; axes: number[]; buttons: number; pov: number }
   | { type: 'run'; running: boolean }
   | { type: 'speed'; value: number }
   | { type: 'step'; steps: number }
@@ -19,7 +21,16 @@ export interface WorkerReady {
   dt: number
 }
 
+export interface BridgeInfo {
+  connected: boolean
+  frames: number
+  robotTime: number
+  skipped: number
+  robotEnabled: boolean
+  hello: string | null
+}
+
 export type FromWorker =
   | WorkerReady
-  | { type: 'frame'; frame: RenderFrame; running: boolean; speed: number; hasSnapshot: boolean; simRate: number }
+  | { type: 'frame'; frame: RenderFrame; running: boolean; speed: number; hasSnapshot: boolean; simRate: number; bridge?: BridgeInfo }
   | { type: 'error'; message: string }

@@ -1,5 +1,6 @@
 // Types shared by the engine, game modules and the worker protocol. No DOM and no Rapier types here.
 // Coordinates are WPILib field coordinates: X away from the blue wall, Y left, Z up; meters, radians, seconds.
+import type { DrivetrainSpec } from './drivetrain'
 
 export type Alliance = 'red' | 'blue' | 'none'
 export type Vec3 = [number, number, number]
@@ -107,6 +108,8 @@ export interface ScriptSegment {
 }
 
 export interface RobotSpec {
+  /** When set, the robot is a dynamic body driven by this swerve model (voltages in, forces out) instead of the script. */
+  drivetrain?: DrivetrainSpec
   /** Bumper footprint half extents and height of the collider, meters. */
   half: Vec3
   start: { x: number; y: number; yaw: number }
@@ -140,6 +143,7 @@ export interface EngineSnapshot {
   scoreLog: ScoreEntry[]
   phaseIndex: number
   gameState: Record<string, unknown>
+  drivetrain?: unknown
 }
 
 /** What the renderer needs each frame. */

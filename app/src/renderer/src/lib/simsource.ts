@@ -1,7 +1,7 @@
 // Runs the physics engine in a worker and exposes it like the other data sources: frames for the 3D view, and a few
 // topics pushed into the DataStore so the topic list and plots work for the simulation too.
 import SimWorker from '../../../engine/worker?worker'
-import type { FromWorker, ToWorker, WorkerReady } from '../../../engine/protocol'
+import type { BridgeInfo, FromWorker, ToWorker, WorkerReady } from '../../../engine/protocol'
 import type { RenderFrame } from '../../../engine/types'
 import type { DataStore } from './store'
 
@@ -15,6 +15,7 @@ export class SimSource {
   speed = 1
   hasSnapshot = false
   simRate = 0
+  bridge: BridgeInfo | null = null
   private lastPushed = -1
   private lastTime = 0
 
@@ -22,7 +23,7 @@ export class SimSource {
 
   get active(): boolean { return this.worker !== null }
 
-  start(seed: number): void {
+  start(seed: number, mode: 'script' | 'robot' = 'script', host = '127.0.0.1'): void {
     this.stop()
     this.store.startLive('Sim')
     this.lastPushed = -1
@@ -31,7 +32,7 @@ export class SimSource {
     this.worker = new SimWorker()
     this.worker.onmessage = (ev: MessageEvent<FromWorker>) => this.onMessage(ev.data)
     this.worker.onerror = (e) => this.onError(e.message)
-    this.send({ type: 'init', seed })
+    this.send({ type: 'init', seed, mode, host })
   }
 
   stop(): void {
@@ -53,6 +54,7 @@ export class SimSource {
     this.speed = m.speed
     this.hasSnapshot = m.hasSnapshot
     this.simRate = m.simRate
+    this.bridge = m.bridge ?? null
     if (f.time < this.lastTime - 1e-9) { this.store.startLive('Sim'); this.lastPushed = -1 } // reset or state load: time went backwards
     this.lastTime = f.time
     if (f.time - this.lastPushed >= TOPIC_PERIOD - 1e-9) {

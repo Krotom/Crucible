@@ -3,6 +3,7 @@
 // state is identical on every run (deterministic Rapier build, seeded RNG, fixed iteration order).
 import RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import type { RigidBody, World } from '@dimforge/rapier3d-deterministic-compat'
+import { Drivetrain } from './drivetrain'
 import { Hasher, Rng } from './rng'
 import type {
   Alliance, BoxSpec, EngineConfig, EngineSnapshot, GameContext, GameEvent, GameModule, PieceSpawn, PieceSpec, RenderFrame,
@@ -58,6 +59,8 @@ export class Engine {
   private gameState: Record<string, unknown> = {}
   private removeQueue: number[] = []
   private scriptEnd = 0
+  /** The swerve model when the robot is driven by motor voltages. */
+  drivetrain: Drivetrain | null = null
 
   private constructor(cfg: EngineConfig) {
     this.dt = cfg.dt ?? 0.001
@@ -67,6 +70,7 @@ export class Engine {
     this.rng = new Rng(cfg.seed)
     this.pieceSpecs = cfg.game.pieces()
     this.pieceSpecs.forEach((p, i) => this.specByName.set(p.id, i))
+    this.drivetrain = cfg.robot.drivetrain ? new Drivetrain(cfg.robot.drivetrain) : null
     this.scriptEnd = cfg.robot.script.reduce((t, s) => t + s.duration, 0)
   }
 
@@ -130,14 +134,17 @@ export class Engine {
 
   private addRobot(): void {
     const r = this.robotSpec
-    const body = this.world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicVelocityBased()
-        .setTranslation(r.start.x, r.start.y, r.half[2])
-        .setRotation(yawQuat(r.start.yaw)),
-    )
+    const driven = this.drivetrain !== null
+    this.drivetrain?.reset()
+    const desc = driven
+      ? RAPIER.RigidBodyDesc.dynamic().enabledTranslations(true, true, false).enabledRotations(false, false, true).setCanSleep(false)
+      : RAPIER.RigidBodyDesc.kinematicVelocityBased()
+    const body = this.world.createRigidBody(desc.setTranslation(r.start.x, r.start.y, r.half[2]).setRotation(yawQuat(r.start.yaw)))
+    const volume = 8 * r.half[0] * r.half[1] * r.half[2]
     this.world.createCollider(
       RAPIER.ColliderDesc.cuboid(r.half[0], r.half[1], r.half[2])
-        .setFriction(0.5)
+        .setDensity(driven ? this.drivetrain!.spec.mass / volume : 1)
+        .setFriction(driven ? 0.2 : 0.5)
         .setRestitution(0.2)
         .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Multiply)
         .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Multiply),
@@ -203,7 +210,8 @@ export class Engine {
   // ---------------------------------------------------------------- stepping
 
   step(): void {
-    this.driveRobot()
+    if (this.drivetrain) this.driveFromMotors()
+    else this.driveRobot()
     this.applyAirDrag()
     this.world.step()
     this.stepCount++
@@ -216,6 +224,19 @@ export class Engine {
   run(seconds: number): void {
     const n = Math.round(seconds / this.dt)
     for (let i = 0; i < n; i++) this.step()
+  }
+
+  /** Swerve model: tire forces from the applied motor voltages act on the chassis body. */
+  private driveFromMotors(): void {
+    const t = this.robot.translation()
+    const q = this.robot.rotation()
+    const v = this.robot.linvel()
+    const w = this.robot.angvel()
+    const load = this.drivetrain!.step(this.dt, { x: t.x, y: t.y, yaw: 2 * Math.atan2(q.z, q.w), vx: v.x, vy: v.y, omega: w.z })
+    this.robot.resetForces(true)
+    this.robot.addForce({ x: load.fx, y: load.fy, z: 0 }, true)
+    this.robot.resetTorques(true)
+    this.robot.addTorque({ x: 0, y: 0, z: load.torque }, true)
   }
 
   private driveRobot(): void {
@@ -337,6 +358,7 @@ export class Engine {
       scoreLog: this.scoreLog.map((s) => ({ ...s })),
       phaseIndex: this.phaseIndex,
       gameState: JSON.parse(JSON.stringify(this.gameState)),
+      drivetrain: this.drivetrain?.save(),
     }
   }
 
@@ -358,6 +380,7 @@ export class Engine {
     this.phaseIndex = s.phaseIndex
     this.gameState = JSON.parse(JSON.stringify(s.gameState))
     this.removeQueue = []
+    if (this.drivetrain && s.drivetrain) this.drivetrain.load(s.drivetrain)
   }
 
   // ---------------------------------------------------------------- observation
@@ -376,6 +399,7 @@ export class Engine {
       h.add(w.x); h.add(w.y); h.add(w.z)
     }
     addBody(this.robot)
+    this.drivetrain?.hashInto((x) => h.add(x))
     for (const p of this.pieces) { h.add(p.id); addBody(this.world.getRigidBody(p.handle)) }
     return h.digest()
   }

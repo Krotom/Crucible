@@ -1,6 +1,7 @@
 import './style.css'
 import { Nt4Live, type NtStatus } from './lib/nt4'
 import { PlotPanel } from './lib/plot'
+import { installKeyboard, readInput, sameReading, type JoystickReading } from './lib/input'
 import { SceneView } from './lib/scene'
 import { SimSource } from './lib/simsource'
 import { DataStore } from './lib/store'
@@ -13,9 +14,13 @@ const store = new DataStore()
 const view = new SceneView($('view'))
 let live: Nt4Live | null = null
 let robotHalfZ = 0.12
+let robotMode = false
+let dsEnabled = false
+let lastInput: JoystickReading | null = null
+let lastInputSent = 0
 const sim = new SimSource(
   store,
-  (r) => { robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf); sim.send({ type: 'speed', value: speed }) },
+  (r) => { robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf); sim.send({ type: 'speed', value: speed }); sendDs() },
   (m) => setStatus(`Sim error: ${m}`),
 )
 
@@ -110,6 +115,8 @@ function updateTransportEnabled(): void {
   $<HTMLInputElement>('seek').disabled = !isLog
   $<HTMLButtonElement>('play').disabled = !(isLog || isSim)
   $('sim-buttons').hidden = !isSim
+  $('ds-controls').hidden = !(isSim && robotMode)
+  $<HTMLButtonElement>('sim-step').disabled = robotMode
   $('simhud').hidden = !isSim
 }
 
@@ -208,18 +215,46 @@ $('start-sim').addEventListener('click', () => {
   live?.stop(); live = null
   $('connect').textContent = 'Connect'
   plot.clear(store)
-  sim.start(seedValue())
+  robotMode = $<HTMLSelectElement>('sim-mode').value === 'robot'
+  dsEnabled = false
+  $('ds-enable').textContent = 'Enable'
+  lastInput = null
+  sim.start(seedValue(), robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1')
   $('start-sim').textContent = 'Stop sim'
-  setStatus('Sim: game-test (paused)', true)
+  setStatus(robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
   playEl.textContent = 'Play'
   updateTransportEnabled()
 })
+function sendDs(): void {
+  if (!robotMode) return
+  const mode = $<HTMLSelectElement>('ds-mode').value
+  sim.send({ type: 'ds', enabled: dsEnabled, autonomous: mode === 'auto', test: mode === 'test' })
+}
+$('ds-enable').addEventListener('click', () => {
+  dsEnabled = !dsEnabled
+  $('ds-enable').textContent = dsEnabled ? 'Disable' : 'Enable'
+  sendDs()
+})
+$('ds-mode').addEventListener('change', sendDs)
+installKeyboard()
 $('sim-step').addEventListener('click', () => sim.send({ type: 'step', steps: 10 }))
 $('sim-reset').addEventListener('click', () => sim.send({ type: 'reset', seed: seedValue() }))
 $('sim-save').addEventListener('click', () => sim.send({ type: 'save' }))
 $('sim-load').addEventListener('click', () => sim.send({ type: 'load' }))
 
+/** Sends the gamepad or keyboard state to the robot when it changes (and at least every 250 ms while held). */
+function pumpInput(): void {
+  const now = performance.now()
+  const r = readInput()
+  if (sameReading(lastInput, r) && now - lastInputSent < 250) return
+  if (sameReading(lastInput, r) && r.source === 'none') return
+  lastInput = r
+  lastInputSent = now
+  sim.send({ type: 'joystick', axes: r.axes, buttons: r.buttons, pov: r.pov })
+}
+
 function simFrame(): void {
+  if (robotMode) pumpInput()
   playEl.textContent = sim.running ? 'Pause' : 'Play'
   $<HTMLButtonElement>('sim-load').disabled = !sim.hasSnapshot
   const f = sim.latest
@@ -232,6 +267,9 @@ function simFrame(): void {
     `score  blue ${f.scores.blue}  red ${f.scores.red}`,
     `balls  ${f.pieceCount} (${f.awakeCount} moving)`,
     `hash   ${f.hash}`,
+    ...(sim.bridge ? [
+      `robot  ${sim.bridge.connected ? 'connected' : 'waiting for robot'}${sim.bridge.frames ? `, ${sim.bridge.frames} frames, ${sim.bridge.robotEnabled ? 'enabled' : 'disabled'}` : ''}`,
+    ] : []),
   ].join('\n')
   plot.build(store)
 }
@@ -291,6 +329,32 @@ let listTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleListRefresh(): void {
   if (listTimer) return
   listTimer = setTimeout(() => { listTimer = null; renderTopicList() }, 250)
+}
+
+// ---- robot launcher (Electron only: the main process owns the robot process)
+interface CrucibleHost {
+  startRobot(): Promise<{ ok: boolean; message: string }>
+  stopRobot(): Promise<{ ok: boolean }>
+  robotStatus(): Promise<{ running: boolean }>
+  onRobotLog(cb: (line: string) => void): void
+  onRobotExit(cb: (code: number | null) => void): void
+}
+const host = (window as unknown as { crucibleHost?: CrucibleHost }).crucibleHost
+if (host) {
+  const btn = $('launch-robot')
+  btn.hidden = false
+  let robotUp = false
+  const refresh = (): void => { btn.textContent = robotUp ? 'Stop robot' : 'Launch robot' }
+  host.onRobotLog((line) => { $('notice').textContent = line.slice(0, 140) })
+  host.onRobotExit((code) => { robotUp = false; refresh(); $('notice').textContent = `robot sim exited (${code})` })
+  btn.addEventListener('click', async () => {
+    if (robotUp) { await host.stopRobot(); robotUp = false; refresh(); return }
+    const r = await host.startRobot()
+    $('notice').textContent = r.message
+    robotUp = r.ok
+    refresh()
+  })
+  void host.robotStatus().then((s) => { robotUp = s.running; refresh() })
 }
 
 updateTransportEnabled()

@@ -13,6 +13,8 @@
       <input id="file" type="file" accept=".wpilog" hidden />
       <span class="sep"></span>
       <label>Seed <input id="seed" value="42" size="5" /></label>
+      <button id="launch-robot" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
+      <select id="sim-mode"><option value="script">Scripted robot</option><option value="robot">Robot code (NT)</option></select>
       <button id="start-sim">Start sim</button>
       <span class="sep"></span>
       <label>NT host <input id="host" value="127.0.0.1" size="14" /></label>
@@ -44,6 +46,10 @@
             <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="1" selected>1x</option>
             <option value="2">2x</option><option value="4">4x</option><option value="8">8x</option>
           </select>
+          <span id="ds-controls" hidden>
+            <button id="ds-enable">Enable</button>
+            <select id="ds-mode"><option value="teleop">Teleop</option><option value="auto">Auto</option><option value="test">Test</option></select>
+          </span>
           <span id="sim-buttons" hidden>
             <button id="sim-step" title="Advance 10 ms">Step</button>
             <button id="sim-reset">Reset</button>

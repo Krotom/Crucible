@@ -15,4 +15,4 @@ The robot this is built around lives in the OffSeasonCode repository (swerve, tu
 
 ## Status
 
-M0 (feasibility spikes), M1 (viewer: live NT4 and `.wpilog` playback, 3D robot, plots) and M2 (deterministic engine core with a test game) are done. The app lives in [app/](app/README.md); the plan is in [docs/PLAN.md](docs/PLAN.md).
+M0 (feasibility spikes), M1 (viewer: live NT4 and `.wpilog` playback, 3D robot, plots) M2 (deterministic engine core with a test game) and M3 (robot-code-in-the-loop drivetrain) are done. The app lives in [app/](app/README.md); the plan is in [docs/PLAN.md](docs/PLAN.md).

@@ -1,4 +1,4 @@
-# NT contract (draft v0)
+# NT contract (protocol 0, implemented for the drivetrain in M3)
 
 How the robot process and the app talk. Everything under `/SimBridge/<robot>/` belongs to this contract; `<robot>` is
 `main` unless several robots are connected (milestone M10). Draft: the spikes (M0) will confirm or change numbers
@@ -145,3 +145,48 @@ next `Step`. In this mode all Talon control uses the Java emulation, not the Pho
 
 `protocol` is an integer in the handshake and in every frame header. Bump it on any layout change; the app refuses
 to run against a mismatched robot and names both versions.
+
+## 9. What M3 implemented, exact layouts and conventions found
+
+Robot side: `frc/robot/lib/simbridge/` in the robot project (`FrameCodec`, `SimBridge`), switched on by the environment
+variable `CRUCIBLE_BRIDGE=1` (the app sets it when it launches the robot; off otherwise, so the normal sim is unchanged).
+App side: `app/src/engine/bridge/` (`frames.ts`, `nt4raw.ts`, `session.ts`) and `app/src/engine/drivetrain.ts`.
+`docs/bridge/FrameCodecTest.java.txt` checks the Java codec against bytes produced by the TypeScript codec.
+
+**Implemented:** Hello (string JSON, republished once), Heartbeat, `Debug/StaleTicks`, ToApp and FromApp frames as in section 3
+(sizes: ToApp 36 + 16 per motor; FromApp 40 + 28 per motor + 28 per CANcoder + 76 per Pigeon + 8 per digital input),
+`Control/DS`, `Control/Joystick/0`, `Control/PoseSeed`. **Not yet:** `Control/Hello` (the robot publishes frames from the start),
+digital inputs, the battery sag model, neutral-mode flags, Mode B. Devices bridged today: the eight swerve Talons, four
+CANcoders and the Pigeon.
+
+| Topic (raw) | Layout, little-endian |
+|---|---|
+| `Control/DS` (24 bytes) | u64 counter, u32 flags (1 enabled, 2 autonomous, 4 test, 8 estop, 16 DS attached), u8 alliance (0 red, 1 blue), u8 station, u16 pad, f64 match time |
+| `Control/Joystick/0` (72 bytes) | u64 counter, 6 x f64 axes (WPILib Xbox order: LX, LY, LT, RT, RX, RY), u64 button mask (bit 0 = button 1), i16 POV degrees (-1 none), 6 bytes pad |
+| `Control/PoseSeed` (32 bytes) | u64 counter, f64 x, f64 y, f64 yaw rad: the robot resets its odometry pose when the counter changes |
+
+The robot applies a control topic only when its counter changes. The app holds the pose seed back about 20 frames after a
+reset or connect so the robot has seen the new wheel positions first (otherwise the jump in wheel distance is integrated as motion).
+
+**Timing as built:** the robot's clock drives the world. Each ToApp frame carries the robot's simulation time; the app steps
+the engine by the elapsed robot time (capped at 0.25 s per frame, counted in `skipped`) with that frame's voltages held,
+then answers with the same `seq`. The robot applies the latest FromApp frame at each 5 ms tick. Pause means the app keeps
+answering without stepping.
+
+**Conventions the spikes and M3 established (keep them in any new bridge code):**
+
+- *Voltage sign.* Set `TalonFXSimState.Orientation` from the module constants (drive: `DriveMotorInverted`, steer: `SteerMotorInverted`,
+  encoder: `EncoderInverted`) exactly as CTRE's own swerve sim does. Then positive drive volts mean the module's forward and positive steer
+  volts mean counterclockwise azimuth, whatever the inversion, and the rotor values the app returns use the same sense.
+- *Applied voltage includes current limiting.* The Talon sim's `getMotorVoltage()` already reflects the stator current limit: while a fast
+  wheel is braked it reports about back-EMF minus R times the limit. The app therefore applies its own DC model (back-EMF from the rotor
+  speed it integrates) to that voltage and never subtracts back-EMF twice.
+- *CANcoder.* The device reports raw + MagnetOffset, so the bridge sets raw = azimuth - MagnetOffset; the app sends the reported azimuth.
+- *Coupling.* The drive rotor position the app returns includes coupling ratio times azimuth rotations (CTRE odometry subtracts it).
+- *Pigeon.* Yaw in degrees, continuous (not wrapped); the robot's odometry seed sets the heading offset.
+- *Sim GUI off.* With the bridge on, the WPILib sim GUI is disabled (`build.gradle` keys it on `CRUCIBLE_BRIDGE`) because its driver
+  station window overwrites joystick data every frame. The app is the driver station.
+- *Hidden windows.* Input is pumped from `requestAnimationFrame`, so a hidden or minimized window sends no new joystick state.
+
+**Measured in M3 (open floor, robot odometry vs the app's physics):** straight 2.2 m, rotation of 4.2 rad and a 2.2 m strafe agree within
+about 1 cm and 0.005 rad. Pushing against a wall with the wheels spinning makes odometry drift, as on a real robot.

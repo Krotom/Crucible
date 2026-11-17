@@ -1,0 +1,89 @@
+package frc.robot.lib.simbridge;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.Test;
+
+/**
+ * Cross-language check of the bridge frame layouts: the hex strings below were produced by Crucible's TypeScript codec
+ * (app/src/engine/bridge/frames.ts); this codec must read them and write the identical bytes.
+ */
+class FrameCodecTest {
+    private static final String TO_APP = "53424631000000000700000000000000000000000000f83f000000000080284002000100140000000000000000000a400000000015000000000000000000f8bf02000000";
+    private static final String FROM_APP = "5342463200000000090000000000000000000000000000400000000000002740010001000100000014000000000000000000f43f00000000000004400000000000000e4016000000000000000000d03f000000000000e0bf000000000000e83f010000000000000000805640000000000000f03f0000000000000040000000000000144000000000000018400000000000001c409a9999999999b93f9a9999999999c93f000000000000f03f";
+    private static final String DS = "050000000000000013000000010300000000000000002940";
+    private static final String JOYSTICK = "0600000000000000000000000000e03f000000000000f0bf000000000000d03f0000000000000000000000000000e8bf000000000000f03f05000000000000005a00000000000000";
+    private static final String SEED = "0300000000000000000000000000f83f00000000000004c0000000000000e03f";
+
+    private static byte[] hex(String s) {
+        byte[] b = new byte[s.length() / 2];
+        for (int i = 0; i < b.length; i++) b[i] = (byte) Integer.parseInt(s.substring(2 * i, 2 * i + 2), 16);
+        return b;
+    }
+
+    @Test
+    void toAppIsByteIdenticalToTheTypeScriptEncoding() {
+        byte[] mine = FrameCodec.encodeToApp(7, 1.5, 12.25, FrameCodec.FLAG_ENABLED,
+                new FrameCodec.Motor[] { new FrameCodec.Motor(20, 3.25, 0), new FrameCodec.Motor(21, -1.5, 2) });
+        assertArrayEquals(hex(TO_APP), mine);
+    }
+
+    @Test
+    void fromAppDecodesTheTypeScriptEncoding() {
+        var f = FrameCodec.decodeFromApp(hex(FROM_APP));
+        assertNotNull(f);
+        assertEquals(9, f.seq());
+        assertEquals(2.0, f.simTime());
+        assertEquals(11.5, f.batteryVolts());
+        assertEquals(20, f.motors()[0].id());
+        assertEquals(1.25, f.motors()[0].rotorPositionRot());
+        assertEquals(2.5, f.motors()[0].rotorVelocityRps());
+        assertEquals(3.75, f.motors()[0].rotorAccelRps2());
+        assertEquals(22, f.cancoders()[0].id());
+        assertEquals(-0.5, f.cancoders()[0].velocityRps());
+        assertEquals(0.75, f.cancoders()[0].absolutePositionRot());
+        var p = f.pigeons()[0];
+        assertEquals(1, p.id());
+        assertEquals(90.0, p.yawDeg());
+        assertEquals(5.0, p.yawRateDps());
+        assertEquals(0.2, p.accelYg());
+        assertEquals(1.0, p.accelZg());
+    }
+
+    @Test
+    void controlTopicsDecode() {
+        var ds = FrameCodec.decodeDs(hex(DS));
+        assertEquals(5, ds.counter());
+        assertTrue(ds.enabled() && ds.autonomous() && ds.dsAttached());
+        assertEquals(1, ds.alliance());
+        assertEquals(3, ds.station());
+        assertEquals(12.5, ds.matchTime());
+        assertArrayEquals(hex(DS), FrameCodec.encodeDs(ds));
+
+        var j = FrameCodec.decodeJoystick(hex(JOYSTICK));
+        assertEquals(6, j.counter());
+        assertArrayEquals(new double[] { 0.5, -1, 0.25, 0, -0.75, 1 }, j.axes());
+        assertEquals(5, j.buttons());
+        assertEquals(90, j.pov());
+
+        var s = FrameCodec.decodePoseSeed(hex(SEED));
+        assertEquals(3, s.counter());
+        assertEquals(1.5, s.x());
+        assertEquals(-2.5, s.y());
+        assertEquals(0.5, s.yawRad());
+    }
+
+    @Test
+    void rejectsGarbageAndShortFrames() {
+        assertNull(FrameCodec.decodeFromApp(new byte[10]));
+        assertNull(FrameCodec.decodeFromApp(new byte[60])); // wrong magic
+        byte[] truncated = hex(FROM_APP);
+        assertNull(FrameCodec.decodeFromApp(java.util.Arrays.copyOf(truncated, truncated.length - 8)));
+        assertNull(FrameCodec.decodeDs(new byte[5]));
+        assertNull(FrameCodec.decodeJoystick(null));
+    }
+}

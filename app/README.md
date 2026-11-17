@@ -47,6 +47,25 @@ messages). `src/games/test.ts` is the test game. Material coefficients are facto
 Not in yet: robot-vs-wall contact (the scripted robot ignores walls), speed-dependent foam restitution, Magnus lift, capture
 volumes and shooting (M5), the real robot definition (M4).
 
+## Robot code in the loop (M3)
+
+Choose **Robot code (NT)** next to Start sim: the app is then the physics authority for the real robot program. The robot's
+Talons keep running their control loops (Phoenix sim) and publish their applied voltages through the bridge; the app steps a
+swerve model (tire forces per module, DC motor models, current limits, the walls and balls of the test game) and returns rotor,
+CANcoder and Pigeon states. The robot's own odometry then follows the app's physics.
+
+1. **Launch robot** (Electron only) starts `gradlew simulateJava --no-daemon` in the robot project with `CRUCIBLE_BRIDGE=1` (the project
+   folder is `robotDir` in `app/crucible.config.json`, else the sibling repo). Or start it yourself:
+   `CRUCIBLE_BRIDGE=1 ./gradlew simulateJava`. The Crucible bridge and the sim GUI do not mix, see the contract.
+2. **Start sim** in Robot code mode connects over NT (host box) and shows the robot's status in the readout.
+3. **Enable** and the Teleop/Auto/Test picker are the Driver Station. Drive with a gamepad (standard mapping, presented to the
+   robot as an Xbox controller on port 0) or the keyboard: W/S forward and back, A/D strafe, Q/E rotate, J/K the A and B
+   buttons, L/H the right and left triggers. The robot code's own mapping applies.
+4. Reset, Save and Load work as in the scripted sim; the robot's odometry is re-seeded to the robot's new position.
+
+Drivetrain numbers are in `src/robots/offseason.ts`: gear ratios, wheel radius, coupling and module positions come from
+`TunerConstants.java`; the mass (52 kg) and tire friction (1.2) are guesses until measured.
+
 ## Robot model
 
 The model folder uses the AdvantageScope layout (`model.glb` for the chassis, `model_N.glb` per component,
@@ -70,6 +89,8 @@ To check the renderer in a plain browser against a real log: `CRUCIBLE_SAMPLE_LO
 | `src/renderer/src/lib/scene.ts` | three.js scene in WPILib coordinates (Z up) |
 | `src/renderer/src/lib/plot.ts` | uPlot panel |
 | `src/engine`, `src/games` | physics engine and game modules (see Simulation) |
+| `src/engine/bridge`, `src/engine/drivetrain.ts` | sim bridge (frames, NT client, session) and the swerve model |
+| `src/main/robot.ts` | robot process launcher for the Electron main process |
 | `tests/` | unit tests (engine: ballistics, drag, bounce, determinism, snapshots, scoring, golden hash); `real-log.test.ts` runs only when `CRUCIBLE_SAMPLE_LOG` is set |
 
 ## Known limits (M1)
