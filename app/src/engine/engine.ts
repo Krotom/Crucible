@@ -22,7 +22,7 @@ const GRAVITY = 9.81
 const AIR_DENSITY = 1.225
 const SCORE_LOG_CAP = 200
 const IMPACT_ACCEL = 25 // contact acceleration that counts as a contact in progress, m/s^2 (drive at full traction is about 12)
-const IMPACT_QUIET_STEPS = 15
+const IMPACT_QUIET_STEPS = 50 // one hit: the bumpers rebound and the drive pushes back in, which must not count as new hits
 const IMPACT_MIN_SPEED = 0.3 // smallest speed change reported as an impact, m/s
 
 let rapierReady: Promise<void> | null = null
@@ -514,7 +514,7 @@ export class Engine {
 
   /**
    * What the chassis felt this step: its acceleration and the floor tilt go to the Pigeon, and the part of the acceleration the drive
-   * and the slope did not cause is a contact. A contact is one impact event when it ends (quiet for 15 ms) with the speed it changed.
+   * and the slope did not cause is a contact. A contact is one impact event when it ends (quiet for 50 ms) with the speed it changed.
    */
   private senseChassis(v0: { x: number; y: number; z: number }): void {
     if (!this.drivetrain) return

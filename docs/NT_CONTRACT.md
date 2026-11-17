@@ -281,7 +281,7 @@ ready), and a debounced feeder jam check (the 40 A threshold tripped on the star
   pitch (right-hand rule about the left axis, so nose up is negative) and roll (about the forward axis, left up positive), and `-m g grad h` acts on the chassis. The frame carries the tilted pose
   (`robot` = x, y, z, qw, qx, qy, qz); REBUILT's BUMPS are the only terrain (a ridge 1.128 m deep, 1.854 m wide, 0.165 m high with linear ramps). The ridge is narrower than the wheelbase, so the
   plane averages its peak (the body rises to about half the ridge height). Tire normal load does not change with the tilt and the body stays planar for physics.
-- **Contact feedback.** The engine compares the chassis acceleration with what the tires and the slope produce; the rest is contact. When a contact has been quiet for 15 ms it becomes one
+- **Contact feedback.** The engine compares the chassis acceleration with what the tires and the slope produce; the rest is contact. When a contact has been quiet for 50 ms it becomes one
   `robot-impact` event (`against`: `field` or `robot`, and the speed change, rebound included), shown as `hits` in the readout. Impacts and other robots enter the state hash only when they exist, so the
   recorded hash of the test game did not change.
 - **Pigeon.** Pitch, roll and their rates reach the robot (it already applied them). The accelerometer values (`accelXg/Yg/Zg`, including the gravity projection on a slope and impact spikes, 8 g limit) are
