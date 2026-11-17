@@ -1,0 +1,62 @@
+package frc.robot;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import com.ctre.phoenix6.unmanaged.Unmanaged;
+
+import edu.wpi.first.hal.HAL;
+import edu.wpi.first.wpilibj.simulation.DriverStationSim;
+import edu.wpi.first.wpilibj.simulation.SimHooks;
+import frc.robot.subsystems.hood.HoodIOInterface.HoodInputs;
+import frc.robot.subsystems.hood.HoodIOSim;
+
+/** Throwaway spike: does the Talon FX sim follow WPILib's paused/stepped clock (needed for lockstep)? */
+class LockstepSpikeTest {
+    @BeforeAll
+    static void setup() {
+        HAL.initialize(500, 0);
+        DriverStationSim.setEnabled(true);
+        DriverStationSim.setDsAttached(true);
+        DriverStationSim.notifyNewData();
+    }
+
+    private static void realTimeSettle(HoodIOSim io, HoodInputs in, double target, double seconds) throws Exception {
+        io.setPosition(target);
+        for (int i = 0; i < seconds / 0.02; i++) { Unmanaged.feedEnable(100); Thread.sleep(20); io.updateInputs(in); }
+    }
+
+    @Test
+    void hoodUnderSteppedTime() throws Exception {
+        var io = new HoodIOSim();
+        var in = new HoodInputs();
+        // reference: the same move in plain real time
+        realTimeSettle(io, in, 0.0, 3.0);
+        long r0 = System.nanoTime();
+        io.setPosition(2.0);
+        double reachedAt = -1;
+        for (int i = 0; i < 400; i++) { Unmanaged.feedEnable(100); Thread.sleep(10); io.updateInputs(in); if (reachedAt < 0 && Math.abs(in.position - 2.0) < 0.05) reachedAt = i * 0.01; }
+        System.out.printf("SPIKE real-time reference: final %.3f, within 0.05 of target after %.2f s%n", in.position, reachedAt);
+
+        final double dt = 0.005;
+        for (int sleepUs : new int[] { 0, 500, 1000, 2500, 5000 }) {
+            realTimeSettle(io, in, 0.0, 3.0);
+            io.setPosition(2.0);
+            SimHooks.pauseTiming();
+            long wall0 = System.nanoTime();
+            double reached = -1, simT = 0;
+            for (int i = 0; i < 800; i++) {
+                Unmanaged.feedEnable(100);
+                SimHooks.stepTiming(dt);
+                simT += dt;
+                if (sleepUs > 0) { long end = System.nanoTime() + sleepUs * 1000L; while (System.nanoTime() < end) { /* spin: give the Talon thread wall time */ } }
+                io.updateInputs(in);
+                if (reached < 0 && Math.abs(in.position - 2.0) < 0.05) reached = simT;
+            }
+            double wallMs = (System.nanoTime() - wall0) / 1e6;
+            SimHooks.resumeTiming();
+            System.out.printf("SPIKE wall wait/step=%4d us: final %.3f, reached target at sim t=%s, 4.0 s of sim took %5.0f ms wall (%.1fx real time)%n",
+                    sleepUs, in.position, reached < 0 ? "never" : String.format("%.2f s", reached), wallMs, 4000.0 / wallMs);
+        }
+    }
+}
