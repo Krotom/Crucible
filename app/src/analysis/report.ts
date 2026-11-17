@@ -1,6 +1,7 @@
 // Turns RunReports into text a person reads: a Markdown summary, a self-contained HTML page with charts (score over time, speed, a field map of
 // the drive path, shots and pickups), and a comparison table across runs.
 import type { RunReport } from './recorder'
+import { brandFooter, brandHeader, REPORT_STYLE } from './theme'
 
 const fmt = (x: number | null | undefined, d = 2): string => (x === null || x === undefined || !Number.isFinite(x) ? '-' : x.toFixed(d))
 const pct = (x: number | null): string => (x === null ? '-' : `${(x * 100).toFixed(0)}%`)
@@ -76,21 +77,14 @@ function fieldMap(r: RunReport, fieldLength = 16.54, fieldWidth = 8.07): string 
   return `<figure><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="field map"><rect width="${w}" height="${h}" class="field"/><line x1="${w / 2}" x2="${w / 2}" y1="0" y2="${h}" class="grid"/><path d="${path}" fill="none" class="path"/>${shots}</svg><figcaption>Drive path; shots (filled: reached a HUB, open: missed)</figcaption></figure>`
 }
 
-const STYLE = `:root{--bg:#fff;--fg:#1c2128;--muted:#5b6672;--grid:#e3e7ec;--blue:#1a73e8;--red:#d93025;--accent:#0b8043;--field:#f1f4f8;--card:#fff;--line:#d0d6dd}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#14181d;--fg:#e6e9ed;--muted:#9aa5b1;--grid:#2a313a;--blue:#6ea8fe;--red:#ff8a80;--accent:#5bd490;--field:#1b2027;--card:#1a1f25;--line:#323a44}}
-body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;margin:0;padding:24px 16px}main{max-width:880px;margin:0 auto}
-h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:24px 0 8px}p.sub{color:var(--muted);margin:0 0 16px}
-pre{background:var(--card);border:1px solid var(--line);padding:12px;border-radius:6px;overflow-x:auto;font-size:13px}
-figure{margin:12px 0}figcaption{color:var(--muted);font-size:13px}svg{width:100%;height:auto;background:var(--card);border:1px solid var(--line);border-radius:6px}
-.grid{stroke:var(--grid);stroke-width:1}.tick{fill:var(--muted);font-size:11px}.field{fill:var(--field)}.path{stroke:var(--accent);stroke-width:2;fill:none}.hit{fill:var(--accent);stroke:var(--accent)}.miss{fill:none;stroke:var(--red);stroke-width:2}
-table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:left}`
+const STYLE = REPORT_STYLE
 
 /** A complete HTML page around some body markup, in the report style. */
 export function page(title: string, sub: string, body: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>${STYLE}</style></head><body><main>
-<h1>${title}</h1><p class="sub">${sub}</p>
+${brandHeader('Report')}<h1>${title}</h1><p class="sub">${sub}</p>
 ${body}
-</main></body></html>`
+${brandFooter()}</main></body></html>`
 }
 
 export function toHtml(r: RunReport): string {
@@ -103,8 +97,8 @@ export function toHtml(r: RunReport): string {
   ].join('')
   const rows = r.launches.slice(0, 80).map((l, i) => `<tr><td>${i + 1}</td><td>${fmt(l.t)}</td><td>${fmt(l.speed)}</td><td>${fmt(l.x, 1)}, ${fmt(l.y, 1)}</td><td>${l.scored ? `HUB at ${fmt(l.scoredAt)} s` : 'missed'}</td></tr>`).join('')
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${r.name} run report</title><style>${STYLE}</style></head><body><main>
-<h1>${r.name}</h1><p class="sub">${r.game}, seed ${r.seed}, ${r.duration} s simulated in ${r.step * 1000} ms steps</p>
+${brandHeader('Run report')}<h1>${r.name}</h1><p class="sub">${r.game}, seed ${r.seed}, ${r.duration} s simulated in ${r.step * 1000} ms steps</p>
 <pre>${summaryLines(r).join('\n')}</pre>${charts}
 <h2>Shots</h2><table><tr><th>#</th><th>time (s)</th><th>exit speed (m/s)</th><th>from (x, y)</th><th>result</th></tr>${rows}</table>
-</main></body></html>`
+${brandFooter()}</main></body></html>`
 }

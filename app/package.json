@@ -1,8 +1,10 @@
 {
   "name": "crucible",
-  "version": "0.1.0",
+  "productName": "BALTA Crucible",
+  "version": "1.0.0",
   "private": true,
-  "description": "Crucible: physics simulation and viewer for FRC robot code",
+  "description": "BALTA Crucible: physics simulation and analysis for FRC robot code",
+  "author": "BALTA Robotics",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

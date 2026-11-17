@@ -290,10 +290,11 @@ Every milestone ends with something you can run.
 | M6 | **Game module REBUILT + match flow + HUD (done, with assumptions listed in [the rules extract](../rules/REBUILT_RULES_EXTRACT.md) section 10; G403 and G407 included, TOWER not)**: rules extract, your review, implementation and tests | L | A full scripted match scores according to the reviewed rules |
 | M7 | **Contact and pushing (done, see [NT_CONTRACT.md](NT_CONTRACT.md) section 13)**: robot-field and robot-robot contact tuning, BUMP climbing, contact feedback to the robot | M | Wall hits and pushing look and feel right; odometry reacts correctly |
 | M8 | **Mode B (done, see [NT_CONTRACT.md](NT_CONTRACT.md) section 14)**: Talon emulation and swerve sim layer in robot code, clock control, deterministic and faster-than-real-time runs | XL | Two identical scripted runs produce identical logs, at several times real time |
-| M9 | **Scripted runs + analytics**: scripted driver input and autos, cycle times, accuracy, score-over-time reports | L | A batch of runs produces a report |
-| M10 | **Multiple robots** | L | A second robot (scripted or a second robot process) shares the field |
-| M11 | **Video and screenshot export** | S | Record a run to a file |
-| M12 | **Calibration** when real data exists: shot table fit, drivetrain acceleration fit, validation plots | M | Sim reproduces a recorded real-robot shot table within an agreed tolerance |
+| M9 | **(done, see app/README "Scripted runs") Scripted runs + analytics**: scripted driver input and autos, cycle times, accuracy, score-over-time reports | L | A batch of runs produces a report |
+| M10 | **(done: scripted bots that follow routes or cycle and score) Multiple robots** | L | A second robot (scripted or a second robot process) shares the field |
+| M11 | **(done: PNG screenshot and WebM recording of the 3D view) Video and screenshot export** | S | Record a run to a file |
+| M12 | **(done as a workflow, checked on synthetic data; no real data has been fitted yet) Calibration** when real data exists: shot table fit, drivetrain acceleration fit, validation plots | M | Sim reproduces a recorded real-robot shot table within an agreed tolerance |
+| M13 | **Branding (done)**: the BALTA Robotics identity (name BALTA Crucible, emblem, wordmark, gold / silver / black palette), a redesigned interface with dark and light themes, splash and About, app icon, branded reports | S | The app and its reports look like a BALTA product |
 
 Natural stopping points: after M1 (an AdvantageScope-style viewer for your robot), after M5 (balls and shooting), after
 M6 (a scored game).

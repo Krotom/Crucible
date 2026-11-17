@@ -30,7 +30,7 @@ export class SceneView {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     host.appendChild(this.renderer.domElement)
-    this.scene.background = new THREE.Color(0x101216)
+    this.scene.background = new THREE.Color(0x0b0c0e)
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x303338, 1.6))
     const sun = new THREE.DirectionalLight(0xffffff, 2.2)

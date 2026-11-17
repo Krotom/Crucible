@@ -14,8 +14,10 @@ function createWindow(): void {
   win = new BrowserWindow({
     width: 1500,
     height: 900,
-    backgroundColor: '#101216',
-    title: 'Crucible',
+    backgroundColor: '#0b0c0e',
+    title: 'BALTA Crucible',
+    icon: join(__dirname, '../../build/icon.png'),
+    autoHideMenuBar: true,
     webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: true, contextIsolation: true },
   })
   if (process.env['ELECTRON_RENDERER_URL']) win.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -47,6 +49,9 @@ ipcMain.handle('file:save', async (_e, name: string, data: ArrayBuffer, kind: 'p
   await writeFile(r.filePath, Buffer.from(data))
   return { ok: true, path: r.filePath }
 })
+
+app.setName('BALTA Crucible')
+if (process.platform === 'win32') app.setAppUserModelId('com.balta.crucible')
 
 app.whenReady().then(() => {
   createWindow()

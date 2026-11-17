@@ -7,6 +7,7 @@ import { SimSource } from './lib/simsource'
 import { DataStore } from './lib/store'
 import { isNumericType, type Value } from './lib/structs'
 import { parseWpilog } from './lib/wpilog'
+import { dismissSplash, setupAbout, setupCapture, setupTabs, setupTheme } from './lib/chrome'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
@@ -367,6 +368,11 @@ if (host) {
   void host.robotStatus().then((s) => { robotUp = s.running; refresh() })
 }
 
+setupTabs()
+setupTheme()
+setupAbout()
+setupCapture({ canvas: view.renderer.domElement, render: () => view.render(), notify: (t) => { $('notice').textContent = t }, host: (window as unknown as { crucibleHost?: { saveFile?: never } }).crucibleHost as never })
+dismissSplash()
 updateTransportEnabled()
 renderTopicList()
 view.loadRobotModel().then((msg) => { $('notice').textContent = msg }).catch((e) => { $('notice').textContent = `Model failed: ${(e as Error).message}` })

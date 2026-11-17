@@ -1,10 +1,10 @@
-# Crucible
+# BALTA Crucible
 
 A physics simulation app for FRC robot code: it receives motor outputs over NetworkTables, simulates the drivetrain,
 mechanisms, game pieces and field (with game-specific scoring), and returns sensor values. Like AdvantageScope for
 visualization plus a MoSim-style physics engine, built for testing real robot code.
 
-Working title; status: **planning**. No code yet.
+Built by BALTA Robotics. Status: the plan's milestones M0 to M13 are done (see below); the repository and folder keep the name Crucible.
 
 - [docs/PLAN.md](docs/PLAN.md): goals, decisions, architecture, physics model, milestones, risks, open questions
 - [docs/NT_CONTRACT.md](docs/NT_CONTRACT.md): the robot-to-app NetworkTables contract (draft)

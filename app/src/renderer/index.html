@@ -1,36 +1,94 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: http://localhost:* blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'" />
-    <title>Crucible</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: http://localhost:* blob:; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'" />
+    <meta name="theme-color" content="#0b0c0e" />
+    <title>BALTA Crucible</title>
+    <link rel="icon" type="image/png" href="./assets/brand/favicon.png" />
+    <script>
+      // apply the saved theme before the first paint (no flash); the app falls back to dark when storage is not available
+      try { const t = localStorage.getItem('crucible-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t } catch { /* dark */ }
+    </script>
   </head>
   <body>
-    <header>
-      <strong class="brand">Crucible</strong>
-      <button id="open-log">Open log…</button>
-      <input id="file" type="file" accept=".wpilog" hidden />
-      <span class="sep"></span>
-      <label>Seed <input id="seed" value="42" size="5" /></label>
-      <button id="launch-robot" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
-      <select id="game-select"><option value="test">Test game</option><option value="rebuilt">REBUILT</option></select>
-      <select id="opponent" title="Another robot on the field: a blocker holds still (push it, get blocked by it); a cycler picks up FUEL and fires it at its own HUB"><option value="none">no opponent</option><option value="blocker">blocker</option><option value="cycler">red cycler</option></select>
-      <select id="sim-mode"><option value="script">Scripted robot</option><option value="robot">Robot code (real time)</option><option value="lockstep">Robot code (lockstep, Mode B)</option></select>
-      <select id="lockstep-dt" title="Lockstep: simulated time of one exchange, and of one physics step (larger is faster and coarser)"><option value="0.001">1 ms step</option><option value="0.002">2 ms step</option><option value="0.005" selected>5 ms step</option></select>
-      <button id="start-sim">Start sim</button>
-      <span class="sep"></span>
-      <label>NT host <input id="host" value="127.0.0.1" size="14" /></label>
-      <button id="connect">Connect</button>
-      <span id="status" class="status">No data</span>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1-1.6A1.5 1.5 0 0 1 10 3.7h4a1.5 1.5 0 0 1 1.3.7l1 1.6h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12.5" r="3.3" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+      <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5" fill="currentColor"/></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 11v5.2M12 7.7v.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l1.6 2H19a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 19 18H5a1.5 1.5 0 0 1-1.5-1.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    </svg>
+
+    <div id="splash" aria-hidden="true">
+      <div class="splash-inner">
+        <img class="splash-emblem t-dark" src="./assets/brand/emblem-dark.png" alt="" />
+        <img class="splash-emblem t-light" src="./assets/brand/emblem.png" alt="" />
+        <img class="splash-word t-dark" src="./assets/brand/wordmark-light.png" alt="" />
+        <img class="splash-word t-light" src="./assets/brand/wordmark-ink.png" alt="" />
+        <div class="splash-product">Crucible</div>
+        <div class="splash-bar"><span></span></div>
+      </div>
+    </div>
+
+    <header class="appbar">
+      <div class="brand" title="BALTA Crucible">
+        <img class="brand-emblem t-dark" src="./assets/brand/emblem-dark.png" alt="" />
+        <img class="brand-emblem t-light" src="./assets/brand/emblem.png" alt="" />
+        <img class="brand-word t-dark" src="./assets/brand/wordmark-light.png" alt="BALTA" />
+        <img class="brand-word t-light" src="./assets/brand/wordmark-ink.png" alt="BALTA" />
+        <span class="brand-product">Crucible</span>
+      </div>
       <span class="grow"></span>
-      <span id="notice" class="notice"></span>
+      <span id="status" class="status" role="status">No data</span>
+      <div class="appbar-actions">
+        <button id="shot-btn" class="icon-btn" title="Screenshot of the 3D view (PNG)" aria-label="Screenshot"><svg class="i"><use href="#i-camera" /></svg></button>
+        <button id="rec-btn" class="icon-btn rec" title="Record the 3D view to a WebM video" aria-label="Record video"><svg class="i"><use href="#i-rec" /></svg><span id="rec-time" class="rec-time" hidden>0:00</span></button>
+        <button id="theme-btn" class="icon-btn" title="Switch between dark and light" aria-label="Theme"><svg class="i"><use href="#i-sun" /></svg></button>
+        <button id="about-btn" class="icon-btn" title="About BALTA Crucible" aria-label="About"><svg class="i"><use href="#i-info" /></svg></button>
+      </div>
     </header>
-    <main>
-      <aside id="topics-panel">
-        <input id="filter" placeholder="Filter topics" />
-        <div id="topics"></div>
+
+    <div class="shell">
+      <aside id="topics-panel" class="sidebar">
+        <div class="tabs" role="tablist">
+          <button class="tab on" role="tab" data-tab="session" aria-selected="true">Session</button>
+          <button class="tab" role="tab" data-tab="topics" aria-selected="false">Topics</button>
+        </div>
+
+        <section id="tab-session" class="tabpanel">
+          <div class="card">
+            <h3>Simulation</h3>
+            <label class="field"><span>Game</span><select id="game-select"><option value="test">Test game</option><option value="rebuilt">REBUILT</option></select></label>
+            <label class="field"><span>Robot</span><select id="sim-mode"><option value="script">Scripted robot</option><option value="robot">Robot code (real time)</option><option value="lockstep">Robot code (lockstep, Mode B)</option></select></label>
+            <label class="field"><span>Opponent</span><select id="opponent" title="Another robot on the field: a blocker holds still (push it, get blocked by it); a cycler picks up FUEL and fires it at its own HUB"><option value="none">None</option><option value="blocker">Blocker</option><option value="cycler">Red cycler</option></select></label>
+            <div class="row2">
+              <label class="field"><span>Step</span><select id="lockstep-dt" title="Lockstep: simulated time of one exchange and of one physics step (larger is faster and coarser)"><option value="0.001">1 ms</option><option value="0.002">2 ms</option><option value="0.005" selected>5 ms</option></select></label>
+              <label class="field"><span>Seed</span><input id="seed" value="42" inputmode="numeric" /></label>
+            </div>
+            <button id="start-sim" class="primary wide">Start sim</button>
+            <button id="launch-robot" class="wide" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
+          </div>
+
+          <div class="card">
+            <h3>Data</h3>
+            <button id="open-log" class="wide"><svg class="i inline"><use href="#i-folder" /></svg>Open log…</button>
+            <input id="file" type="file" accept=".wpilog" hidden />
+            <p class="hint">or drop a .wpilog anywhere in the window</p>
+            <label class="field"><span>NT host</span><input id="host" value="127.0.0.1" spellcheck="false" /></label>
+            <button id="connect" class="wide">Connect</button>
+          </div>
+        </section>
+
+        <section id="tab-topics" class="tabpanel" hidden>
+          <input id="filter" placeholder="Filter topics" />
+          <div id="topics"></div>
+        </section>
       </aside>
+
       <section id="center">
         <div id="view">
           <div class="hud">
@@ -39,23 +97,23 @@
             <button id="focus">Focus robot</button>
           </div>
           <pre id="simhud" class="simhud" hidden></pre>
-          <div id="drop" class="drop">Drop a .wpilog here</div>
+          <div id="drop" class="drop"><div><strong>Drop a .wpilog</strong><span>to open it in BALTA Crucible</span></div></div>
         </div>
         <div id="transport">
-          <button id="play">Play</button>
+          <button id="play" class="primary">Play</button>
           <input id="seek" type="range" min="0" max="1" step="0.001" value="0" />
           <span id="time">0.00 / 0.00 s</span>
-          <select id="speed">
+          <select id="speed" title="Playback and simulation speed">
             <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="1" selected>1x</option>
             <option value="2">2x</option><option value="4">4x</option><option value="8">8x</option><option value="0">max (lockstep)</option>
           </select>
-          <span id="ds-controls" hidden>
+          <span id="ds-controls" class="group" hidden>
             <button id="match-start" title="Reset and run the match: the app enables and disables the robot like the field system">Start match</button>
             <button id="match-end">End match</button>
             <button id="ds-enable">Enable</button>
             <select id="ds-mode"><option value="teleop">Teleop</option><option value="auto">Auto</option><option value="test">Test</option></select>
           </span>
-          <span id="sim-buttons" hidden>
+          <span id="sim-buttons" class="group" hidden>
             <button id="sim-step" title="Advance 10 ms">Step</button>
             <button id="sim-reset">Reset</button>
             <button id="sim-save">Save state</button>
@@ -65,7 +123,32 @@
         </div>
         <div id="plot"></div>
       </section>
-    </main>
+    </div>
+
+    <footer class="statusbar">
+      <span id="notice" class="notice"></span>
+      <span class="grow"></span>
+      <span class="legal">BALTA Crucible <span id="app-version"></span> · BALTA Robotics</span>
+    </footer>
+
+    <dialog id="about">
+      <form method="dialog">
+        <div class="about-head">
+          <img class="about-emblem t-dark" src="./assets/brand/emblem-dark.png" alt="" />
+          <img class="about-emblem t-light" src="./assets/brand/emblem.png" alt="" />
+          <div>
+            <img class="about-word t-dark" src="./assets/brand/wordmark-light.png" alt="BALTA" />
+            <img class="about-word t-light" src="./assets/brand/wordmark-ink.png" alt="BALTA" />
+            <div class="about-product">Crucible</div>
+          </div>
+        </div>
+        <p class="about-line">Physics simulation and analysis for FRC robot code. Version <span id="about-version"></span>.</p>
+        <p class="about-line dim">Runs the robot's own code in the loop with a deterministic physics engine, a rules-aware REBUILT field, scripted runs and calibration.</p>
+        <p class="about-line dim small">Built with Rapier (Apache-2.0), three.js (MIT) and uPlot (MIT). The BALTA name, wordmark and emblem belong to BALTA Robotics.</p>
+        <div class="about-actions"><button class="primary">Close</button></div>
+      </form>
+    </dialog>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

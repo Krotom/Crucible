@@ -1,4 +1,4 @@
-# Crucible app (M1 viewer, M2 engine core)
+# BALTA Crucible app
 
 Electron + TypeScript + three.js. At this stage the app is a viewer for an existing robot: it connects to a running
 robot over NetworkTables 4 or opens a `.wpilog`, shows the robot in 3D and plots numeric topics. It also runs the
@@ -103,6 +103,21 @@ robot's Talons are a Java emulation (`EmuTalon`) and its swerve drivetrain a Jav
 go **faster than real time**: the step dropdown sets the simulated time of one exchange and of one physics step (1 ms: 1.5x, 2 ms: 2.5x, 5 ms: 3.5 to 4x real time, measured with the real robot project). The speed
 dropdown paces it (`max` is as fast as it goes). Vision is off in this mode (the PhotonVision sim is not repeatable). Scripted runs tie inputs to the sim clock with `session.at(simTime, fn)`; the buttons are wall-clock timed
 (interactive, not repeatable). The robot accepts one app at a time (the newest connection wins): close other Crucible windows before a run.
+
+## Scripted runs, bots, capture, calibration (M9 to M12)
+
+- **Scripted runs.** A run script (JSON, see `runs/rebuilt-cycle.json`) lists timed driver actions (`ds`, `sticks`, `buttons`, `match`) in simulated time. `npm run batch -- runs/rebuilt-cycle.json` starts the robot project in lockstep for each
+  script, runs it, and writes `runs/out/<name>/report.{json,md,html}` plus a comparison `summary.md`; a file may list several scripts or give `seeds` to repeat each one. Two runs of one script give byte-identical reports.
+  The report has score over time, shots (fired, reached a HUB, accuracy), shot bursts and cycle times, pickup-to-launch times, distance, top speed and contacts, a drive path and shot map.
+- **Other robots.** The Opponent menu adds a blocker or a red cycler. In a script, `bots` takes routes or cycles (pick up FUEL, drive to a firing spot, fire at the bot's own HUB, with a seeded spread); keep the straight line to a firing spot clear of the HUB.
+- **Screenshot and video.** The camera and record buttons in the title bar save a PNG of the 3D view or a WebM recording (the app asks where to save; a browser downloads).
+- **Calibration.** `npm run calibrate -- example` writes synthetic example files; `-- shots shots.csv` fits launch efficiency and backspin to measured shots, `-- drive accel.csv [--volts 12] [--mass]` fits tire friction (and mass) to a measured acceleration;
+  `--apply` writes the fitted values into `robots/offseason/robot.yaml`. The reports say when a parameter is not pinned down by the data. File formats: `src/calibration/data.ts`. Nothing has been fitted to real data yet.
+
+## Brand
+
+The name is BALTA Crucible. The images (emblem, wordmark, icons) are built from the BALTA Robotics logo file by `tools/build-brand-assets.mjs`; colors are gold #cb8e00, silver #dcdcdc, black #010101. The theme button switches dark and light
+(the choice is remembered). Reports carry the same header and follow the reader's light or dark setting.
 
 ## Robot model
 
