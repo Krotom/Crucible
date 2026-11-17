@@ -2,14 +2,14 @@
 // flow, and bit-for-bit snapshots. No DOM, no wall clock: given the same config and the same number of steps the
 // state is identical on every run (deterministic Rapier build, seeded RNG, fixed iteration order).
 import RAPIER from '@dimforge/rapier3d-deterministic-compat'
-import type { ColliderDesc, Cuboid, RigidBody, World } from '@dimforge/rapier3d-deterministic-compat'
+import type { Collider, ColliderDesc, Cuboid, RigidBody, World } from '@dimforge/rapier3d-deterministic-compat'
 import type { MotorState } from './bridge/frames'
 import { BallSystem, type BallHost } from './balls'
 import { Drivetrain } from './drivetrain'
 import { MechanismModel } from './mechanism'
 import { Hasher, Rng } from './rng'
 import type {
-  Alliance, BoxSpec, EngineConfig, EngineSnapshot, GameContext, GameEvent, GameModule, PieceSpawn, PieceSpec, RenderFrame,
+  Alliance, BoxSpec, EngineConfig, OtherRobotSpec, EngineSnapshot, GameContext, GameEvent, GameModule, PieceSpawn, PieceSpec, RenderFrame,
   RobotSpec, Score, ScoreEntry, SensorSpec, Vec3,
 } from './types'
 
@@ -21,6 +21,9 @@ const GROUP_PASS = 0x8
 const GRAVITY = 9.81
 const AIR_DENSITY = 1.225
 const SCORE_LOG_CAP = 200
+const IMPACT_ACCEL = 25 // contact acceleration that counts as a contact in progress, m/s^2 (drive at full traction is about 12)
+const IMPACT_QUIET_STEPS = 15
+const IMPACT_MIN_SPEED = 0.3 // smallest speed change reported as an impact, m/s
 
 let rapierReady: Promise<void> | null = null
 /** Loads the Rapier WASM once per process or worker. */
@@ -48,6 +51,30 @@ export function interp(points: [number, number][], x: number): number {
 function yawQuat(yaw: number): { x: number; y: number; z: number; w: number } {
   return { x: 0, y: 0, z: Math.sin(yaw / 2), w: Math.cos(yaw / 2) }
 }
+
+/** Rounded bumper corners as a chamfer: the convex footprint of half extents hx, hy with corners cut by c, from -hz to +hz. */
+function chassisHull(hx: number, hy: number, hz: number, c: number): Float32Array {
+  const k = Math.min(c, hx * 0.9, hy * 0.9)
+  const ring: [number, number][] = [[hx, hy - k], [hx - k, hy], [-hx + k, hy], [-hx, hy - k], [-hx, -hy + k], [-hx + k, -hy], [hx - k, -hy], [hx, -hy + k]]
+  const pts: number[] = []
+  for (const z of [-hz, hz]) for (const [x, y] of ring) pts.push(x, y, z)
+  return new Float32Array(pts)
+}
+
+/** Orientation from yaw, pitch (about left, nose down positive) and roll (about forward, left up positive): Rz * Ry * Rx. Returns w, x, y, z. */
+function tiltQuat(yaw: number, pitch: number, roll: number): [number, number, number, number] {
+  const cy = Math.cos(yaw / 2), sy = Math.sin(yaw / 2), cp = Math.cos(pitch / 2), sp = Math.sin(pitch / 2), cr = Math.cos(roll / 2), sr = Math.sin(roll / 2)
+  return [
+    cy * cp * cr + sy * sp * sr,
+    cy * cp * sr - sy * sp * cr,
+    cy * sp * cr + sy * cp * sr,
+    sy * cp * cr - cy * sp * sr,
+  ]
+}
+
+/** Floor height and slope under a footprint: a plane through the heights at the contact points. gx, gy: slope in the field. */
+interface Tilt { z: number; pitch: number; roll: number; gx: number; gy: number }
+const FLAT: Tilt = { z: 0, pitch: 0, roll: 0, gx: 0, gy: 0 }
 
 function insideBox(p: { x: number; y: number; z: number }, s: SensorSpec): boolean {
   const dx = p.x - s.center[0]
@@ -84,6 +111,13 @@ export class Engine {
   private gameState: Record<string, unknown> = {}
   private removeQueue: number[] = []
   private scriptEnd = 0
+  private others: { spec: OtherRobotSpec; body: RigidBody; collider: Collider; inertia: number }[] = []
+  private robotCollider!: Collider
+  /** the force the tires and the slope put on the chassis last step (to tell contact forces from drive forces) */
+  private driveForce = { fx: 0, fy: 0 }
+  private robotMass = 1
+  /** contact feedback: the speed change of a contact in progress, and the largest so far */
+  private contact = { acc: 0, quiet: 0, peak: 0, count: 0, vx: 0, vy: 0, against: 'field' as 'field' | 'robot' }
   /** The swerve model when the robot is driven by motor voltages. */
   drivetrain: Drivetrain | null = null
   /** Mechanism physics by Talon CAN id. */
@@ -152,7 +186,10 @@ export class Engine {
     const field = this.game.field()
     for (const b of field.colliders) this.addBox(b)
     for (const s of field.sensors) this.sensorInside.set(s.id, new Set())
+    this.contact = { acc: 0, quiet: 0, peak: 0, count: 0, vx: 0, vy: 0, against: 'field' }
+    this.driveForce = { fx: 0, fy: 0 }
     this.addRobot()
+    this.addOthers()
     for (const spawn of this.game.initialLayout(this.rng.fn())) this.spawn(spawn)
     this.phaseIndex = -1
     this.updatePhase()
@@ -195,18 +232,78 @@ export class Engine {
       ? RAPIER.RigidBodyDesc.dynamic().enabledTranslations(true, true, false).enabledRotations(false, false, true).setCanSleep(false)
       : RAPIER.RigidBodyDesc.kinematicVelocityBased()
     const body = this.world.createRigidBody(desc.setTranslation(r.start.x, r.start.y, r.half[2]).setRotation(yawQuat(r.start.yaw)))
-    const volume = 8 * r.half[0] * r.half[1] * r.half[2]
-    this.world.createCollider(
-      RAPIER.ColliderDesc.cuboid(r.half[0], r.half[1], r.half[2])
-        .setDensity(driven ? this.drivetrain!.spec.mass / volume : 1)
-        .setCollisionGroups((GROUP_ROBOT << 16) | (GROUP_STATIC | GROUP_BALL))
-        .setFriction(driven ? 0.2 : 0.5)
-        .setRestitution(0.2)
-        .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Multiply)
-        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Multiply),
-      body,
-    )
+    const bumper = this.bumperCollider(r.half, driven ? this.drivetrain!.spec.mass : 0, r.chassis?.moi, driven)
+    this.robotCollider = this.world.createCollider(bumper, body)
+    this.robotMass = driven ? this.drivetrain!.spec.mass : 1
     this.robot = body
+  }
+
+  /**
+   * A bumper collider: a chamfered footprint for driven robots (rounded bumper corners do not snag on walls and ramps), a plain box for
+   * the scripted test robot. Mass and yaw inertia are set explicitly. Robots average their friction and restitution with each other
+   * and multiply them with field surfaces, so bumper on wall and bumper on bumper both come out near the configured value.
+   */
+  private bumperCollider(half: Vec3, mass: number, moi: number | undefined, realistic: boolean): ColliderDesc {
+    const ch = this.robotSpec.chassis ?? {}
+    let desc = realistic
+      ? (RAPIER.ColliderDesc.convexHull(chassisHull(half[0], half[1], half[2], ch.chamfer ?? 0.04)) as ColliderDesc)
+      : RAPIER.ColliderDesc.cuboid(half[0], half[1], half[2])
+    if (realistic) {
+      const i = moi ?? (mass * (4 * half[0] * half[0] + 4 * half[1] * half[1])) / 12
+      desc = desc.setMassProperties(mass, { x: 0, y: 0, z: 0 }, { x: i, y: i, z: i }, { x: 0, y: 0, z: 0, w: 1 })
+    } else desc = desc.setDensity(1)
+    return desc
+      .setCollisionGroups((GROUP_ROBOT << 16) | (GROUP_STATIC | GROUP_BALL | GROUP_ROBOT))
+      .setFriction(ch.friction ?? (realistic ? 0.45 : 0.5))
+      .setRestitution(ch.restitution ?? (realistic ? 0.25 : 0.2))
+      .setFrictionCombineRule(realistic ? RAPIER.CoefficientCombineRule.Average : RAPIER.CoefficientCombineRule.Multiply)
+      .setRestitutionCombineRule(realistic ? RAPIER.CoefficientCombineRule.Average : RAPIER.CoefficientCombineRule.Multiply)
+  }
+
+  private addOthers(): void {
+    this.others = []
+    for (const spec of this.robotSpec.others ?? []) {
+      const body = this.world.createRigidBody(
+        RAPIER.RigidBodyDesc.dynamic().enabledTranslations(true, true, false).enabledRotations(false, false, true).setCanSleep(false)
+          .setTranslation(spec.start.x, spec.start.y, spec.half[2]).setRotation(yawQuat(spec.start.yaw)),
+      )
+      const collider = this.world.createCollider(this.bumperCollider(spec.half, spec.mass, undefined, true), body)
+      this.others.push({ spec, body, collider, inertia: (spec.mass * (4 * spec.half[0] ** 2 + 4 * spec.half[1] ** 2)) / 12 })
+    }
+  }
+
+  // ---------------------------------------------------------------- terrain
+
+  /** The floor under a robot: height at the body origin, the plane through the heights at the contact points (pitch, roll) and its slope in the field. */
+  private tiltAt(x: number, y: number, yaw: number, points: [number, number][]): Tilt {
+    const terrain = this.game.terrain
+    if (!terrain) return FLAT
+    const c = Math.cos(yaw), sn = Math.sin(yaw)
+    const n = points.length
+    const hs: number[] = []
+    let mx = 0, my = 0, mh = 0
+    for (const [px, py] of points) {
+      const h = terrain(x + c * px - sn * py, y + sn * px + c * py)
+      hs.push(h); mx += px; my += py; mh += h
+    }
+    mx /= n; my /= n; mh /= n
+    let sxx = 0, sxy = 0, syy = 0, sxh = 0, syh = 0
+    points.forEach(([px, py], i) => {
+      const dx = px - mx, dy = py - my, dh = hs[i] - mh
+      sxx += dx * dx; sxy += dx * dy; syy += dy * dy; sxh += dx * dh; syh += dy * dh
+    })
+    const det = sxx * syy - sxy * sxy
+    if (det < 1e-9) return { ...FLAT, z: mh }
+    const gx = (sxh * syy - syh * sxy) / det // slope along the robot's forward axis
+    const gy = (syh * sxx - sxh * sxy) / det // slope along its left axis
+    return { z: mh - gx * mx - gy * my, pitch: -Math.atan(gx), roll: Math.atan(gy), gx: c * gx - sn * gy, gy: sn * gx + c * gy }
+  }
+
+  private robotPoints(): [number, number][] {
+    const m = this.drivetrain?.spec.modules
+    if (m && m.length >= 3) return m.map((q) => [q.x, q.y])
+    const [hx, hy] = this.robotSpec.half
+    return [[hx, hy], [hx, -hy], [-hx, hy], [-hx, -hy]]
   }
 
   // ---------------------------------------------------------------- pieces
@@ -339,11 +436,14 @@ export class Engine {
 
   step(): void {
     for (const [id, m] of this.mechanisms) m.step(this.dt, this.mechanismVolts.get(id) ?? 0)
+    const v0 = this.robot.linvel()
     if (this.drivetrain) this.driveFromMotors()
     else this.driveRobot()
+    this.driveOthers()
     this.applyAirDrag()
     this.world.step()
     this.stepCount++
+    this.senseChassis(v0)
     this.checkSensors()
     this.ballSystem?.step()
     this.flushRemovals()
@@ -363,11 +463,86 @@ export class Engine {
     const q = this.robot.rotation()
     const v = this.robot.linvel()
     const w = this.robot.angvel()
-    const load = this.drivetrain!.step(this.dt, { x: t.x, y: t.y, yaw: 2 * Math.atan2(q.z, q.w), vx: v.x, vy: v.y, omega: w.z })
+    const yaw = 2 * Math.atan2(q.z, q.w)
+    const load = this.drivetrain!.step(this.dt, { x: t.x, y: t.y, yaw, vx: v.x, vy: v.y, omega: w.z })
+    // the floor's slope pushes the chassis back down a ramp (the body is planar; the height it gains is the energy a climb costs)
+    const tilt = this.tiltAt(t.x, t.y, yaw, this.robotPoints())
+    const fx = load.fx - this.robotMass * GRAVITY * tilt.gx
+    const fy = load.fy - this.robotMass * GRAVITY * tilt.gy
+    this.driveForce = { fx, fy }
     this.robot.resetForces(true)
-    this.robot.addForce({ x: load.fx, y: load.fy, z: 0 }, true)
+    this.robot.addForce({ x: fx, y: fy, z: 0 }, true)
     this.robot.resetTorques(true)
     this.robot.addTorque({ x: 0, y: 0, z: load.torque }, true)
+  }
+
+  /**
+   * Other robots: each step cancels the error between the body's velocity and its script (zero when it has none), with the force and
+   * torque limited by traction (mu times weight). So it brakes like Coulomb friction (holds against a push up to that force, slides
+   * above it) and accelerates at the traction limit. The slope pushes on it too.
+   */
+  private driveOthers(): void {
+    for (const o of this.others) {
+      const sp = o.spec
+      const b = o.body
+      let vx = 0, vy = 0, omega = 0
+      let acc = 0
+      for (const seg of sp.script ?? []) {
+        if (this.time < acc + seg.duration) { vx = seg.vx; vy = seg.vy; omega = seg.omega; break }
+        acc += seg.duration
+      }
+      const q = b.rotation()
+      const yaw = 2 * Math.atan2(q.z, q.w)
+      const c = Math.cos(yaw), sn = Math.sin(yaw)
+      const v = b.linvel()
+      const w = b.angvel().z
+      const fmax = (sp.mu ?? 1) * sp.mass * GRAVITY
+      let fx = (sp.mass * (vx * c - vy * sn - v.x)) / this.dt
+      let fy = (sp.mass * (vx * sn + vy * c - v.y)) / this.dt
+      const mag = Math.hypot(fx, fy)
+      if (mag > fmax) { fx *= fmax / mag; fy *= fmax / mag }
+      const tmax = fmax * 0.4 * Math.hypot(sp.half[0], sp.half[1])
+      const torque = Math.max(-tmax, Math.min(tmax, (o.inertia * (omega - w)) / this.dt))
+      const t = b.translation()
+      const tilt = this.tiltAt(t.x, t.y, yaw, [[sp.half[0], sp.half[1]], [sp.half[0], -sp.half[1]], [-sp.half[0], sp.half[1]], [-sp.half[0], -sp.half[1]]])
+      b.resetForces(true)
+      b.addForce({ x: fx - sp.mass * GRAVITY * tilt.gx, y: fy - sp.mass * GRAVITY * tilt.gy, z: 0 }, true)
+      b.resetTorques(true)
+      b.addTorque({ x: 0, y: 0, z: torque }, true)
+    }
+  }
+
+  /**
+   * What the chassis felt this step: its acceleration and the floor tilt go to the Pigeon, and the part of the acceleration the drive
+   * and the slope did not cause is a contact. A contact is one impact event when it ends (quiet for 15 ms) with the speed it changed.
+   */
+  private senseChassis(v0: { x: number; y: number; z: number }): void {
+    if (!this.drivetrain) return
+    const v1 = this.robot.linvel()
+    const ax = (v1.x - v0.x) / this.dt
+    const ay = (v1.y - v0.y) / this.dt
+    const t = this.robot.translation()
+    const q = this.robot.rotation()
+    const tilt = this.tiltAt(t.x, t.y, 2 * Math.atan2(q.z, q.w), this.robotPoints())
+    this.drivetrain.setInertial(ax, ay, tilt.pitch, tilt.roll, this.dt)
+
+    const cx = ax - this.driveForce.fx / this.robotMass
+    const cy = ay - this.driveForce.fy / this.robotMass
+    const k = this.contact
+    if (Math.hypot(cx, cy) > IMPACT_ACCEL) {
+      k.vx += cx * this.dt; k.vy += cy * this.dt; k.acc += this.dt; k.quiet = 0
+      if (this.others.length > 0 && k.against === 'field') {
+        for (const o of this.others) this.world.contactPair(this.robotCollider, o.collider, (m) => { if (m.numContacts() > 0) k.against = 'robot' })
+      }
+    } else if (k.acc > 0 && ++k.quiet >= IMPACT_QUIET_STEPS) {
+      const speed = Math.hypot(k.vx, k.vy)
+      if (speed >= IMPACT_MIN_SPEED) {
+        k.count++
+        k.peak = Math.max(k.peak, speed)
+        this.emit({ type: 'robot-impact', against: k.against, speed })
+      }
+      k.acc = 0; k.quiet = 0; k.vx = 0; k.vy = 0; k.against = 'field'
+    }
   }
 
   private driveRobot(): void {
@@ -536,6 +711,8 @@ export class Engine {
       gameState: JSON.parse(JSON.stringify(this.gameState)),
       drivetrain: this.drivetrain?.save(),
       balls: this.ballSystem?.save(),
+      otherHandles: this.others.map((o) => o.body.handle),
+      contact: { ...this.contact },
       mechanisms: Object.fromEntries([...this.mechanisms].map(([id, m]) => [id, m.save()])),
     }
   }
@@ -555,6 +732,12 @@ export class Engine {
     })
     this.pieceByHandle = new Map(this.pieces.map((p) => [p.handle, p]))
     this.robot = this.world.getRigidBody(s.robotHandle)
+    this.robotCollider = this.robot.collider(0)
+    this.others.forEach((o, i) => {
+      o.body = this.world.getRigidBody(s.otherHandles![i])
+      o.collider = o.body.collider(0)
+    })
+    if (s.contact) this.contact = { ...s.contact }
     this.sensorInside = new Map(Object.entries(s.sensorInside).map(([k, v]) => [k, new Set(v)]))
     this.scores = { ...s.scores }
     this.scoreLog = s.scoreLog.map((e) => ({ ...e }))
@@ -582,6 +765,8 @@ export class Engine {
       h.add(w.x); h.add(w.y); h.add(w.z)
     }
     addBody(this.robot)
+    for (const o of this.others) addBody(o.body)
+    if (this.contact.count > 0) { h.add(this.contact.count); h.add(this.contact.peak) }
     this.drivetrain?.hashInto((x) => h.add(x))
     for (const m of this.mechanisms.values()) { h.add(m.angle); h.add(m.speed) }
     if (this.ballSystem) { for (const s of this.ballSystem.held) h.add(s); h.add(this.ballSystem.shots); h.add(this.ballSystem.captured) }
@@ -611,12 +796,26 @@ export class Engine {
     const t = this.robot.translation()
     const q = this.robot.rotation()
     const v = this.robot.linvel()
+    const yaw = 2 * Math.atan2(q.z, q.w)
+    const tilt = this.tiltAt(t.x, t.y, yaw, this.robotPoints())
+    const [qw, qx, qy, qz] = tiltQuat(yaw, tilt.pitch, tilt.roll)
+    const others = this.others.map((o) => {
+      const ot = o.body.translation()
+      const oq = o.body.rotation()
+      const oyaw = 2 * Math.atan2(oq.z, oq.w)
+      const [hx, hy] = o.spec.half
+      const ti = this.tiltAt(ot.x, ot.y, oyaw, [[hx, hy], [hx, -hy], [-hx, hy], [-hx, -hy]])
+      const [w, x, y, z] = tiltQuat(oyaw, ti.pitch, ti.roll)
+      return [ot.x, ot.y, ot.z + ti.z, w, x, y, z]
+    })
     return {
       time: this.time,
       phase: this.phaseName(),
       scores: { ...this.scores },
-      robot: [t.x, t.y, t.z, q.w, q.x, q.y, q.z],
+      robot: [t.x, t.y, t.z + tilt.z, qw, qx, qy, qz],
       robotSpeed: Math.hypot(v.x, v.y),
+      others,
+      impacts: { count: this.contact.count, peak: this.contact.peak },
       pieceCount: n,
       awakeCount: awake,
       piecePositions: pos,

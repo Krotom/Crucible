@@ -19,6 +19,8 @@ export class SceneView {
   private robot = new THREE.Group()
   private simGroup: THREE.Group | null = null
   private pieceMeshes: THREE.InstancedMesh[] = []
+  private otherMeshes: THREE.Group[] = []
+  private otherHalfZ: number[] = []
   private robotBox: THREE.LineSegments | null = null
   private captureBox: THREE.LineSegments | null = null
   private components: THREE.Group[] = []
@@ -119,7 +121,7 @@ export class SceneView {
   get componentCount(): number { return this.components.length }
 
   /** Replaces the placeholder field with a game module's field: colliders, sensors, and instanced game pieces. */
-  setSimField(field: FieldDefinition, pieces: PieceSpec[], robotHalf: [number, number, number]): void {
+  setSimField(field: FieldDefinition, pieces: PieceSpec[], robotHalf: [number, number, number], othersHalf: [number, number, number][] = []): void {
     this.clearSim()
     this.base.visible = false
     const g = new THREE.Group()
@@ -153,6 +155,18 @@ export class SceneView {
       g.add(im)
       this.pieceMeshes.push(im)
     }
+    // other robots: red boxes with a nose mark on the front
+    this.otherHalfZ = othersHalf.map((h) => h[2])
+    this.otherMeshes = othersHalf.map((h) => {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(h[0] * 2, h[1] * 2, h[2] * 2), new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.7, transparent: true, opacity: 0.85 }))
+      const holder = new THREE.Group()
+      box.position.z = h[2]
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(0.06, h[1] * 1.2, 0.04), new THREE.MeshBasicMaterial({ color: 0xffd166 }))
+      nose.position.set(h[0], 0, h[2] * 2)
+      holder.add(box, nose)
+      g.add(holder)
+      return holder
+    })
     this.scene.add(g)
     this.simGroup = g
     // the actual collision box of the robot, for checking it against the model
@@ -174,6 +188,7 @@ export class SceneView {
   clearSim(): void {
     if (this.simGroup) { this.scene.remove(this.simGroup); this.simGroup = null }
     this.pieceMeshes = []
+    this.otherMeshes = []
     if (this.robotBox) { this.robot.remove(this.robotBox); this.robotBox = null }
     this.captureBox = null
     this.base.visible = true
@@ -186,6 +201,12 @@ export class SceneView {
     this.robot.position.set(f.robot[0], f.robot[1], f.robot[2] - robotHalfZ)
     this.robot.quaternion.set(f.robot[4], f.robot[5], f.robot[6], f.robot[3])
     if (this.robotBox) this.robotBox.position.z = robotHalfZ
+    f.others.forEach((o, i) => {
+      const m = this.otherMeshes[i]
+      if (!m) return
+      m.position.set(o[0], o[1], o[2] - (this.otherHalfZ[i] ?? 0))
+      m.quaternion.set(o[4], o[5], o[6], o[3])
+    })
     if (this.captureBox) {
       const c = f.capture
       this.captureBox.visible = c !== null

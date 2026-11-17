@@ -2,7 +2,7 @@
 import { parse } from 'yaml'
 import type { DrivetrainSpec } from '../engine/drivetrain'
 import type { MechanismSpec } from '../engine/mechanism'
-import type { BallHandlingSpec, Vec3 } from '../engine/types'
+import type { BallHandlingSpec, ChassisContact, Vec3 } from '../engine/types'
 import { MOTORS } from '../engine/motors'
 
 export interface RobotDefinition {
@@ -13,6 +13,7 @@ export interface RobotDefinition {
   drivetrain: DrivetrainSpec
   mechanisms: MechanismSpec[]
   balls?: BallHandlingSpec
+  contact: ChassisContact
 }
 
 type Obj = Record<string, unknown>
@@ -91,6 +92,9 @@ export function parseDefinition(text: string): RobotDefinition {
     return spec
   })
 
+  const contact: ChassisContact = {}
+  for (const k of ['moi', 'friction', 'restitution', 'chamfer'] as const) if (chassis[k] !== undefined) contact[k] = num(chassis, k, 'chassis')
+
   const balls = root.ballHandling === undefined ? undefined : parseBalls(obj(root.ballHandling, 'ballHandling'), new Set(mechanisms.map((m) => m.name)))
 
   return {
@@ -101,6 +105,7 @@ export function parseDefinition(text: string): RobotDefinition {
     drivetrain,
     mechanisms,
     balls,
+    contact,
   }
 }
 

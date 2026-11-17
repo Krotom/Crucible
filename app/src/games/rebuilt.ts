@@ -145,7 +145,7 @@ function fieldDefinition(): { colliders: BoxSpec[]; sensors: SensorSpec[] } {
       { label: `hub ${a} right`, center: [hx, HUB_Y - o, hz], half: [HUB_BASE / 2, wall / 2, hz], friction: 0.5, restitution: 0.8 },
     )
     sensors.push({ id: `hub-${a}`, center: [hx, HUB_Y, SENSOR_Z], half: [HUB_OPENING / 2 - 0.05, HUB_OPENING / 2 - 0.05, 0.08], alliance: a })
-    // two BUMPS beside the HUB: a ridge with 15-degree-ish ramps; the robot drives through (it cannot climb yet, M7)
+    // two BUMPS beside the HUB: a ridge with ramps; pieces collide with the hull, the robot's tires follow bumpHeight() (terrain below)
     for (const side of [-1, 1]) {
       const cy = HUB_Y + side * (HUB_BASE / 2 + BUMP.width / 2)
       const x0 = hx - BUMP.depth / 2
@@ -318,7 +318,24 @@ export function createRebuiltGame(opts: { preload?: number; neutralFuel?: number
       }
     },
     hud: () => ({ title: 'REBUILT' }),
+    terrain: bumpHeight,
   }
+}
+
+const BUMP_TOP = 0.05 // half width of the flat ridge, same as the collider's top edge
+
+/** Floor height: the BUMPS beside each HUB (a ridge along y with linear ramps up to the top), zero elsewhere. */
+export function bumpHeight(x: number, y: number): number {
+  for (const hx of [HUB_X, FIELD_LENGTH - HUB_X]) {
+    const dx = Math.abs(x - hx)
+    if (dx >= BUMP.depth / 2) continue
+    for (const side of [-1, 1]) {
+      const cy = HUB_Y + side * (HUB_BASE / 2 + BUMP.width / 2)
+      if (Math.abs(y - cy) > BUMP.width / 2) continue
+      return BUMP.height * Math.min(1, (BUMP.depth / 2 - dx) / (BUMP.depth / 2 - BUMP_TOP))
+    }
+  }
+  return 0
 }
 
 /** The character the robot receives as Game Data: the alliance whose HUB goes inactive first (WPILib 2026 game data), or '' before it is sent. */
@@ -328,4 +345,4 @@ export function gameDataChar(state: Record<string, unknown>, time: number): stri
   return s.firstInactive === 'red' ? 'R' : 'B'
 }
 
-export { MINOR, HUB_X, HUB_Y, HUB_OPENING, HUB_RIM, CENTER_LINE, ALLIANCE_ZONE_DEPTH }
+export { BUMP, MINOR, HUB_X, HUB_Y, HUB_OPENING, HUB_RIM, CENTER_LINE, ALLIANCE_ZONE_DEPTH }

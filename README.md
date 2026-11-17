@@ -15,6 +15,6 @@ The robot this is built around lives in the OffSeasonCode repository (swerve, tu
 
 ## Status
 
-M0 (feasibility spikes), M1 (viewer: live NT4 and `.wpilog` playback, 3D robot, plots) M2 (deterministic engine core with a test game) M3 (robot-code-in-the-loop drivetrain) M4 (all mechanisms under app authority, robot definition file) M5 (ball interaction: capture, stages, shooting) and M6 (REBUILT game module, match control, G403 and G407) are done. The app lives in [app/](app/README.md); the plan is in [docs/PLAN.md](docs/PLAN.md).
+M0 (feasibility spikes), M1 (viewer: live NT4 and `.wpilog` playback, 3D robot, plots) M2 (deterministic engine core with a test game) M3 (robot-code-in-the-loop drivetrain) M4 (all mechanisms under app authority, robot definition file) M5 (ball interaction: capture, stages, shooting) M6 (REBUILT game module, match control, G403 and G407) and M7 (contact, pushing, BUMPS, other robots) are done. The app lives in [app/](app/README.md); the plan is in [docs/PLAN.md](docs/PLAN.md).
 
-M6 has started: the [REBUILT rules extract](rules/REBUILT_RULES_EXTRACT.md) is written and waits for review before any rules are encoded.
+The [REBUILT rules extract](rules/REBUILT_RULES_EXTRACT.md) lists what the game module implements and what it assumes.

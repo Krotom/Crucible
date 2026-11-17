@@ -7,6 +7,10 @@ version: 1
 chassis:
   mass: 52                  # GUESS: robot with bumpers and battery, kg
   bumper: [0.43, 0.43, 0.12]  # GUESS: bumper footprint half extents x, y and collider height
+  moi: 6.0                  # GUESS: yaw moment of inertia, kg*m^2 (a uniform 52 kg plate of this footprint is 6.4)
+  friction: 0.45            # GUESS: bumper fabric (wall contact multiplies it with the wall's 0.8, bumper on bumper averages)
+  restitution: 0.25         # GUESS: bumpers absorb most of an impact
+  chamfer: 0.04             # GUESS: bumper corner radius, modeled as a chamfer
   start: { x: 1.0, y: 1.0, yaw: 0.0 }
 
 swerve:

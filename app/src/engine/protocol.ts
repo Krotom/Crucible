@@ -2,7 +2,7 @@
 import type { FieldDefinition, PieceSpec, RenderFrame } from './types'
 
 export type ToWorker =
-  | { type: 'init'; seed: number; mode: 'script' | 'robot'; host?: string; game?: 'test' | 'rebuilt' }
+  | { type: 'init'; seed: number; mode: 'script' | 'robot'; host?: string; game?: 'test' | 'rebuilt'; opponent?: boolean }
   | { type: 'match'; run: boolean }
   /** seconds >= 0 sets the lead by hand; a negative value turns the automatic lead (follow the measured round trip) back on */
   | { type: 'lead'; seconds: number }
@@ -22,6 +22,8 @@ export interface WorkerReady {
   field: FieldDefinition
   pieces: PieceSpec[]
   robotHalf: [number, number, number]
+  /** footprints of the other robots on the field, in the order of the frames' `others` */
+  othersHalf: [number, number, number][]
   dt: number
 }
 

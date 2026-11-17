@@ -17,7 +17,7 @@ export interface BoxSpec {
   label?: string
   /** A convex solid given by its corner points (world coordinates) instead of a box, for ramps. center and half still bound it. */
   hull?: Vec3[]
-  /** The robot drives through it (the robot body cannot climb yet, see milestone M7) while pieces still collide with it. */
+  /** The robot body does not collide with it (the game's terrain() makes the robot climb it, see milestone M7) while pieces still collide with it. */
   robotPass?: boolean
 }
 
@@ -80,6 +80,8 @@ export type GameEvent =
   | { type: 'piece-entered-sensor'; sensor: SensorSpec; pieceId: number; spec: string }
   | { type: 'piece-left-sensor'; sensor: SensorSpec; pieceId: number; spec: string }
   | { type: 'phase-changed'; from: string | null; to: string }
+  /** The robot was hit (or hit something): the speed change the contact caused, m/s, and what it touched. */
+  | { type: 'robot-impact'; against: 'field' | 'robot'; speed: number }
 
 export interface Score {
   alliance: Alliance
@@ -120,6 +122,8 @@ export interface GameModule {
   /** Short live values for the readout (which HUB is active, FUEL counts, fouls). */
   status?(state: Record<string, unknown>, time: number): Record<string, string>
   hud(): HudSpec
+  /** Floor height at a field point, meters (BUMP ramps). The robot's tires follow it: the chassis tilts and slopes push back. */
+  terrain?(x: number, y: number): number
 }
 
 /** One segment of scripted driving, robot-relative: forward and left in m/s, counterclockwise in rad/s. */
@@ -186,7 +190,35 @@ export interface BallHandlingSpec {
   }
 }
 
+/** How the chassis touches the world (all optional; GUESS values until measured). */
+export interface ChassisContact {
+  /** yaw moment of inertia, kg*m^2 (default: a uniform plate) */
+  moi?: number
+  /** bumper friction and restitution (combined with the other surface: walls multiply, bumper against bumper averages) */
+  friction?: number
+  restitution?: number
+  /** corner radius of the bumpers, approximated by a chamfer, meters */
+  chamfer?: number
+}
+
+/** Another robot on the field: a body that is pushed around and, with a script, drives (traction-limited like any robot). */
+export interface OtherRobotSpec {
+  name: string
+  alliance: Alliance
+  /** bumper footprint half extents and height */
+  half: Vec3
+  mass: number
+  start: { x: number; y: number; yaw: number }
+  /** tire-floor friction coefficient (the most the robot can push or resist with, times its weight; default 1.0) */
+  mu?: number
+  /** robot-relative driving; empty means the robot holds still (brakes) and can only be pushed */
+  script?: ScriptSegment[]
+}
+
 export interface RobotSpec {
+  chassis?: ChassisContact
+  /** other robots sharing the field (pushing, defense) */
+  others?: OtherRobotSpec[]
   alliance?: Alliance
   balls?: BallHandlingSpec
   /** When set, the robot is a dynamic body driven by this swerve model (voltages in, forces out) instead of the script. */
@@ -231,6 +263,8 @@ export interface EngineSnapshot {
   drivetrain?: unknown
   mechanisms?: Record<number, unknown>
   balls?: { held: number[]; shots: number; captured: number }
+  otherHandles?: number[]
+  contact?: { acc: number; quiet: number; peak: number; count: number; vx: number; vy: number; against: 'field' | 'robot' }
 }
 
 /** What the renderer needs each frame. */
@@ -241,6 +275,10 @@ export interface RenderFrame {
   /** [x, y, z, qw, qx, qy, qz] */
   robot: number[]
   robotSpeed: number
+  /** other robots, [x, y, z, qw, qx, qy, qz] each */
+  others: number[][]
+  /** contact feedback: impacts so far and the speed change of the largest */
+  impacts: { count: number; peak: number }
   pieceCount: number
   awakeCount: number
   /** x, y, z per piece. */

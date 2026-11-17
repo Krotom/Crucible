@@ -20,7 +20,7 @@ let lastInput: JoystickReading | null = null
 let lastInputSent = 0
 const sim = new SimSource(
   store,
-  (r) => { robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf); sim.send({ type: 'speed', value: speed }); sendDs() },
+  (r) => { robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf, r.othersHalf); sim.send({ type: 'speed', value: speed }); sendDs() },
   (m) => setStatus(`Sim error: ${m}`),
 )
 
@@ -219,7 +219,7 @@ $('start-sim').addEventListener('click', () => {
   dsEnabled = false
   $('ds-enable').textContent = 'Enable'
   lastInput = null
-  sim.start(seedValue(), robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt')
+  sim.start(seedValue(), robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLInputElement>('opponent').checked)
   $('start-sim').textContent = 'Stop sim'
   setStatus(robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
   playEl.textContent = 'Play'
@@ -268,6 +268,7 @@ function simFrame(): void {
     `time   ${f.time.toFixed(2)} s  (${sim.running ? sim.simRate.toFixed(2) + 'x real time' : 'paused'})`,
     `score  blue ${f.scores.blue}  red ${f.scores.red}`,
     `balls  ${f.pieceCount} (${f.awakeCount} moving)`,
+    ...(f.impacts.count > 0 ? [`hits   ${f.impacts.count}, hardest ${f.impacts.peak.toFixed(2)} m/s`] : []),
     ...(f.capture ? [`robot  holds ${f.held.length}  beams ${f.beams.map((b) => (b ? '#' : '.')).join('')}  caught ${f.captured}  shots ${f.shots}${f.capture.active ? '  INTAKE ON' : ''}`] : []),
     ...Object.entries(f.status).map(([k, v]) => `${k.padEnd(6)} ${v}`),
     `hash   ${f.hash}`,

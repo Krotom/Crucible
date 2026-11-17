@@ -269,3 +269,22 @@ ready), and a debounced feeder jam check (the 40 A threshold tripped on the star
   TELEOP, disabled in the 3 s between and after the match), sets autonomous in AUTO, sends the match time (AUTO counts 20 to 0, TELEOP 140 to 0) and the Game Data
   about 3 s after AUTO ends (at the start of the TRANSITION SHIFT). The Enable button is for practice; "End match" hands control back.
 - **Timing caveat.** The match clock is the engine's (robot time elapsed), so it runs in real time with the robot; pause stops it.
+
+## 13. M7: contact, pushing and the floor (app side; the wire format did not change)
+
+- **Chassis body.** A chamfered convex footprint (radius `chassis.chamfer`, 4 cm) with explicit mass (`chassis.mass`) and yaw inertia (`chassis.moi`). Bumper friction 0.45 and restitution 0.25
+  (guesses). Rapier combines per pair: bumper on field surface multiplies (0.45 x the wall's 0.8 = 0.36), bumper on bumper averages (0.45).
+- **Other robots** (`RobotSpec.others`): dynamic planar bodies. Each step the force and torque that cancel the error to their script velocity (zero without a script) are applied, limited to
+  `mu * m * g` (torque: that force at 0.4 of the half diagonal). That makes them brake like Coulomb friction (they hold against a push up to the limit and slide above it) and accelerate at the traction limit.
+  Measured in the tests: a 52 kg robot (612 N of traction) shoves a 55 kg robot with mu 0.5, and cannot move one with mu 1.6.
+- **Terrain.** `GameModule.terrain(x, y)` is the floor height. A plane is fitted through the heights under the four modules: its height at the body origin is the robot's z, its slopes are the Pigeon's
+  pitch (right-hand rule about the left axis, so nose up is negative) and roll (about the forward axis, left up positive), and `-m g grad h` acts on the chassis. The frame carries the tilted pose
+  (`robot` = x, y, z, qw, qx, qy, qz); REBUILT's BUMPS are the only terrain (a ridge 1.128 m deep, 1.854 m wide, 0.165 m high with linear ramps). The ridge is narrower than the wheelbase, so the
+  plane averages its peak (the body rises to about half the ridge height). Tire normal load does not change with the tilt and the body stays planar for physics.
+- **Contact feedback.** The engine compares the chassis acceleration with what the tires and the slope produce; the rest is contact. When a contact has been quiet for 15 ms it becomes one
+  `robot-impact` event (`against`: `field` or `robot`, and the speed change, rebound included), shown as `hits` in the readout. Impacts and other robots enter the state hash only when they exist, so the
+  recorded hash of the test game did not change.
+- **Pigeon.** Pitch, roll and their rates reach the robot (it already applied them). The accelerometer values (`accelXg/Yg/Zg`, including the gravity projection on a slope and impact spikes, 8 g limit) are
+  in the frame, but `Pigeon2SimState` (Phoenix 6 26.3) has no acceleration setters, so the robot code never sees them.
+- **Not done:** robot against robot with the second robot driven by robot code (M10); tire load shifts on a slope; a measured bumper friction and restitution (M12).
+

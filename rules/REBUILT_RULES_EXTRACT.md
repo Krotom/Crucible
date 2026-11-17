@@ -157,7 +157,7 @@ the HUB exits, TOWER later). **Please correct any of the assumptions below.**
 
 Implemented from the manual: the 2:40 match flow with the 3 s scoring delay; HUB activation by the AUTO winner (tie broken from the engine's seeded generator); 1 point per FUEL in an active HUB with the
 3 s grace; Game Data to the robot; the FUEL specs; 24 FUEL per DEPOT and a neutral zone pile; guardrails, alliance walls, HUB bodies with the 41.7 in opening and the 72 in rim; BUMPS as ramps that FUEL
-rolls over (the robot drives through them, it cannot climb yet: M7); FUEL that leaves the field is put back after 1.5 s; the live readout (HUB state, FUEL counts, Game Data, fouls).
+rolls over (the robot climbs them, M7: the floor height under the tires tilts the chassis and the slope costs energy); FUEL that leaves the field is put back after 1.5 s; the live readout (HUB state, FUEL counts, Game Data, fouls).
 
 - **G403** (AUTO center line): a MAJOR FOUL (15 points to the opponent) the first time the bumper rectangle is completely across the line, and again after the robot has come back and crosses again. Contact with an
   opponent robot (the extra foul) is not modeled; there are no opponent robots yet.

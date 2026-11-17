@@ -85,6 +85,13 @@ export class Drivetrain {
   private unwrappedYaw = 0
   private lastYaw: number | null = null
   private lastOmega = 0
+  /** what the Pigeon feels: chassis acceleration in the field (m/s^2, contacts and slopes included) and the tilt of the floor under the tires */
+  private accX = 0
+  private accY = 0
+  private pitch = 0
+  private roll = 0
+  private pitchRate = 0
+  private rollRate = 0
 
   constructor(readonly spec: DrivetrainSpec) {
     this.states = spec.modules.map(() => ({
@@ -100,26 +107,40 @@ export class Drivetrain {
   /** Test and reset helper: put a module at an azimuth with the wheel at rest. */
   setAzimuth(index: number, rad: number): void { this.states[index].azimuth = rad; this.states[index].azimuthSpeed = 0 }
 
+  /**
+   * The chassis motion of the last step, measured by the engine: field acceleration (what an accelerometer feels besides gravity,
+   * so a wall hit shows up here) and the tilt of the floor (right-hand rule: pitch about the left axis, positive nose down; roll about
+   * the forward axis, positive left side up).
+   */
+  setInertial(accX: number, accY: number, pitch: number, roll: number, dt: number): void {
+    this.accX = accX; this.accY = accY
+    this.pitchRate = (pitch - this.pitch) / dt
+    this.rollRate = (roll - this.roll) / dt
+    this.pitch = pitch; this.roll = roll
+  }
+
   /** Plain-data copy of the dynamic state, for snapshots. Applied voltages are inputs and are not part of it. */
   save(): unknown {
-    return { states: this.states.map((s) => ({ ...s })), unwrappedYaw: this.unwrappedYaw, lastYaw: this.lastYaw, lastOmega: this.lastOmega }
+    return { states: this.states.map((s) => ({ ...s })), unwrappedYaw: this.unwrappedYaw, lastYaw: this.lastYaw, lastOmega: this.lastOmega, inertial: [this.accX, this.accY, this.pitch, this.roll, this.pitchRate, this.rollRate] }
   }
 
   load(data: unknown): void {
-    const d = data as { states: ModuleState[]; unwrappedYaw: number; lastYaw: number | null; lastOmega: number }
+    const d = data as { states: ModuleState[]; unwrappedYaw: number; lastYaw: number | null; lastOmega: number; inertial?: number[] }
     d.states.forEach((s, i) => Object.assign(this.states[i], s))
     this.unwrappedYaw = d.unwrappedYaw; this.lastYaw = d.lastYaw; this.lastOmega = d.lastOmega
+    ;[this.accX, this.accY, this.pitch, this.roll, this.pitchRate, this.rollRate] = d.inertial ?? [0, 0, 0, 0, 0, 0]
   }
 
   /** Feeds every dynamic number into a state hash. */
   hashInto(add: (x: number) => void): void {
     for (const s of this.states) { add(s.wheelAngle); add(s.wheelSpeed); add(s.azimuth); add(s.azimuthSpeed) }
-    add(this.unwrappedYaw)
+    add(this.unwrappedYaw); add(this.accX); add(this.accY); add(this.pitch); add(this.roll)
   }
 
   reset(): void {
     for (const s of this.states) { s.wheelAngle = 0; s.wheelSpeed = 0; s.azimuth = 0; s.azimuthSpeed = 0; s.prevDriveRotorRps = 0; s.prevSteerRotorRps = 0; s.driveAccel = 0; s.steerAccel = 0 }
     this.unwrappedYaw = 0; this.lastYaw = null; this.lastOmega = 0
+    this.accX = 0; this.accY = 0; this.pitch = 0; this.roll = 0; this.pitchRate = 0; this.rollRate = 0
   }
 
   /** Advances the module states by dt and returns the force and torque the tires exert on the chassis (world frame). */
@@ -255,11 +276,20 @@ export class Drivetrain {
   }
 
   pigeonState(): PigeonState {
+    // specific force (acceleration plus the floor's reaction to gravity) in g, turned into the sensor frame: yaw, then pitch, then roll
+    const yaw = this.lastYaw ?? 0
+    const c = Math.cos(yaw), sn = Math.sin(yaw)
+    const sx = this.accX / G, sy = this.accY / G, sz = 1
+    const x1 = c * sx + sn * sy, y1 = -sn * sx + c * sy
+    const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch), cr = Math.cos(this.roll), sr = Math.sin(this.roll)
+    const x2 = cp * x1 - sp * sz, z2 = sp * x1 + cp * sz
+    const lim = (v: number): number => Math.max(-8, Math.min(8, v)) // the Pigeon 2 measures up to 8 g
+    const deg = 180 / Math.PI
     return {
       id: this.spec.pigeonId,
-      yawDeg: (this.unwrappedYaw * 180) / Math.PI, pitchDeg: 0, rollDeg: 0,
-      yawRateDps: (this.lastOmega * 180) / Math.PI, pitchRateDps: 0, rollRateDps: 0,
-      accelXg: 0, accelYg: 0, accelZg: 1,
+      yawDeg: this.unwrappedYaw * deg, pitchDeg: this.pitch * deg, rollDeg: this.roll * deg,
+      yawRateDps: this.lastOmega * deg, pitchRateDps: this.pitchRate * deg, rollRateDps: this.rollRate * deg,
+      accelXg: lim(x2), accelYg: lim(cr * y1 + sr * z2), accelZg: lim(-sr * y1 + cr * z2),
     }
   }
 }

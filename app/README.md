@@ -84,6 +84,18 @@ Pick **REBUILT** next to Start sim. The field has the guardrails, walls, both HU
 robot is enabled in AUTO and TELEOP and disabled in between and after, and it receives the match time and the Game Data character. The readout shows which HUBS are active,
 the FUEL counts, the Game Data and the G403/G407 fouls.
 
+## Contact and pushing (M7)
+
+- **Bumpers:** a chamfered footprint with explicit mass and yaw inertia (`chassis.moi`, `friction`, `restitution`, `chamfer` in the robot definition, all guesses). Wall contact multiplies the
+  bumper friction with the wall's, bumper against bumper averages them.
+- **BUMPS:** the robot climbs them. The game module supplies the floor height (`terrain(x, y)`); a plane through the four module contact points gives the body's height, pitch and roll
+  (drawn, and sent to the robot's Pigeon), and the slope pushes on the chassis (`-m g grad h`), so a climb costs energy. The body stays planar for physics.
+- **Other robots:** tick **opponent** next to Start sim for a second (red) robot that holds still and can only be pushed. It is traction-limited like any robot (`mu * m * g`): it holds against a push
+  up to that force and slides above it. In code, `RobotSpec.others` takes a mass, a footprint, a start and an optional script.
+- **Contact feedback:** every contact the drive did not cause is reported as a `robot-impact` event (the speed it changed, and whether it was the field or a robot) once it ends, and shown as `hits`
+  in the readout. The Pigeon gets the real tilt (pitch, roll and their rates). The chassis acceleration (impacts included, in g, 8 g limit) is computed too, but Phoenix 6's
+  `Pigeon2SimState` has no acceleration setters, so the robot code cannot read it. Wheels that keep driving against a wall slip, so the robot's wheel odometry runs ahead of its real position.
+
 ## Robot model
 
 The model folder uses the AdvantageScope layout (`model.glb` for the chassis, `model_N.glb` per component,

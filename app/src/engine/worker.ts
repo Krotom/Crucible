@@ -72,9 +72,11 @@ async function handle(m: ToWorker): Promise<void> {
         // while the robot plows through the pile) and 2 solver iterations; see rules/REBUILT_RULES_EXTRACT.md section 7
         const game = rebuilt ? createRebuiltGame({ preload: OFFSEASON.balls?.preload ?? 0, neutralFuel: 150 }) : createTestGame()
         const start = rebuilt ? { x: 1.6, y: 4.0, yaw: 0 } : OFFSEASON.start
+        // an opponent robot that holds still at the center line: something to push against and to be blocked by
+        const others = m.opponent ? [{ name: 'opponent', alliance: 'red' as const, half: [0.43, 0.43, 0.12] as [number, number, number], mass: 55, start: { x: rebuilt ? 6.5 : 3, y: rebuilt ? 4.0 : 0, yaw: Math.PI } }] : []
         const robot = m.mode === 'robot'
-          ? { half: OFFSEASON.bumper, start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls, alliance: 'blue' as const }
-          : rebuilt ? { ...TEST_ROBOT, start, alliance: 'blue' as const } : TEST_ROBOT
+          ? { half: OFFSEASON.bumper, start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls, alliance: 'blue' as const, chassis: OFFSEASON.contact, others }
+          : rebuilt ? { ...TEST_ROBOT, start, alliance: 'blue' as const, others } : { ...TEST_ROBOT, others }
         engine = await Engine.create({ game, robot, seed: m.seed, solverIterations: rebuilt ? 2 : undefined })
         snapshot = null
         if (m.mode === 'robot') {
@@ -82,7 +84,7 @@ async function handle(m: ToWorker): Promise<void> {
           bridge.start()
           running = true
         }
-        post({ type: 'ready', gameId: game.id, field: game.field(), pieces: engine.pieceSpecs, robotHalf: robot.half, dt: engine.dt })
+        post({ type: 'ready', gameId: game.id, field: game.field(), pieces: engine.pieceSpecs, robotHalf: robot.half, othersHalf: others.map((o) => o.half), dt: engine.dt })
         postFrame()
         break
       }
