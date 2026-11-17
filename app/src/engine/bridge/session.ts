@@ -51,13 +51,16 @@ export class BridgeSession {
   private owed = 0
   private ctrlCounter = 1n
   paused = false
+  /** The app is the field system: DS enable, mode, match time and Game Data follow the match phases of the game module. */
+  fms = false
+  private fmsKey = ''
   /** how far ahead of the physics clock the mechanism states are reported, seconds (follows the measured round trip) */
   lead = DEFAULT_LEAD_S
   /** follow the round trip the robot measures (turn off to set the lead by hand) */
   autoLead = true
   /** the robot's measured round trip of the exchange, seconds (0 until it reports) */
   rtt = 0
-  private ds: DsState = { counter: 0n, enabled: false, autonomous: false, test: false, estop: false, dsAttached: true, alliance: 1, station: 1, matchTime: 0 }
+  private ds: DsState = { counter: 0n, gameData: '', enabled: false, autonomous: false, test: false, estop: false, dsAttached: true, alliance: 1, station: 1, matchTime: 0 }
   private joystick: JoystickState = { counter: 0n, axes: [0, 0, 0, 0, 0, 0], buttons: 0n, pov: -1 }
   private poseSeedCounter = 0n
   /** frame count at which a pending pose seed is sent (null when none is pending) */
@@ -80,6 +83,27 @@ export class BridgeSession {
   }
 
   start(): void { this.ws.start(); this.nt?.start() }
+
+  /** Starts the field system: the match clock is the engine's, so reset the engine first. */
+  startMatch(): void { this.fms = true; this.fmsKey = ''; this.updateFms() }
+
+  /** Hands control back: the robot is disabled and the Driver Station buttons work again. */
+  endMatch(): void { this.fms = false; this.setDs({ enabled: false, autonomous: false, matchTime: 0, gameData: '' }) }
+
+  /** Drives the Driver Station from the match phases (what FMS does): enabled in AUTO and TELEOP, not in the 3 s between or after the match. */
+  private updateFms(): void {
+    if (!this.fms) return
+    const phase = this.engine.phase
+    const t = this.engine.time
+    const enabled = phase !== 'delay' && phase !== 'ended' && phase !== 'none'
+    const auto = phase === 'auto'
+    const matchTime = phase === 'auto' ? 20 - t : phase === 'delay' || phase === 'ended' ? 0 : Math.max(0, 140 - (t - 23))
+    const gameData = this.engine.gameData
+    const key = `${enabled}|${auto}|${gameData}|${Math.floor(matchTime)}`
+    if (key === this.fmsKey) return
+    this.fmsKey = key
+    this.setDs({ enabled, autonomous: auto, test: false, matchTime, gameData })
+  }
   stop(): void { this.ws.stop(); this.nt?.stop(); this.status.connected = false }
 
   // ---- control from the UI
@@ -169,6 +193,7 @@ export class BridgeSession {
       cancoders: dt?.cancoderStates() ?? [],
       pigeons: dt ? [dt.pigeonState()] : [],
     }))
+    this.updateFms()
     if (this.seedAtFrame !== null && s.frames >= this.seedAtFrame) { this.seedAtFrame = null; this.sendSeed() }
     if (s.frames % 20 === 0) this.onStatus()
   }

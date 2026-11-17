@@ -2,6 +2,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FieldDefinition, PieceSpec, RenderFrame } from '../../../engine/types'
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
@@ -125,11 +126,13 @@ export class SceneView {
     for (const b of field.colliders) {
       const isFloor = b.label === 'floor'
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(b.half[0] * 2, b.half[1] * 2, b.half[2] * 2),
-        new THREE.MeshStandardMaterial({ color: isFloor ? 0x1b2027 : 0x55606e, roughness: 0.9, transparent: !isFloor, opacity: isFloor ? 1 : 0.7 }),
+        b.hull ? new ConvexGeometry(b.hull.map((p) => new THREE.Vector3(p[0], p[1], p[2]))) : new THREE.BoxGeometry(b.half[0] * 2, b.half[1] * 2, b.half[2] * 2),
+        new THREE.MeshStandardMaterial({ color: isFloor ? 0x1b2027 : b.robotPass ? 0x6a5a2a : 0x55606e, roughness: 0.9, transparent: !isFloor, opacity: isFloor ? 1 : 0.7 }),
       )
-      mesh.position.set(b.center[0], b.center[1], b.center[2])
-      mesh.rotation.z = b.yaw ?? 0
+      if (!b.hull) {
+        mesh.position.set(b.center[0], b.center[1], b.center[2])
+        mesh.rotation.z = b.yaw ?? 0
+      }
       g.add(mesh)
     }
     for (const sn of field.sensors) {

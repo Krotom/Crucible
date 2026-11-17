@@ -149,3 +149,25 @@ Your robot's mass guess of 52 kg is at the limit; bumpers and battery add to it.
 3. **Scope in section 8:** anything to add or cut? In particular, rule fouls: none, G407 and G403 only, or more?
 4. **Scored FUEL:** return it to the field through the HUB exits after a delay (what the manual describes), or just remove it? I recommend returning it, with the exit positions as assumptions until the drawings.
 5. **TOWER** (climb scoring): v1 or later? The robot code has no climber, so I suggest later.
+
+## 10. What was implemented (M6) and what was assumed
+
+`app/src/games/rebuilt.ts`, tested in `app/tests/rebuilt.test.ts`. Your answer was G403 and G407 as the only rule fouls; the other questions were taken at my recommendation (return processed FUEL through
+the HUB exits, TOWER later). **Please correct any of the assumptions below.**
+
+Implemented from the manual: the 2:40 match flow with the 3 s scoring delay; HUB activation by the AUTO winner (tie broken from the engine's seeded generator); 1 point per FUEL in an active HUB with the
+3 s grace; Game Data to the robot; the FUEL specs; 24 FUEL per DEPOT and a neutral zone pile; guardrails, alliance walls, HUB bodies with the 41.7 in opening and the 72 in rim; BUMPS as ramps that FUEL
+rolls over (the robot drives through them, it cannot climb yet: M7); FUEL that leaves the field is put back after 1.5 s; the live readout (HUB state, FUEL counts, Game Data, fouls).
+
+- **G403** (AUTO center line): a MAJOR FOUL (15 points to the opponent) the first time the bumper rectangle is completely across the line, and again after the robot has come back and crosses again. Contact with an
+  opponent robot (the extra foul) is not modeled; there are no opponent robots yet.
+- **G407** (launch into your HUB from outside your zone): checked on each launch. A violation is a launch from a robot whose bumpers are entirely outside its ALLIANCE ZONE (x beyond 4.028 m from its wall)
+  whose vacuum trajectory comes down through its own HUB opening (plus a 0.25 m tolerance). A MAJOR FOUL, at most once per 3 s (one instance). A pass or a shot at something else is not a foul.
+
+**Assumed (not in the manual text I could read):** HUB body height = the 72 in rim and the sensor plane 0.23 m below it; the opening as a square of 1.06 m; HUB center x = 4.625 m (see section 2); processed FUEL reappears after
+0.5 to 1.5 s at one of four exits on the neutral-zone face, 1.2 to 2.0 m/s outward; DEPOT positions (y = 2.0 m blue, point-symmetric red); BUMP ramp shape (a ridge with the manual's width, depth and height, not exactly 15 degrees);
+no TRENCH, TOWER, OUTPOST or DRIVER STATION geometry yet; the two CHUTES (24 FUEL each) and other robots' preloads are not modeled.
+
+**Performance setting (new, please decide):** the manual stages 360 to 408 FUEL in the neutral zone. The engine runs in real time with the robot plowing through the pile at about 150 FUEL there (2.9x real time on average,
+spikes to about 0.5x for 100 ms), but only about 0.5x at 408. The live app therefore stages **150** in the neutral zone (plus 48 in the DEPOTS and the robot's preload of 3, loaded from `robots/offseason/robot.yaml`);
+`createRebuiltGame({ neutralFuel: 408 })` gives the full pile for offline use and Mode B. Rapier's per-step cost with a few hundred contacting bodies is the limit, not the game logic.

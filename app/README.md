@@ -77,6 +77,13 @@ launched from the turret flies with drag, spin and foam bounce. The readout show
 caught and shots. In the test game, the elevated cyan "hub" volume at (4.6, 4.0) is where the robot code aims its turret and scores 3 points
 in teleop. The ball numbers are in the `ballHandling` section of `robots/offseason/robot.yaml` and are guesses until measured.
 
+## REBUILT and match control (M6)
+
+Pick **REBUILT** next to Start sim. The field has the guardrails, walls, both HUBS (hollow, with the 41.7 in opening) and the BUMPS; FUEL is staged as in the manual (see
+`rules/REBUILT_RULES_EXTRACT.md` section 10 for what is assumed and why the neutral pile is 150). In Robot code mode, **Start match** resets the engine and runs the field system: the
+robot is enabled in AUTO and TELEOP and disabled in between and after, and it receives the match time and the Game Data character. The readout shows which HUBS are active,
+the FUEL counts, the Game Data and the G403/G407 fouls.
+
 ## Robot model
 
 The model folder uses the AdvantageScope layout (`model.glb` for the chassis, `model_N.glb` per component,

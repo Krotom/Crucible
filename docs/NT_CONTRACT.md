@@ -260,3 +260,12 @@ the teammate branch `origin/Burak` reads a `DigitalInput(0)` at the shooter exit
 speed, all three launched in sequence (the first scored 3 in the hub in one run; shots are uncalibrated guesses, so they do not all land). This needed two fixes in the
 robot code, now committed on `protonme`: shooter kV 0.119 -> 0.24 and kP 0.01 -> 0.2 (the flywheel stalled near 30 rps against a 43-50 rps target, so the shooter was never
 ready), and a debounced feeder jam check (the 40 A threshold tripped on the startup current of every feed command, so the feeder reversed every time).
+
+## 12. M6: the app as the field system (REBUILT)
+
+- **Control/DS (type 3)** now carries the **Game Data** character at byte 14 (it was padding): `'R'` or `'B'`, the alliance whose HUB goes inactive first; 0 means none sent.
+  The robot applies it with `DriverStationSim.setGameSpecificMessage`, so `DriverStation.getGameSpecificMessage()` returns it (verified on the real robot sim).
+- **Match control.** "Start match" resets the engine and starts the field system: the app enables and disables the robot from the match phases (enabled in AUTO and
+  TELEOP, disabled in the 3 s between and after the match), sets autonomous in AUTO, sends the match time (AUTO counts 20 to 0, TELEOP 140 to 0) and the Game Data
+  about 3 s after AUTO ends (at the start of the TRANSITION SHIFT). The Enable button is for practice; "End match" hands control back.
+- **Timing caveat.** The match clock is the engine's (robot time elapsed), so it runs in real time with the robot; pause stops it.

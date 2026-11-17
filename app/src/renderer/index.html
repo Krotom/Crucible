@@ -14,6 +14,7 @@
       <span class="sep"></span>
       <label>Seed <input id="seed" value="42" size="5" /></label>
       <button id="launch-robot" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
+      <select id="game-select"><option value="test">Test game</option><option value="rebuilt">REBUILT</option></select>
       <select id="sim-mode"><option value="script">Scripted robot</option><option value="robot">Robot code (NT)</option></select>
       <button id="start-sim">Start sim</button>
       <span class="sep"></span>
@@ -47,6 +48,8 @@
             <option value="2">2x</option><option value="4">4x</option><option value="8">8x</option>
           </select>
           <span id="ds-controls" hidden>
+            <button id="match-start" title="Reset and run the match: the app enables and disables the robot like the field system">Start match</button>
+            <button id="match-end">End match</button>
             <button id="ds-enable">Enable</button>
             <select id="ds-mode"><option value="teleop">Teleop</option><option value="auto">Auto</option><option value="test">Test</option></select>
           </span>

@@ -15,6 +15,10 @@ export interface BoxSpec {
   restitution?: number
   /** For rendering and debugging. */
   label?: string
+  /** A convex solid given by its corner points (world coordinates) instead of a box, for ramps. center and half still bound it. */
+  hull?: Vec3[]
+  /** The robot drives through it (the robot body cannot climb yet, see milestone M7) while pieces still collide with it. */
+  robotPass?: boolean
 }
 
 /** A region the engine watches for piece centers entering and leaving (goals, scoring zones, beam-break volumes). */
@@ -56,6 +60,8 @@ export interface PieceSpawn {
   position: Vec3
   velocity?: Vec3
   angularVelocity?: Vec3
+  /** Start asleep (a piece at rest on the floor costs nothing until something touches it). */
+  asleep?: boolean
 }
 
 export interface PhaseSpec {
@@ -70,7 +76,7 @@ export interface MatchFlowSpec {
 
 export type GameEvent =
   | { type: 'piece-captured'; pieceId: number; spec: string }
-  | { type: 'piece-launched'; spec: string; speed: number }
+  | { type: 'piece-launched'; spec: string; speed: number; position: Vec3; velocity: Vec3 }
   | { type: 'piece-entered-sensor'; sensor: SensorSpec; pieceId: number; spec: string }
   | { type: 'piece-left-sensor'; sensor: SensorSpec; pieceId: number; spec: string }
   | { type: 'phase-changed'; from: string | null; to: string }
@@ -89,6 +95,10 @@ export interface GameContext {
   /** Plain JSON state owned by the engine; saved and restored with snapshots. */
   state: Record<string, unknown>
   removePiece(id: number): void
+  /** Puts a new piece into the world (for example FUEL coming out of a HUB). */
+  spawn(s: PieceSpawn): number
+  /** The robot: footprint center, heading, bumper half extents (x, y) and alliance. */
+  robot: { x: number; y: number; yaw: number; half: [number, number]; alliance: Alliance }
 }
 
 export interface HudSpec {
@@ -103,6 +113,12 @@ export interface GameModule {
   initialLayout(rng: () => number): PieceSpawn[]
   matchFlow(): MatchFlowSpec
   onEvent(e: GameEvent, ctx: GameContext): Score[]
+  /** Called every engine step (rules that depend on time or robot position, timed respawns). */
+  onTick?(ctx: GameContext): Score[]
+  /** What the field system sends the robot as Game Data at this time (empty when nothing has been sent). */
+  gameData?(state: Record<string, unknown>, time: number): string
+  /** Short live values for the readout (which HUB is active, FUEL counts, fouls). */
+  status?(state: Record<string, unknown>, time: number): Record<string, string>
   hud(): HudSpec
 }
 
@@ -145,6 +161,8 @@ export interface BallHandlingSpec {
    * stage can be moved by more than one roller: the intake roller while intaking, the indexer while shooting).
    */
   stages: { name: string; length: number; drivers: { driver: string; direction: 1 | -1; radius: number }[] }[]
+  /** Pieces held at match start (the preload), queued at the front of the path. */
+  preload?: number
   /** Beam breaks at positions along the stage path (m from the intake mouth); true while a piece overlaps them. */
   beams: { name: string; position: number }[]
   shooter: {
@@ -169,6 +187,7 @@ export interface BallHandlingSpec {
 }
 
 export interface RobotSpec {
+  alliance?: Alliance
   balls?: BallHandlingSpec
   /** When set, the robot is a dynamic body driven by this swerve model (voltages in, forces out) instead of the script. */
   drivetrain?: DrivetrainSpec
@@ -186,6 +205,8 @@ export interface EngineConfig {
   seed: number
   /** Physics step in seconds (default 0.001). */
   dt?: number
+  /** Rapier solver iterations (default 4); fewer is faster with many pieces in contact. */
+  solverIterations?: number
 }
 
 export interface ScoreEntry extends Score {
@@ -229,6 +250,8 @@ export interface RenderFrame {
   /** pieces inside the robot, their positions along the stage path (m from the intake mouth), and the beam breaks */
   held: number[]
   beams: boolean[]
+  /** the game module's status lines */
+  status: Record<string, string>
   /** the intake capture volume in the world (for drawing), null when there is no ball handling */
   capture: { center: Vec3; yaw: number; half: Vec3; active: boolean } | null
   shots: number

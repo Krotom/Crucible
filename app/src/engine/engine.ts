@@ -2,7 +2,7 @@
 // flow, and bit-for-bit snapshots. No DOM, no wall clock: given the same config and the same number of steps the
 // state is identical on every run (deterministic Rapier build, seeded RNG, fixed iteration order).
 import RAPIER from '@dimforge/rapier3d-deterministic-compat'
-import type { RigidBody, World } from '@dimforge/rapier3d-deterministic-compat'
+import type { ColliderDesc, Cuboid, RigidBody, World } from '@dimforge/rapier3d-deterministic-compat'
 import type { MotorState } from './bridge/frames'
 import { BallSystem, type BallHost } from './balls'
 import { Drivetrain } from './drivetrain'
@@ -13,6 +13,11 @@ import type {
   RobotSpec, Score, ScoreEntry, SensorSpec, Vec3,
 } from './types'
 
+// collision groups: the robot collides with the static field and pieces, not with robot-pass-through field parts
+const GROUP_STATIC = 0x1
+const GROUP_BALL = 0x2
+const GROUP_ROBOT = 0x4
+const GROUP_PASS = 0x8
 const GRAVITY = 9.81
 const AIR_DENSITY = 1.225
 const SCORE_LOG_CAP = 200
@@ -24,7 +29,8 @@ export function initRapier(): Promise<void> {
   return rapierReady
 }
 
-interface Piece { id: number; spec: PieceSpec; specIndex: number; handle: number }
+/** x, y, z: the last position read for drawing (a resting piece does not move, so it is only re-read while awake) */
+interface Piece { id: number; spec: PieceSpec; specIndex: number; handle: number; x: number; y: number; z: number }
 
 /** Piecewise-linear interpolation of [x, y] points, clamped at the ends. */
 export function interp(points: [number, number][], x: number): number {
@@ -61,11 +67,14 @@ export class Engine {
   private specByName = new Map<string, number>()
   private robotSpec: RobotSpec
   private seed: number
+  private solverIterations: number | undefined
 
   private world!: World
   private robot!: RigidBody
   private rng: Rng
   private pieces: Piece[] = []
+  private pieceByHandle = new Map<number, Piece>()
+  private captureShapes = new Map<string, Cuboid>()
   private nextPieceId = 1
   private stepCount = 0
   private sensorInside = new Map<string, Set<number>>()
@@ -89,6 +98,7 @@ export class Engine {
     this.game = cfg.game
     this.robotSpec = cfg.robot
     this.seed = cfg.seed
+    this.solverIterations = cfg.solverIterations
     this.rng = new Rng(cfg.seed)
     this.pieceSpecs = cfg.game.pieces()
     this.pieceSpecs.forEach((p, i) => this.specByName.set(p.id, i))
@@ -112,6 +122,10 @@ export class Engine {
   get time(): number { return this.stepCount * this.dt }
   get steps(): number { return this.stepCount }
   get phase(): string { return this.phaseName() }
+  private lastHash = ''
+
+  /** The Game Data string the field system would send the robot now. */
+  get gameData(): string { return this.game.gameData ? this.game.gameData(this.gameState, this.time) : '' }
   get scoreTotals(): Record<Alliance, number> { return { ...this.scores } }
   get log(): readonly ScoreEntry[] { return this.scoreLog }
   get pieceCount(): number { return this.pieces.length }
@@ -124,7 +138,9 @@ export class Engine {
     this.world?.free()
     this.world = new RAPIER.World({ x: 0, y: 0, z: -GRAVITY })
     this.world.timestep = this.dt
+    if (this.solverIterations) this.world.integrationParameters.numSolverIterations = this.solverIterations
     this.pieces = []
+    this.pieceByHandle.clear()
     this.nextPieceId = 1
     this.stepCount = 0
     this.scores = { red: 0, blue: 0, none: 0 }
@@ -150,9 +166,18 @@ export class Engine {
   }
 
   private addBox(b: BoxSpec): void {
-    const desc = RAPIER.ColliderDesc.cuboid(b.half[0], b.half[1], b.half[2])
-      .setTranslation(b.center[0], b.center[1], b.center[2])
-      .setRotation(yawQuat(b.yaw ?? 0))
+    let desc: ColliderDesc
+    if (b.hull) {
+      const hull = RAPIER.ColliderDesc.convexHull(new Float32Array(b.hull.flat()))
+      if (!hull) throw new Error(`Degenerate hull for ${b.label ?? 'collider'}`)
+      desc = hull
+    } else {
+      desc = RAPIER.ColliderDesc.cuboid(b.half[0], b.half[1], b.half[2])
+        .setTranslation(b.center[0], b.center[1], b.center[2])
+        .setRotation(yawQuat(b.yaw ?? 0))
+    }
+    desc = desc
+      .setCollisionGroups(((b.robotPass ? GROUP_PASS : GROUP_STATIC) << 16) | 0xffff)
       .setFriction(b.friction ?? 0.8)
       .setRestitution(b.restitution ?? 1)
       .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Multiply)
@@ -174,6 +199,7 @@ export class Engine {
     this.world.createCollider(
       RAPIER.ColliderDesc.cuboid(r.half[0], r.half[1], r.half[2])
         .setDensity(driven ? this.drivetrain!.spec.mass / volume : 1)
+        .setCollisionGroups((GROUP_ROBOT << 16) | (GROUP_STATIC | GROUP_BALL))
         .setFriction(driven ? 0.2 : 0.5)
         .setRestitution(0.2)
         .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Multiply)
@@ -196,13 +222,21 @@ export class Engine {
         return { x: t.x, y: t.y, yaw: 2 * Math.atan2(q.z, q.w), vx: v.x, vy: v.y }
       },
       mechanism: (name) => this.mechanismByName.get(name),
-      eachPiece: (cb) => {
-        for (const p of this.pieces) {
-          const b = this.world.getRigidBody(p.handle)
-          const t = b.translation()
-          const v = b.linvel()
-          cb(p.id, p.spec.id, [t.x, t.y, t.z], [v.x, v.y, v.z])
-        }
+      piecesInBox: (center, yaw, half, cb) => {
+        const key = half.join(',')
+        let shape = this.captureShapes.get(key)
+        if (!shape) { shape = new RAPIER.Cuboid(half[0], half[1], half[2]); this.captureShapes.set(key, shape) }
+        this.world.intersectionsWithShape({ x: center[0], y: center[1], z: center[2] }, yawQuat(yaw), shape, (collider) => {
+          const handle = collider.parent()?.handle
+          const p = handle === undefined ? undefined : this.pieceByHandle.get(handle)
+          if (p) {
+            const b = this.world.getRigidBody(p.handle)
+            const t = b.translation()
+            const v = b.linvel()
+            cb(p.id, p.spec.id, [t.x, t.y, t.z], [v.x, v.y, v.z])
+          }
+          return true
+        })
       },
       pieceRadius: (spec) => this.pieceSpecs[this.specByName.get(spec)!].radius,
       removePiece: (id) => this.removePiece(id),
@@ -225,10 +259,12 @@ export class Engine {
         .setLinvel(v[0], v[1], v[2])
         .setAngvel({ x: w[0], y: w[1], z: w[2] })
         .setAngularDamping(spec.rollingDamping)
+        .setSleeping(s.asleep ?? false)
         .setCcdEnabled(true),
     )
     this.world.createCollider(
       RAPIER.ColliderDesc.ball(spec.radius)
+        .setCollisionGroups((GROUP_BALL << 16) | 0xffff)
         .setDensity(spec.mass / volume)
         .setFriction(spec.friction)
         .setRestitution(spec.restitution)
@@ -237,7 +273,9 @@ export class Engine {
       body,
     )
     const id = this.nextPieceId++
-    this.pieces.push({ id, spec, specIndex: idx, handle: body.handle })
+    const piece: Piece = { id, spec, specIndex: idx, handle: body.handle, x: s.position[0], y: s.position[1], z: s.position[2] }
+    this.pieces.push(piece)
+    this.pieceByHandle.set(body.handle, piece)
     return id
   }
 
@@ -246,6 +284,7 @@ export class Engine {
     if (i < 0) return
     const body = this.world.getRigidBody(this.pieces[i].handle)
     if (body) this.world.removeRigidBody(body)
+    this.pieceByHandle.delete(this.pieces[i].handle)
     this.pieces.splice(i, 1)
     for (const set of this.sensorInside.values()) set.delete(id)
   }
@@ -309,6 +348,7 @@ export class Engine {
     this.ballSystem?.step()
     this.flushRemovals()
     this.updatePhase()
+    this.tickGame()
   }
 
   /** Steps for the given simulated duration (rounded to whole steps). */
@@ -349,17 +389,23 @@ export class Engine {
   }
 
   /** Per-step piece forces and material: quadratic air drag, Magnus lift from spin, and speed-dependent foam restitution. */
+  /** Visits the pieces that are awake: a resting piece needs no per-step work, and Rapier lists the active bodies directly. */
+  private forEachActivePiece(cb: (p: Piece, b: RigidBody) => void): void {
+    this.world.forEachActiveRigidBody((b) => {
+      const p = this.pieceByHandle.get(b.handle)
+      if (p) cb(p, b)
+    })
+  }
+
   private applyAirDrag(): void {
-    for (const p of this.pieces) {
+    this.forEachActivePiece((p, b) => {
       const sp = p.spec
-      if (sp.dragCoefficient === 0 && !sp.magnus && !sp.restitutionCurve) continue
-      const b = this.world.getRigidBody(p.handle)
-      if (b.isSleeping()) continue
+      if (sp.dragCoefficient === 0 && !sp.magnus && !sp.restitutionCurve) return
       const v = b.linvel()
       const speed = Math.hypot(v.x, v.y, v.z)
       if (sp.restitutionCurve) b.collider(0).setRestitution(sp.restitution * interp(sp.restitutionCurve, speed))
       b.resetForces(false)
-      if (speed < 1e-9) continue
+      if (speed < 1e-9) return
       const area = Math.PI * sp.radius ** 2
       let fx = 0
       let fy = 0
@@ -383,15 +429,14 @@ export class Engine {
         }
       }
       b.addForce({ x: fx, y: fy, z: fz }, false)
-    }
+    })
   }
 
   private checkSensors(): void {
     const sensors = this.game.field().sensors
     if (sensors.length === 0) return
-    for (const p of this.pieces) {
-      const b = this.world.getRigidBody(p.handle)
-      if (b.isSleeping()) continue
+    const events: GameEvent[] = []
+    this.forEachActivePiece((p, b) => {
       const t = b.translation()
       for (const s of sensors) {
         const set = this.sensorInside.get(s.id)!
@@ -399,13 +444,15 @@ export class Engine {
         const was = set.has(p.id)
         if (inside && !was) {
           set.add(p.id)
-          this.emit({ type: 'piece-entered-sensor', sensor: s, pieceId: p.id, spec: p.spec.id })
+          events.push({ type: 'piece-entered-sensor', sensor: s, pieceId: p.id, spec: p.spec.id })
         } else if (!inside && was) {
           set.delete(p.id)
-          this.emit({ type: 'piece-left-sensor', sensor: s, pieceId: p.id, spec: p.spec.id })
+          events.push({ type: 'piece-left-sensor', sensor: s, pieceId: p.id, spec: p.spec.id })
         }
       }
-    }
+    })
+    // events are handled after the walk, so a game module may spawn or remove pieces freely
+    for (const e of events) this.emit(e)
   }
 
   private flushRemovals(): void {
@@ -438,15 +485,29 @@ export class Engine {
     }
   }
 
-  private emit(e: GameEvent): void {
-    const ctx: GameContext = {
+  private gameContext(): GameContext {
+    const t = this.robot.translation()
+    const q = this.robot.rotation()
+    return {
       time: this.time,
       phase: this.phaseName(),
       rng: this.rng.fn(),
       state: this.gameState,
       removePiece: (id) => { this.removeQueue.push(id) },
+      spawn: (s) => this.spawn(s),
+      robot: { x: t.x, y: t.y, yaw: 2 * Math.atan2(q.z, q.w), half: [this.robotSpec.half[0], this.robotSpec.half[1]], alliance: this.robotSpec.alliance ?? 'blue' },
     }
-    const scores: Score[] = this.game.onEvent(e, ctx)
+  }
+
+  private tickGame(): void {
+    if (this.game.onTick) this.applyScores(this.game.onTick(this.gameContext()))
+  }
+
+  private emit(e: GameEvent): void {
+    this.applyScores(this.game.onEvent(e, this.gameContext()))
+  }
+
+  private applyScores(scores: Score[]): void {
     for (const s of scores) {
       this.scores[s.alliance] += s.points
       this.scoreLog.push({ ...s, time: this.time })
@@ -483,13 +544,16 @@ export class Engine {
     this.world.free()
     this.world = RAPIER.World.restoreSnapshot(s.world)
     this.world.timestep = this.dt
+    if (this.solverIterations) this.world.integrationParameters.numSolverIterations = this.solverIterations
     this.stepCount = s.stepCount
     this.rng.state = s.rng
     this.nextPieceId = s.nextPieceId
     this.pieces = s.pieces.map((p) => {
       const idx = this.specByName.get(p.spec)!
-      return { id: p.id, spec: this.pieceSpecs[idx], specIndex: idx, handle: p.handle }
+      const t = this.world.getRigidBody(p.handle).translation()
+      return { id: p.id, spec: this.pieceSpecs[idx], specIndex: idx, handle: p.handle, x: t.x, y: t.y, z: t.z }
     })
+    this.pieceByHandle = new Map(this.pieces.map((p) => [p.handle, p]))
     this.robot = this.world.getRigidBody(s.robotHandle)
     this.sensorInside = new Map(Object.entries(s.sensorInside).map(([k, v]) => [k, new Set(v)]))
     this.scores = { ...s.scores }
@@ -525,17 +589,24 @@ export class Engine {
     return h.digest()
   }
 
-  getFrame(): RenderFrame {
+  /**
+   * What the renderer needs. Only awake pieces are read from the physics world; a resting piece keeps its last position. The state
+   * hash walks every body, so callers that draw at 60 Hz pass withHash = false on most frames and keep the last one.
+   */
+  getFrame(withHash = true): RenderFrame {
     const n = this.pieces.length
     const pos = new Float32Array(n * 3)
     const spec = new Uint8Array(n)
     let awake = 0
-    for (let i = 0; i < n; i++) {
-      const b = this.world.getRigidBody(this.pieces[i].handle)
+    this.forEachActivePiece((p, b) => {
       const t = b.translation()
-      pos[i * 3] = t.x; pos[i * 3 + 1] = t.y; pos[i * 3 + 2] = t.z
-      spec[i] = this.pieces[i].specIndex
-      if (!b.isSleeping()) awake++
+      p.x = t.x; p.y = t.y; p.z = t.z
+      awake++
+    })
+    for (let i = 0; i < n; i++) {
+      const p = this.pieces[i]
+      pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z
+      spec[i] = p.specIndex
     }
     const t = this.robot.translation()
     const q = this.robot.rotation()
@@ -550,7 +621,8 @@ export class Engine {
       awakeCount: awake,
       piecePositions: pos,
       pieceSpecIndex: spec,
-      hash: this.hash(),
+      status: this.game.status ? this.game.status(this.gameState, this.time) : {},
+      hash: withHash ? (this.lastHash = this.hash()) : this.lastHash,
       held: this.ballSystem ? [...this.ballSystem.held] : [],
       beams: this.ballSystem ? [...this.ballSystem.beams] : [],
       capture: this.ballSystem ? this.ballSystem.captureBox() : null,

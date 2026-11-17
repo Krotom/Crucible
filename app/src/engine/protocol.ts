@@ -2,7 +2,8 @@
 import type { FieldDefinition, PieceSpec, RenderFrame } from './types'
 
 export type ToWorker =
-  | { type: 'init'; seed: number; mode: 'script' | 'robot'; host?: string }
+  | { type: 'init'; seed: number; mode: 'script' | 'robot'; host?: string; game?: 'test' | 'rebuilt' }
+  | { type: 'match'; run: boolean }
   /** seconds >= 0 sets the lead by hand; a negative value turns the automatic lead (follow the measured round trip) back on */
   | { type: 'lead'; seconds: number }
   | { type: 'ds'; enabled: boolean; autonomous: boolean; test: boolean }
@@ -17,6 +18,7 @@ export type ToWorker =
 export interface WorkerReady {
   type: 'ready'
   gameId: string
+  /** the game's status lines come with every frame */
   field: FieldDefinition
   pieces: PieceSpec[]
   robotHalf: [number, number, number]
@@ -35,6 +37,7 @@ export interface BridgeInfo {
   leadMs: number
   components: Float64Array | null
   mechanisms: { name: string; position: number; velocity: number }[]
+  fms: boolean
 }
 
 export type FromWorker =

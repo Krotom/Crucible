@@ -24,7 +24,7 @@ function game(events: GameEvent[] = [], piece: PieceSpec = BALL): GameModule {
 }
 
 const ROBOT: RobotSpec = {
-  half: OFFSEASON.bumper, start: { x: -50, y: -50, yaw: 0 }, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls,
+  half: OFFSEASON.bumper, start: { x: -50, y: -50, yaw: 0 }, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: { ...OFFSEASON.balls!, preload: 0 },
 }
 const ID = Object.fromEntries(OFFSEASON.mechanisms.map((m) => [m.name, m.id]))
 

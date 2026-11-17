@@ -135,6 +135,7 @@ function parseBalls(b: Obj, names: Set<string>): BallHandlingSpec {
   const s = 'ballHandling.shooter'
   return {
     piece: str(b, 'piece', 'ballHandling'),
+    preload: b.preload === undefined ? undefined : num(b, 'preload', 'ballHandling'),
     intake: {
       driver: mech(i, 'driver', w, names), metersPerRotation: num(i, 'metersPerRotation', w), travel: num(i, 'travel', w),
       slideAxis: vec3(i.slideAxis, `${w}.slideAxis`),

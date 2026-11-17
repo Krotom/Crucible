@@ -53,6 +53,7 @@ mechanisms:
 # and backspin are the shot-calibration knobs (milestone M12).
 ballHandling:
   piece: ball
+  preload: 3                    # GUESS: FUEL loaded before the match (the rules allow up to 8)
   intake:
     driver: intakeDriver
     metersPerRotation: 0.0785   # CAD: 10-tooth pinion, 25 mm pitch diameter

@@ -11,7 +11,8 @@ export interface BallHost {
   readonly dt: number
   robotPose(): { x: number; y: number; yaw: number; vx: number; vy: number }
   mechanism(name: string): MechanismModel | undefined
-  eachPiece(cb: (id: number, spec: string, position: Vec3, velocity: Vec3) => void): void
+  /** Calls cb for every piece whose collider overlaps the oriented box (found with the broadphase, asleep or not). */
+  piecesInBox(center: Vec3, yaw: number, half: Vec3, cb: (id: number, spec: string, position: Vec3, velocity: Vec3) => void): void
   pieceRadius(spec: string): number
   removePiece(id: number): void
   spawn(s: PieceSpawn): number
@@ -44,7 +45,14 @@ export class BallSystem {
     this.beams = spec.beams.map(() => false)
   }
 
-  reset(): void { this.held = []; this.shots = 0; this.captured = 0; this.beams = this.spec.beams.map(() => false) }
+  reset(): void {
+    // the preload waits at the end of the path, as pieces loaded by hand before the match
+    const n = this.spec.preload ?? 0
+    this.held = Array.from({ length: n }, (_, i) => this.pathLength - (n - 1 - i) * this.spacing)
+    this.shots = 0
+    this.captured = 0
+    this.updateBeams()
+  }
 
   save(): BallSnapshot { return { held: [...this.held], shots: this.shots, captured: this.captured } }
 
@@ -95,15 +103,15 @@ export class BallSystem {
     const sy = Math.sin(-box.yaw)
     let hit: number | null = null
     let hitSpec = ''
-    this.host.eachPiece((id, spec, pos, vel) => {
-      if (hit !== null || spec !== this.spec.piece) return
+    this.host.piecesInBox(box.center, box.yaw, [box.half[0] + 0.08, box.half[1] + 0.08, box.half[2] + 0.08], (id, spec, pos, vel) => {
+      if (spec !== this.spec.piece || (hit !== null && id > hit)) return
       const dx = pos[0] - box.center[0]
       const dy = pos[1] - box.center[1]
       const lx = dx * cy - dy * sy
       const ly = dx * sy + dy * cy
       if (Math.abs(lx) > box.half[0] || Math.abs(ly) > box.half[1] || Math.abs(pos[2] - box.center[2]) > box.half[2]) return
       if (Math.hypot(vel[0] - p.vx, vel[1] - p.vy) > this.spec.intake.maxRelativeSpeed) return
-      hit = id
+      hit = id // the lowest id wins, so the choice does not depend on the order of the query
       hitSpec = spec
     })
     if (hit === null) return
@@ -180,7 +188,7 @@ export class BallSystem {
     this.host.spawn({ spec: this.spec.piece, position, velocity, angularVelocity })
     this.held.pop()
     this.shots++
-    this.host.emit({ type: 'piece-launched', spec: this.spec.piece, speed })
+    this.host.emit({ type: 'piece-launched', spec: this.spec.piece, speed, position, velocity })
   }
 
   get captureIsActive(): boolean { return this.captureActive }

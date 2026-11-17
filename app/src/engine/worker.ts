@@ -3,10 +3,13 @@
 import { Engine } from './engine'
 import type { FromWorker, ToWorker } from './protocol'
 import type { EngineSnapshot } from './types'
+import { createRebuiltGame } from '../games/rebuilt'
 import { createTestGame, TEST_ROBOT } from '../games/test'
 import { BridgeSession } from './bridge/session'
 import { OFFSEASON } from '../robots/offseason'
 
+let frameCount = 0
+let lastHash = ''
 let engine: Engine | null = null
 let bridge: BridgeSession | null = null
 let snapshot: EngineSnapshot | null = null
@@ -22,13 +25,16 @@ const post = (m: FromWorker): void => (self as unknown as Worker).postMessage(m)
 
 function postFrame(): void {
   if (!engine) return
-  const frame = engine.getFrame()
+  frameCount++
+  const frame = engine.getFrame(frameCount % 12 === 1)
+  if (frame.hash) lastHash = frame.hash
+  else frame.hash = lastHash
   const st = bridge?.status
   post({
     type: 'frame', frame, running, speed, hasSnapshot: snapshot !== null, simRate,
     bridge: st && {
       connected: st.connected, frames: st.frames, robotTime: st.robotTime, skipped: st.skipped, robotEnabled: st.robotEnabled, hello: st.helloDevices,
-      helloIssues: st.helloIssues, components: st.components, rttMs: (bridge?.rtt ?? 0) * 1000, leadMs: (bridge?.lead ?? 0) * 1000,
+      helloIssues: st.helloIssues, components: st.components, fms: bridge?.fms ?? false, rttMs: (bridge?.rtt ?? 0) * 1000, leadMs: (bridge?.lead ?? 0) * 1000,
       mechanisms: [...(engine?.mechanisms.values() ?? [])].map((m) => ({ name: m.spec.name, position: m.rotations, velocity: m.rps })),
     },
   })
@@ -61,11 +67,15 @@ async function handle(m: ToWorker): Promise<void> {
       case 'init': {
         bridge?.stop()
         bridge = null
-        const game = createTestGame()
+        const rebuilt = m.game === 'rebuilt'
+        // REBUILT in real time: 150 FUEL in the neutral zone (the manual has up to 408; more than about 200 does not run in real time
+        // while the robot plows through the pile) and 2 solver iterations; see rules/REBUILT_RULES_EXTRACT.md section 7
+        const game = rebuilt ? createRebuiltGame({ preload: OFFSEASON.balls?.preload ?? 0, neutralFuel: 150 }) : createTestGame()
+        const start = rebuilt ? { x: 1.6, y: 4.0, yaw: 0 } : OFFSEASON.start
         const robot = m.mode === 'robot'
-          ? { half: OFFSEASON.bumper, start: OFFSEASON.start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls }
-          : TEST_ROBOT
-        engine = await Engine.create({ game, robot, seed: m.seed })
+          ? { half: OFFSEASON.bumper, start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls, alliance: 'blue' as const }
+          : rebuilt ? { ...TEST_ROBOT, start, alliance: 'blue' as const } : TEST_ROBOT
+        engine = await Engine.create({ game, robot, seed: m.seed, solverIterations: rebuilt ? 2 : undefined })
         snapshot = null
         if (m.mode === 'robot') {
           bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: 5810 }, () => {}, OFFSEASON)
@@ -77,6 +87,12 @@ async function handle(m: ToWorker): Promise<void> {
         break
       }
       case 'run': running = m.running; budget = 0; if (bridge) bridge.paused = !m.running; postFrame(); break
+      case 'match':
+        if (engine && bridge) {
+          if (m.run) { engine.reset(); budget = 0; bridge.seedPose(); bridge.startMatch() } else bridge.endMatch()
+          postFrame()
+        }
+        break
       case 'lead': if (bridge) { bridge.autoLead = m.seconds < 0; if (m.seconds >= 0) bridge.lead = m.seconds } break
       case 'ds': bridge?.setDs({ enabled: m.enabled, autonomous: m.autonomous, test: m.test }); break
       case 'joystick': bridge?.setJoystick(m.axes, BigInt(m.buttons), m.pov); break

@@ -219,7 +219,7 @@ $('start-sim').addEventListener('click', () => {
   dsEnabled = false
   $('ds-enable').textContent = 'Enable'
   lastInput = null
-  sim.start(seedValue(), robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1')
+  sim.start(seedValue(), robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt')
   $('start-sim').textContent = 'Stop sim'
   setStatus(robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
   playEl.textContent = 'Play'
@@ -236,6 +236,8 @@ $('ds-enable').addEventListener('click', () => {
   sendDs()
 })
 $('ds-mode').addEventListener('change', sendDs)
+$('match-start').addEventListener('click', () => { dsEnabled = false; $('ds-enable').textContent = 'Enable'; sim.send({ type: 'match', run: true }) })
+$('match-end').addEventListener('click', () => sim.send({ type: 'match', run: false }))
 installKeyboard()
 $('sim-step').addEventListener('click', () => sim.send({ type: 'step', steps: 10 }))
 $('sim-reset').addEventListener('click', () => sim.send({ type: 'reset', seed: seedValue() }))
@@ -267,6 +269,7 @@ function simFrame(): void {
     `score  blue ${f.scores.blue}  red ${f.scores.red}`,
     `balls  ${f.pieceCount} (${f.awakeCount} moving)`,
     ...(f.capture ? [`robot  holds ${f.held.length}  beams ${f.beams.map((b) => (b ? '#' : '.')).join('')}  caught ${f.captured}  shots ${f.shots}${f.capture.active ? '  INTAKE ON' : ''}`] : []),
+    ...Object.entries(f.status).map(([k, v]) => `${k.padEnd(6)} ${v}`),
     `hash   ${f.hash}`,
     ...(sim.bridge ? [
       `robot  ${sim.bridge.connected ? 'connected' : 'waiting for robot'}${sim.bridge.frames ? `, ${sim.bridge.frames} frames, ${sim.bridge.robotEnabled ? 'enabled' : 'disabled'}` : ''}`,

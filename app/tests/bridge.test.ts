@@ -8,6 +8,7 @@ import {
 } from '../src/engine/bridge/frames'
 import { MSG_DS, MSG_FROM_APP, MSG_HELLO, MSG_JOYSTICK, MSG_POSE_SEED, MSG_STATS, MSG_TO_APP } from '../src/engine/bridge/ws-transport'
 import { OFFSEASON, OFFSEASON_DRIVETRAIN, OFFSEASON_HALF } from '../src/robots/offseason'
+import { createRebuiltGame } from '../src/games/rebuilt'
 import { FakeNtServer } from './helpers/fake-nt-server'
 import { FakeRobotWs } from './helpers/fake-ws-robot'
 
@@ -77,11 +78,11 @@ describe('frame codec', () => {
   })
 
   it('writes the exact control-topic sizes the robot decodes', () => {
-    expect(encodeDs({ counter: 1n, enabled: true, autonomous: false, test: false, estop: false, dsAttached: true, alliance: 1, station: 2, matchTime: 3 }).length).toBe(24)
+    expect(encodeDs({ counter: 1n, gameData: '', enabled: true, autonomous: false, test: false, estop: false, dsAttached: true, alliance: 1, station: 2, matchTime: 3 }).length).toBe(24)
     expect(encodeJoystick({ counter: 1n, axes: [0.5], buttons: 5n, pov: -1 }).length).toBe(72)
     expect(encodePoseSeed({ counter: 1n, x: 1, y: 2, yawRad: 3 }).length).toBe(32)
     // flag bits: enabled=1 autonomous=2 test=4 estop=8 dsAttached=16
-    const v = new DataView(encodeDs({ counter: 1n, enabled: true, autonomous: true, test: false, estop: false, dsAttached: true, alliance: 1, station: 2, matchTime: 0 }).buffer)
+    const v = new DataView(encodeDs({ counter: 1n, gameData: '', enabled: true, autonomous: true, test: false, estop: false, dsAttached: true, alliance: 1, station: 2, matchTime: 0 }).buffer)
     expect(v.getUint32(8, true)).toBe(1 | 2 | 16)
   })
 })
@@ -189,6 +190,41 @@ describe('bridge session against a fake robot', () => {
     expect(session!.status.helloIssues.join(' ')).toContain('does not register')
     expect(Array.from(session!.status.components!)).toEqual([1, 2, 3, 1, 0, 0, 0])
   })
+
+  it('acts as the field system: DS follows the match phases and Game Data is sent after AUTO', async () => {
+    robot = new FakeRobotWs(); nt = new FakeNtServer(); await robot.start(); await nt.start()
+    const e2 = await Engine.create({ game: createRebuiltGame({ neutralFuel: 20 }), robot: { half: OFFSEASON_HALF, start: { x: 1, y: 7, yaw: 0 }, script: [], drivetrain: OFFSEASON_DRIVETRAIN, mechanisms: OFFSEASON.mechanisms, alliance: 'blue' }, seed: 9 })
+    session = new BridgeSession(e2, '127.0.0.1', { ws: robot.port, nt: nt.port }, () => {}, OFFSEASON)
+    session.start()
+    await until(() => session!.status.connected)
+    session.startMatch()
+    const lastDs = () => {
+      const b = robot!.of(MSG_DS).at(-1)!
+      const v = new DataView(b.buffer, b.byteOffset)
+      return { flags: v.getUint32(8, true), gameData: String.fromCharCode(v.getUint8(14)), matchTime: v.getFloat64(16, true) }
+    }
+    await until(() => robot!.of(MSG_DS).length > 0 && (lastDs().flags & 1) === 1)
+    expect(lastDs().flags & 1).toBe(1) // enabled
+    expect(lastDs().flags & 2).toBe(2) // autonomous
+    let seq = 0
+    const advance = async (seconds: number): Promise<void> => {
+      const frames = Math.ceil(seconds / 0.25)
+      const t0 = e2.time
+      for (let i = 0; i < frames; i++) sendToApp(seq++, 100 + t0 + (i + 1) * 0.25 + (seq === 0 ? 0 : 0))
+      await until(() => robot!.of(MSG_FROM_APP).length >= seq, 8000)
+    }
+    sendToApp(seq++, 100) // baseline frame
+    await advance(21) // into the 3 s delay
+    expect(e2.phase).toBe('delay')
+    await until(() => (lastDs().flags & 1) === 0) // disabled between AUTO and TELEOP
+    await advance(3) // t = 24: TRANSITION SHIFT
+    expect(e2.phase).toBe('transition')
+    await until(() => (lastDs().flags & 1) === 1 && (lastDs().flags & 2) === 0) // enabled, teleop
+    expect(['R', 'B']).toContain(lastDs().gameData)
+    expect(lastDs().matchTime).toBeGreaterThan(130)
+    session.endMatch()
+    await until(() => (lastDs().flags & 1) === 0)
+  }, 20000)
 
   it('publishes DS, joystick and pose seed to the robot', async () => {
     await setup({ x: 3, y: 4, yaw: 1 })

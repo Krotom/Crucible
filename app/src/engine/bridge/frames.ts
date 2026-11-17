@@ -113,13 +113,14 @@ export function decodeFromApp(bytes: Uint8Array): FromApp | null {
 
 // ---- control topics (app to robot)
 
-export interface DsState { counter: bigint; enabled: boolean; autonomous: boolean; test: boolean; estop: boolean; dsAttached: boolean; alliance: 0 | 1; station: number; matchTime: number }
+/** gameData: the one character of the Game Data string ('R' or 'B' in 2026), or '' when none has been sent */
+export interface DsState { counter: bigint; gameData: string; enabled: boolean; autonomous: boolean; test: boolean; estop: boolean; dsAttached: boolean; alliance: 0 | 1; station: number; matchTime: number }
 
 export function encodeDs(s: DsState): Uint8Array {
   const out = new Uint8Array(24)
   const v = view(out)
   const flags = (s.enabled ? 1 : 0) | (s.autonomous ? 2 : 0) | (s.test ? 4 : 0) | (s.estop ? 8 : 0) | (s.dsAttached ? 16 : 0)
-  v.setBigUint64(0, s.counter, true); v.setUint32(8, flags, true); v.setUint8(12, s.alliance); v.setUint8(13, s.station); v.setFloat64(16, s.matchTime, true)
+  v.setBigUint64(0, s.counter, true); v.setUint32(8, flags, true); v.setUint8(12, s.alliance); v.setUint8(13, s.station); v.setUint8(14, s.gameData ? s.gameData.charCodeAt(0) : 0); v.setFloat64(16, s.matchTime, true)
   return out
 }
 
