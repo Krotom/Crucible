@@ -5,7 +5,7 @@ import type { FromWorker, ToWorker } from './protocol'
 import type { EngineSnapshot } from './types'
 import { createTestGame, TEST_ROBOT } from '../games/test'
 import { BridgeSession } from './bridge/session'
-import { OFFSEASON_DRIVETRAIN, OFFSEASON_HALF } from '../robots/offseason'
+import { OFFSEASON } from '../robots/offseason'
 
 let engine: Engine | null = null
 let bridge: BridgeSession | null = null
@@ -26,7 +26,11 @@ function postFrame(): void {
   const st = bridge?.status
   post({
     type: 'frame', frame, running, speed, hasSnapshot: snapshot !== null, simRate,
-    bridge: st && { connected: st.connected, frames: st.frames, robotTime: st.robotTime, skipped: st.skipped, robotEnabled: st.robotEnabled, hello: st.helloDevices },
+    bridge: st && {
+      connected: st.connected, frames: st.frames, robotTime: st.robotTime, skipped: st.skipped, robotEnabled: st.robotEnabled, hello: st.helloDevices,
+      helloIssues: st.helloIssues, components: st.components, rttMs: (bridge?.rtt ?? 0) * 1000, leadMs: (bridge?.lead ?? 0) * 1000,
+      mechanisms: [...(engine?.mechanisms.values() ?? [])].map((m) => ({ name: m.spec.name, position: m.rotations, velocity: m.rps })),
+    },
   })
 }
 
@@ -59,12 +63,12 @@ async function handle(m: ToWorker): Promise<void> {
         bridge = null
         const game = createTestGame()
         const robot = m.mode === 'robot'
-          ? { half: OFFSEASON_HALF, start: TEST_ROBOT.start, script: [], drivetrain: OFFSEASON_DRIVETRAIN }
+          ? { half: OFFSEASON.bumper, start: OFFSEASON.start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms }
           : TEST_ROBOT
         engine = await Engine.create({ game, robot, seed: m.seed })
         snapshot = null
         if (m.mode === 'robot') {
-          bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', 5810)
+          bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: 5810 }, () => {}, OFFSEASON)
           bridge.start()
           running = true
         }
@@ -73,6 +77,7 @@ async function handle(m: ToWorker): Promise<void> {
         break
       }
       case 'run': running = m.running; budget = 0; if (bridge) bridge.paused = !m.running; postFrame(); break
+      case 'lead': if (bridge) { bridge.autoLead = m.seconds < 0; if (m.seconds >= 0) bridge.lead = m.seconds } break
       case 'ds': bridge?.setDs({ enabled: m.enabled, autonomous: m.autonomous, test: m.test }); break
       case 'joystick': bridge?.setJoystick(m.axes, BigInt(m.buttons), m.pov); break
       case 'speed': speed = m.value; postFrame(); break

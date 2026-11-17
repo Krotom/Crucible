@@ -269,6 +269,9 @@ function simFrame(): void {
     `hash   ${f.hash}`,
     ...(sim.bridge ? [
       `robot  ${sim.bridge.connected ? 'connected' : 'waiting for robot'}${sim.bridge.frames ? `, ${sim.bridge.frames} frames, ${sim.bridge.robotEnabled ? 'enabled' : 'disabled'}` : ''}`,
+      `  exchange round trip ${sim.bridge.rttMs.toFixed(1)} ms, lead ${sim.bridge.leadMs.toFixed(1)} ms`,
+      ...sim.bridge.mechanisms.map((m) => `  ${m.name.padEnd(12)} ${m.position.toFixed(3).padStart(8)} rot ${m.velocity.toFixed(2).padStart(7)} rps`),
+      ...sim.bridge.helloIssues.map((i) => `! ${i}`),
     ] : []),
   ].join('\n')
   plot.build(store)
@@ -300,7 +303,7 @@ function frame(now: number): void {
   // scene
   if (sim.active) {
     if (sim.latest) view.setSimFrame(sim.latest, robotHalfZ)
-    view.setComponentPoses(undefined)
+    view.setComponentPoses(sim.bridge?.components ?? undefined)
   } else {
     const pose = poseSel.value ? store.valueAt(poseSel.value, time) : undefined
     if (pose instanceof Float64Array) {

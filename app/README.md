@@ -54,6 +54,10 @@ Talons keep running their control loops (Phoenix sim) and publish their applied 
 swerve model (tire forces per module, DC motor models, current limits, the walls and balls of the test game) and returns rotor,
 CANcoder and Pigeon states. The robot's own odometry then follows the app's physics.
 
+The frame exchange uses a dedicated local WebSocket (port 5811) served by the robot, not NetworkTables; see the contract.
+All seven Talon mechanisms (turret, shooter, feeder, indexer, hood, intake driver and roller) and the swerve run under the
+app's physics, defined in `robots/offseason/robot.yaml`; the readout lists any mechanism the robot has that the file does not.
+
 1. **Launch robot** (Electron only) starts `gradlew simulateJava --no-daemon` in the robot project with `CRUCIBLE_BRIDGE=1` (the project
    folder is `robotDir` in `app/crucible.config.json`, else the sibling repo). Or start it yourself:
    `CRUCIBLE_BRIDGE=1 ./gradlew simulateJava`. The Crucible bridge and the sim GUI do not mix, see the contract.
@@ -90,6 +94,8 @@ To check the renderer in a plain browser against a real log: `CRUCIBLE_SAMPLE_LO
 | `src/renderer/src/lib/plot.ts` | uPlot panel |
 | `src/engine`, `src/games` | physics engine and game modules (see Simulation) |
 | `src/engine/bridge`, `src/engine/drivetrain.ts` | sim bridge (frames, NT client, session) and the swerve model |
+| `src/engine/mechanism.ts`, `motors.ts` | rotary mechanism physics and motor constants |
+| `robots/offseason/robot.yaml`, `src/robots/` | robot definition and its loader/checker |
 | `src/main/robot.ts` | robot process launcher for the Electron main process |
 | `tests/` | unit tests (engine: ballistics, drag, bounce, determinism, snapshots, scoring, golden hash); `real-log.test.ts` runs only when `CRUCIBLE_SAMPLE_LOG` is set |
 

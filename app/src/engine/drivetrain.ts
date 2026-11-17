@@ -7,21 +7,12 @@
 // with stiff tires. Voltage sign convention (as in CTRE's own swerve sim): positive drive volts drive the module
 // forward and positive steer volts turn it counterclockwise, whatever the motor inversion is on the robot.
 import type { CancoderState, MotorState, PigeonState } from './bridge/frames'
+import type { MotorModel } from './motors'
 
 const G = 9.81
 const TWO_PI = 2 * Math.PI
 
-export interface MotorModel {
-  /** Torque constant, N*m per amp. */
-  kt: number
-  /** Back-EMF constant, V per rad/s. */
-  ke: number
-  /** Winding resistance, ohm. */
-  resistance: number
-}
-
-/** Kraken X60 from the published free speed (6000 rpm at 12 V) and stall values (7.09 N*m, 366 A). */
-export const KRAKEN_X60: MotorModel = { kt: 7.09 / 366, ke: 12 / ((6000 * TWO_PI) / 60), resistance: 12 / 366 }
+export { KRAKEN_X60 } from './motors'
 
 export interface ModuleSpec {
   /** Position in the robot frame, meters (+X forward, +Y left). */

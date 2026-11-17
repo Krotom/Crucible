@@ -3,7 +3,9 @@
 // state is identical on every run (deterministic Rapier build, seeded RNG, fixed iteration order).
 import RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import type { RigidBody, World } from '@dimforge/rapier3d-deterministic-compat'
+import type { MotorState } from './bridge/frames'
 import { Drivetrain } from './drivetrain'
+import { MechanismModel } from './mechanism'
 import { Hasher, Rng } from './rng'
 import type {
   Alliance, BoxSpec, EngineConfig, EngineSnapshot, GameContext, GameEvent, GameModule, PieceSpawn, PieceSpec, RenderFrame,
@@ -61,6 +63,9 @@ export class Engine {
   private scriptEnd = 0
   /** The swerve model when the robot is driven by motor voltages. */
   drivetrain: Drivetrain | null = null
+  /** Mechanism physics by Talon CAN id. */
+  readonly mechanisms = new Map<number, MechanismModel>()
+  private mechanismVolts = new Map<number, number>()
 
   private constructor(cfg: EngineConfig) {
     this.dt = cfg.dt ?? 0.001
@@ -71,6 +76,7 @@ export class Engine {
     this.pieceSpecs = cfg.game.pieces()
     this.pieceSpecs.forEach((p, i) => this.specByName.set(p.id, i))
     this.drivetrain = cfg.robot.drivetrain ? new Drivetrain(cfg.robot.drivetrain) : null
+    for (const m of cfg.robot.mechanisms ?? []) this.mechanisms.set(m.id, new MechanismModel(m))
     this.scriptEnd = cfg.robot.script.reduce((t, s) => t + s.duration, 0)
   }
 
@@ -136,6 +142,7 @@ export class Engine {
     const r = this.robotSpec
     const driven = this.drivetrain !== null
     this.drivetrain?.reset()
+    for (const m of this.mechanisms.values()) m.reset()
     const desc = driven
       ? RAPIER.RigidBodyDesc.dynamic().enabledTranslations(true, true, false).enabledRotations(false, false, true).setCanSleep(false)
       : RAPIER.RigidBodyDesc.kinematicVelocityBased()
@@ -209,7 +216,41 @@ export class Engine {
 
   // ---------------------------------------------------------------- stepping
 
+  /** Sets the applied voltage of a Talon by CAN id: the drivetrain's motors or a mechanism, whichever has it. */
+  setMotorVolts(id: number, volts: number): void {
+    this.drivetrain?.setVolts(id, volts)
+    if (this.mechanisms.has(id)) this.mechanismVolts.set(id, volts)
+  }
+
+  /** The robot code zeroed this motor's position: zero the mechanism's physics state too. */
+  resetMechanism(id: number): void { this.mechanisms.get(id)?.reset() }
+
+  /** Rotor states of every simulated motor: swerve drive and steer motors and the mechanisms. */
+  motorStates(): MotorState[] {
+    return [...(this.drivetrain?.motorStates() ?? []), ...[...this.mechanisms.values()].map((m) => m.motorState())]
+  }
+
+  /**
+   * Like motorStates(), but the mechanisms are shown `lead` seconds ahead, assuming their voltages stay as they are. The robot
+   * applies this answer about one round trip after the frame it answers, so reporting where the mechanism will be by then
+   * takes the exchange delay out of the Talons' control loops (a real robot has about 1 ms of CAN latency, the bridge several).
+   * Only the mechanisms are projected; the drivetrain needs the world stepped and is reported as it is.
+   */
+  predictMotorStates(lead: number): MotorState[] {
+    const out = this.drivetrain?.motorStates() ?? []
+    const n = Math.round(lead / this.dt)
+    for (const [id, m] of this.mechanisms) {
+      const saved = m.save()
+      const volts = this.mechanismVolts.get(id) ?? 0
+      for (let i = 0; i < n; i++) m.step(this.dt, volts)
+      out.push(m.motorState())
+      m.load(saved)
+    }
+    return out
+  }
+
   step(): void {
+    for (const [id, m] of this.mechanisms) m.step(this.dt, this.mechanismVolts.get(id) ?? 0)
     if (this.drivetrain) this.driveFromMotors()
     else this.driveRobot()
     this.applyAirDrag()
@@ -359,6 +400,7 @@ export class Engine {
       phaseIndex: this.phaseIndex,
       gameState: JSON.parse(JSON.stringify(this.gameState)),
       drivetrain: this.drivetrain?.save(),
+      mechanisms: Object.fromEntries([...this.mechanisms].map(([id, m]) => [id, m.save()])),
     }
   }
 
@@ -381,6 +423,7 @@ export class Engine {
     this.gameState = JSON.parse(JSON.stringify(s.gameState))
     this.removeQueue = []
     if (this.drivetrain && s.drivetrain) this.drivetrain.load(s.drivetrain)
+    for (const [id, m] of this.mechanisms) if (s.mechanisms?.[id]) m.load(s.mechanisms[id])
   }
 
   // ---------------------------------------------------------------- observation
@@ -400,6 +443,7 @@ export class Engine {
     }
     addBody(this.robot)
     this.drivetrain?.hashInto((x) => h.add(x))
+    for (const m of this.mechanisms.values()) { h.add(m.angle); h.add(m.speed) }
     for (const p of this.pieces) { h.add(p.id); addBody(this.world.getRigidBody(p.handle)) }
     return h.digest()
   }

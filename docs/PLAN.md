@@ -43,7 +43,8 @@ connecting to a real robot, FTC.
 | Multi-robot (M10) | Scripted bots first. |
 | Robot process | The app launches the robot sim itself (and can attach to one you started). |
 | Gamepad | Defaults to the existing `UniversalController` mapping; PathPlanner autos run inside the robot code, so the app does not replay them. |
-| Mode B transport | Dedicated local WebSocket side channel (NT floors at ~5 ms per round trip, see M0). |
+| Bridge transport | **A dedicated local WebSocket for the frame exchange, in Mode A as well as Mode B.** NT batches updates: M0 measured a ~5 ms floor, and in M4 the real robot sim measured a 14-23 ms round trip, which makes high-gain mechanism loops ring; the WebSocket measures 1-2 ms. NT keeps carrying what people look at. |
+| Latency compensation | The app reports each mechanism a short lead ahead (the measured round trip), so the Talon loops see a delay close to a real robot's. |
 
 ## 3. What the spike found (S5) and why timing has two modes
 
@@ -284,7 +285,7 @@ Every milestone ends with something you can run.
 | M1 | **Viewer skeleton (done, see [app/README.md](../app/README.md))**: Electron app, NT4 client, 3D scene with your robot model, live view of existing topics (`Swerve/Pose`, `Mechanism3d/Components`), `.wpilog` playback and a basic plot panel | M | You can open a log of your robot and watch it live in the app |
 | M2 | **Engine core with a test game (done, see [app/README.md](../app/README.md))**: fixed-step loop, Rapier world, plug-in host, `game-test`, ball spawning and bounce, scripted robot body, snapshots | L | Balls bounce deterministically in the app with a scripted kinematic robot |
 | M3 | **Bridge + drivetrain authority (done, see [NT_CONTRACT.md](NT_CONTRACT.md) section 9)**: robot-side bridge, per-module swerve model, Driver Station and gamepad control, robot odometry matches physics truth | L | Drive the robot with a gamepad in the app; robot code's odometry agrees with the app |
-| M4 | **Mechanisms under app authority**: all Talon-driven mechanisms, robot definition loader, compared against today's `TalonFXSim` results | M | Turret, hood, intake, flywheels behave like the current sim at the same inputs |
+| M4 | **Mechanisms under app authority (done, see [NT_CONTRACT.md](NT_CONTRACT.md) section 10)**: all Talon-driven mechanisms, robot definition loader, compared against today's `TalonFXSim` results | M | Turret, hood, intake, flywheels behave like the current sim at the same inputs |
 | M5 | **Ball interaction**: intake capture, stages and beam breaks, shooter launch with drag, spin and foam model, robot colliders vs balls | L | Intake a ball, see the beam break, feed it, shoot it, watch it fly |
 | M6 | **Game module REBUILT + match flow + HUD**: rules extract, your review, implementation and tests | L | A full scripted match scores according to the reviewed rules |
 | M7 | **Contact and pushing**: robot-field and robot-robot contact tuning, contact feedback to the robot | M | Wall hits and pushing look and feel right; odometry reacts correctly |

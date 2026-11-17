@@ -1,0 +1,78 @@
+package frc.robot.lib.simbridge;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.ByteArrayOutputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.nio.ByteBuffer;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import org.junit.jupiter.api.Test;
+
+/** WsServer against the JDK's own WebSocket client: handshake, both directions, big and fragmented messages, replacement. */
+class WsServerTest {
+    private static final int PORT = 58113;
+
+    @Test
+    void exchangesBinaryMessagesBothWays() throws Exception {
+        CopyOnWriteArrayList<byte[]> received = new CopyOnWriteArrayList<>();
+        CountDownLatch connected = new CountDownLatch(1);
+        WsServer server = new WsServer(PORT, new WsServer.Listener() {
+            @Override public void onConnect() { connected.countDown(); }
+
+            @Override public void onMessage(byte[] m) { received.add(m); }
+
+            @Override public void onDisconnect() {}
+        });
+        server.start();
+
+        CopyOnWriteArrayList<byte[]> fromServer = new CopyOnWriteArrayList<>();
+        ByteArrayOutputStream partial = new ByteArrayOutputStream();
+        WebSocket ws = HttpClient.newHttpClient().newWebSocketBuilder().buildAsync(URI.create("ws://127.0.0.1:" + PORT), new WebSocket.Listener() {
+            @Override public CompletionStage<?> onBinary(WebSocket w, ByteBuffer data, boolean last) {
+                byte[] b = new byte[data.remaining()];
+                data.get(b);
+                partial.writeBytes(b);
+                if (last) { fromServer.add(partial.toByteArray()); partial.reset(); }
+                w.request(1);
+                return null;
+            }
+
+            @Override public void onOpen(WebSocket w) { w.request(1); }
+        }).get(5, TimeUnit.SECONDS);
+        assertTrue(connected.await(5, TimeUnit.SECONDS));
+
+        // client to server: a small message and a 200 kB one (extended length)
+        byte[] small = { 3, 1, 2, 3 };
+        byte[] big = new byte[200_000];
+        for (int i = 0; i < big.length; i++) big[i] = (byte) (i * 7);
+        ws.sendBinary(ByteBuffer.wrap(small), true).join();
+        ws.sendBinary(ByteBuffer.wrap(big), true).join();
+        for (int i = 0; i < 100 && received.size() < 2; i++) Thread.sleep(20);
+        assertEquals(2, received.size());
+        assertArrayEquals(small, received.get(0));
+        assertArrayEquals(big, received.get(1));
+
+        // a message split into fragments is reassembled
+        ws.sendBinary(ByteBuffer.wrap(new byte[] { 4, 9 }), false).join();
+        ws.sendBinary(ByteBuffer.wrap(new byte[] { 8, 7 }), true).join();
+        for (int i = 0; i < 100 && received.size() < 3; i++) Thread.sleep(20);
+        assertArrayEquals(new byte[] { 4, 9, 8, 7 }, received.get(2));
+
+        // server to client, small and large
+        server.send(new byte[] { 1, 5 });
+        server.send(big);
+        for (int i = 0; i < 100 && fromServer.size() < 2; i++) Thread.sleep(20);
+        assertEquals(2, fromServer.size());
+        assertArrayEquals(new byte[] { 1, 5 }, fromServer.get(0));
+        assertArrayEquals(big, fromServer.get(1));
+        assertTrue(server.connected());
+    }
+}

@@ -1,0 +1,48 @@
+# Robot definition: OffSeason (Team 10213). Physical parameters the simulation needs.
+# Each value says where it comes from: CODE = the robot project's constants (checked against the robot at connect time),
+# CAD = measured from montaj.glb, GUESS = a placeholder to measure. Units: meters, kilograms, seconds, rotations.
+robot: OffSeason
+version: 1
+
+chassis:
+  mass: 52                  # GUESS: robot with bumpers and battery, kg
+  bumper: [0.43, 0.43, 0.12]  # GUESS: bumper footprint half extents x, y and collider height
+  start: { x: 1.0, y: 1.0, yaw: 0.0 }
+
+swerve:
+  wheelRadius: 0.0508       # CODE TunerConstants: 2 in
+  driveRatio: 7.03125       # CODE
+  steerRatio: 26.09090909090909  # CODE
+  couplingRatio: 4.5        # CODE
+  driveMotor: krakenX60     # CODE (CTRE sim default for swerve)
+  steerMotor: krakenX60
+  driveInertia: 0.01        # CODE kDriveInertia
+  steerInertia: 0.01        # CODE kSteerInertia
+  driveFrictionVolts: 0.2   # CODE
+  steerFrictionVolts: 0.2   # CODE
+  driveCurrentLimit: 120    # CODE kSlipCurrent
+  steerCurrentLimit: 60     # CODE
+  mu: 1.2                   # GUESS: tread on carpet
+  slipSpeed: 0.05           # tire stiffness knob
+  pigeonId: 1
+  modules:                  # CODE: +-11.415 in
+    - { x: 0.28994, y: 0.28994, driveId: 20, steerId: 21, encoderId: 22 }    # front left
+    - { x: 0.28994, y: -0.28994, driveId: 23, steerId: 24, encoderId: 25 }   # front right
+    - { x: -0.28994, y: 0.28994, driveId: 26, steerId: 27, encoderId: 28 }   # back left
+    - { x: -0.28994, y: -0.28994, driveId: 29, steerId: 30, encoderId: 31 }  # back right
+
+# Mechanisms driven by a single (lead) Talon. motor/count/gearRatio are checked against what the robot code registers;
+# inertia values are the robot code's own guesses (GUESS) until measured from the CAD. Optional per mechanism:
+#   frictionVolts: voltage deadband standing in for friction (default 0, like the old DCMotorSim)
+#   limits: { min, max }  hard stops in mechanism rotations (default none, like the old DCMotorSim)
+mechanisms:
+  - { id: 8,  name: turret,        motor: krakenX60, count: 1, gearRatio: 46.5,    inertia: 0.1 }
+  - { id: 37, name: shooter,       motor: krakenX60, count: 3, gearRatio: 2.0,     inertia: 0.01 }
+  - { id: 38, name: feeder,        motor: krakenX60, count: 1, gearRatio: 2.0,     inertia: 0.003 }
+  - { id: 39, name: indexer,       motor: krakenX60, count: 1, gearRatio: 1.0,     inertia: 0.002 }
+  - { id: 40, name: hood,          motor: krakenX44, count: 1, gearRatio: 16.40625, inertia: 0.02 }
+  # Intake slide: 0.0785 m of rack travel per driver rotation, 0.293 m of travel = 3.73 rotations (CAD). Left without
+  # hard stops because the robot code's open setpoint (10 rot) is beyond the travel; add limits: { min: 0, max: 3.73 } when
+  # the setpoints are corrected.
+  - { id: 33, name: intakeDriver,  motor: krakenX60, count: 2, gearRatio: 3.75,    inertia: 0.002 }
+  - { id: 35, name: intakeRoller,  motor: krakenX60, count: 1, gearRatio: 1.4,     inertia: 0.005 }

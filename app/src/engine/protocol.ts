@@ -3,6 +3,8 @@ import type { FieldDefinition, PieceSpec, RenderFrame } from './types'
 
 export type ToWorker =
   | { type: 'init'; seed: number; mode: 'script' | 'robot'; host?: string }
+  /** seconds >= 0 sets the lead by hand; a negative value turns the automatic lead (follow the measured round trip) back on */
+  | { type: 'lead'; seconds: number }
   | { type: 'ds'; enabled: boolean; autonomous: boolean; test: boolean }
   | { type: 'joystick'; axes: number[]; buttons: number; pov: number }
   | { type: 'run'; running: boolean }
@@ -28,6 +30,11 @@ export interface BridgeInfo {
   skipped: number
   robotEnabled: boolean
   hello: string | null
+  helloIssues: string[]
+  rttMs: number
+  leadMs: number
+  components: Float64Array | null
+  mechanisms: { name: string; position: number; velocity: number }[]
 }
 
 export type FromWorker =

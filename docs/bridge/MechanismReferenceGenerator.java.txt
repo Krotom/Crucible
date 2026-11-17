@@ -1,0 +1,71 @@
+package frc.robot.lib;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Locale;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import edu.wpi.first.hal.HAL;
+
+import edu.wpi.first.math.system.plant.DCMotor;
+import edu.wpi.first.math.system.plant.LinearSystemId;
+import edu.wpi.first.wpilibj.simulation.DCMotorSim;
+
+/**
+ * Writes reference trajectories of the robot's current mechanism physics (WPILib DCMotorSim exactly as TalonFXSim builds
+ * it) for Crucible's mechanism model to be compared against. Run: gradlew test --tests "*MechanismReferenceGenerator"
+ * The output path is crucible.reference.out (a system property) or build/dcmotorsim.json.
+ */
+class MechanismReferenceGenerator {
+    private record Mech(String name, int id, DCMotor motor, double ratio, double inertia) {}
+
+    // volts held for 0.05 s at a time: a drive-up, a reversal, a hard push and a coast
+    private static final double[] VOLTS = {
+            0, 0, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, -3, -3, -3, -3, -3, -3, -3, -3, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
+            12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+    @BeforeAll
+    static void halInit() { HAL.initialize(500, 0); }
+
+    @Test
+    void writeReferences() throws IOException {
+        Mech[] mechs = {
+                new Mech("turret", 8, DCMotor.getKrakenX60(1), 46.5, 0.1),
+                new Mech("shooter", 37, DCMotor.getKrakenX60(3), 2.0, 0.01),
+                new Mech("feeder", 38, DCMotor.getKrakenX60(1), 2.0, 0.003),
+                new Mech("indexer", 39, DCMotor.getKrakenX60(1), 1.0, 0.002),
+                new Mech("hood", 40, DCMotor.getKrakenX44(1), 16.40625, 0.02),
+                new Mech("intakeDriver", 33, DCMotor.getKrakenX60(2), 3.75, 0.002),
+                new Mech("intakeRoller", 35, DCMotor.getKrakenX60(1), 1.4, 0.005),
+        };
+        StringBuilder sb = new StringBuilder("{\"blockSeconds\":0.05,\"volts\":[");
+        for (int i = 0; i < VOLTS.length; i++) sb.append(i == 0 ? "" : ",").append(VOLTS[i]);
+        sb.append("],\"motors\":{");
+        DCMotor[] ms = { DCMotor.getKrakenX60(1), DCMotor.getKrakenX44(1) };
+        String[] mn = { "krakenX60", "krakenX44" };
+        for (int i = 0; i < ms.length; i++)
+            sb.append(i == 0 ? "" : ",").append(String.format(Locale.ROOT, "\"%s\":{\"kt\":%.9f,\"kv\":%.9f,\"r\":%.9f}", mn[i], ms[i].KtNMPerAmp, ms[i].KvRadPerSecPerVolt, ms[i].rOhms));
+        sb.append("},\"mechanisms\":{");
+        boolean first = true;
+        for (Mech m : mechs) {
+            DCMotorSim sim = new DCMotorSim(LinearSystemId.createDCMotorSystem(m.motor(), m.inertia(), m.ratio()), m.motor());
+            StringBuilder pos = new StringBuilder(), vel = new StringBuilder();
+            for (int b = 0; b < VOLTS.length; b++) {
+                sim.setInputVoltage(VOLTS[b]);
+                for (int k = 0; k < 10; k++) sim.update(0.005); // the 5 ms step TalonFXSim uses
+                pos.append(b == 0 ? "" : ",").append(String.format(Locale.ROOT, "%.9f", sim.getAngularPositionRotations()));
+                vel.append(b == 0 ? "" : ",").append(String.format(Locale.ROOT, "%.9f", sim.getAngularVelocityRadPerSec() / (2 * Math.PI)));
+            }
+            sb.append(first ? "" : ",").append("\"").append(m.name()).append("\":{\"position\":[").append(pos).append("],\"velocity\":[").append(vel).append("]}");
+            first = false;
+        }
+        sb.append("}}");
+        Path out = Path.of(System.getProperty("crucible.reference.out", "build/dcmotorsim.json"));
+        Files.createDirectories(out.toAbsolutePath().getParent());
+        Files.writeString(out, sb.toString());
+        System.out.println("wrote " + out.toAbsolutePath());
+    }
+}
