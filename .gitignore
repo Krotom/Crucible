@@ -12,3 +12,5 @@ Thumbs.db
 .idea/
 crucible.config.json
 runs/out/
+app/runs/out*/
+app/runs/calibration/
