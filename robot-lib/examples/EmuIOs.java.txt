@@ -1,0 +1,133 @@
+package frc.robot.lib.simbridge;
+
+import edu.wpi.first.math.system.plant.DCMotor;
+import frc.robot.subsystems.intake.driver.DriverConstants;
+import frc.robot.Constants.FeederConstants;
+import frc.robot.Constants.HoodConstants;
+import frc.robot.Constants.IndexerConstants;
+import frc.robot.subsystems.intake.roller.RollerConstants;
+import frc.robot.Constants.ShooterConstants;
+import frc.robot.Constants.TurretConstants;
+import frc.robot.subsystems.feeder.FeederConfig;
+import frc.robot.subsystems.feeder.FeederIOInterface;
+import frc.robot.subsystems.hood.HoodConfig;
+import frc.robot.subsystems.hood.HoodIOInterface;
+import frc.robot.subsystems.indexer.IndexerConfig;
+import frc.robot.subsystems.indexer.IndexerIOInterface;
+import frc.robot.subsystems.intake.driver.DriverConfig;
+import frc.robot.subsystems.intake.driver.DriverIOInterface;
+import frc.robot.subsystems.intake.roller.RollerConfig;
+import frc.robot.subsystems.intake.roller.RollerIOInterface;
+import frc.robot.subsystems.shooter.ShooterConfig;
+import frc.robot.subsystems.shooter.ShooterIOInterface;
+import frc.robot.subsystems.turret.TurretConfig;
+import frc.robot.subsystems.turret.TurretIOInterface;
+
+/**
+ * The mechanism IOs for lockstep (Mode B): the same interfaces the real and Phoenix-sim IOs implement, behind an {@link EmuTalon} instead of a
+ * TalonFX. Each uses the robot's own config class, so the gains, profile limits, ratios and current limits are the ones on the robot, and
+ * registers with the bridge the same mechanism description the Phoenix-sim IOs do (motor, count, ratio, inertia), so the app's physics is the same
+ * in both modes. Where the real IO drives two motors that share a load, one device stands for them (as in the Phoenix sim).
+ */
+public final class EmuIOs {
+    private EmuIOs() {}
+
+    private static EmuTalon talon(int id, com.ctre.phoenix6.configs.TalonFXConfiguration cfg, boolean x44, int count, double inertia) {
+        EmuTalon t = new EmuTalon(id, cfg, x44 ? DCMotor.getKrakenX44(1) : DCMotor.getKrakenX60(1), count, inertia, x44 ? "krakenX44" : "krakenX60");
+        SimBridge.registerEmu(t);
+        return t;
+    }
+
+    public static ShooterIOInterface shooter() {
+        // the three shooter motors share one CAN ID in the robot code, so they are one device; the last config applied is the second one
+        EmuTalon m = talon(ShooterConstants.MOTOR_ID, new ShooterConfig().config2(), false, 3, 0.01);
+        return new ShooterIOInterface() {
+            @Override public void updateInputs(ShooterInputs i) {
+                i.velocity = m.velocity(); i.appliedVolts = m.appliedVolts(); i.statorCurrent = m.statorCurrent(); i.error = m.closedLoopError();
+            }
+
+            @Override public void setVelocity(double rps) { m.setMotionMagicVelocity(rps); }
+
+            @Override public void stop() { m.stop(); }
+        };
+    }
+
+    public static TurretIOInterface turret() {
+        EmuTalon m = talon(TurretConstants.MOTOR_ID, TurretConfig.config(), false, 1, 0.1);
+        return new TurretIOInterface() {
+            @Override public void updateInputs(TurretInputs i) {
+                i.position = m.position() * 360.0; i.velocity = m.velocity() * 360.0; i.appliedVolts = m.appliedVolts();
+                i.statorCurrent = m.statorCurrent(); i.error = m.closedLoopError() * 360.0;
+            }
+
+            @Override public void setPosition(double degrees) { m.setMotionMagicPosition(degrees / 360.0); }
+
+            @Override public void stop() { m.stop(); }
+
+            @Override public void resetPosition() { m.resetPosition(); }
+        };
+    }
+
+    public static HoodIOInterface hood() {
+        EmuTalon m = talon(HoodConstants.MOTOR_ID, new HoodConfig().config(), true, 1, 0.02);
+        return new HoodIOInterface() {
+            @Override public void updateInputs(HoodInputs i) {
+                i.position = m.position(); i.velocity = m.velocity(); i.appliedVolts = m.appliedVolts();
+                i.statorCurrent = m.statorCurrent(); i.error = m.closedLoopError();
+            }
+
+            @Override public void setPosition(double position) { m.setMotionMagicPosition(position); }
+
+            @Override public void stop() { m.stop(); }
+        };
+    }
+
+    public static FeederIOInterface feeder() {
+        EmuTalon m = talon(FeederConstants.MOTOR_ID, new FeederConfig().config(), false, 1, 0.003);
+        return new FeederIOInterface() {
+            @Override public void updateInputs(FeederInputs i) { i.appliedVolts = m.appliedVolts(); i.statorCurrent = m.statorCurrent(); i.velocity = m.velocity(); }
+
+            @Override public void setVoltage(double volts) { m.setVoltage(volts); }
+
+            @Override public void stop() { m.stop(); }
+        };
+    }
+
+    public static IndexerIOInterface indexer() {
+        // IndexerConfig sets no SensorToMechanismRatio, so the sensor is the rotor
+        EmuTalon m = talon(IndexerConstants.MOTOR_ID, new IndexerConfig().config(), false, 1, 0.002);
+        return new IndexerIOInterface() {
+            @Override public void updateInputs(IndexerInputs i) { i.appliedVolts = m.appliedVolts(); i.statorCurrent = m.statorCurrent(); i.velocity = m.velocity(); }
+
+            @Override public void setVoltage(double volts) { m.setVoltage(volts); }
+
+            @Override public void stop() { m.stop(); }
+        };
+    }
+
+    public static DriverIOInterface driver() {
+        // two motors share the rack; the left one's ID stands for both
+        EmuTalon m = talon(DriverConstants.MOTORL_ID, DriverConfig.config(), false, 2, 0.002);
+        return new DriverIOInterface() {
+            @Override public void updateInputs(DriverInputs i) {
+                i.position = m.position(); i.velocity = m.velocity(); i.appliedVolts = m.appliedVolts();
+                i.statorCurrent = m.statorCurrent(); i.error = m.closedLoopError();
+            }
+
+            @Override public void setPosition(double position) { m.setMotionMagicPosition(position); }
+
+            @Override public void stop() { m.stop(); }
+        };
+    }
+
+    public static RollerIOInterface roller() {
+        EmuTalon m = talon(RollerConstants.L_MOTOR_ID, RollerConfig.config(), false, 1, 0.005);
+        return new RollerIOInterface() {
+            @Override public void updateInputs(RollerInputs i) { i.appliedVolts = m.appliedVolts(); i.statorCurrent = m.statorCurrent(); i.velocity = m.velocity(); }
+
+            @Override public void setVoltage(double volts) { m.setVoltage(volts); }
+
+            @Override public void stop() { m.stop(); }
+        };
+    }
+}

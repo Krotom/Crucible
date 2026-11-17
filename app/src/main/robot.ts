@@ -58,11 +58,14 @@ export class RobotLauncher {
 }
 
 /** Finds the robot project: crucible.config.json "robotDir", else the sibling robot repo. */
-export function resolveRobotDir(appRoot: string): string | null {
+export function resolveRobotDir(appRoot: string, configDirs: string[] = []): string | null {
   const candidates: string[] = []
-  const cfg = path.join(appRoot, 'crucible.config.json')
-  if (fs.existsSync(cfg)) {
-    try { const j = JSON.parse(fs.readFileSync(cfg, 'utf8')); if (j.robotDir) candidates.push(path.resolve(appRoot, j.robotDir)) } catch { /* ignore */ }
+  // crucible.config.json next to the app, then in the user's settings folder (where the installer writes it): { "robotDir": "C:/path/to/robot-project" }
+  for (const dir of [appRoot, ...configDirs]) {
+    const cfg = path.join(dir, 'crucible.config.json')
+    if (fs.existsSync(cfg)) {
+      try { const j = JSON.parse(fs.readFileSync(cfg, 'utf8')); if (j.robotDir) candidates.push(path.resolve(dir, j.robotDir)) } catch { /* ignore */ }
+    }
   }
   candidates.push(path.resolve(appRoot, '../../OffSeasonCode/OffSeasonCode'))
   return candidates.find((c) => fs.existsSync(path.join(c, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew'))) ?? null

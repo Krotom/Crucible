@@ -15,3 +15,4 @@ runs/out/
 app/runs/out*/
 app/runs/calibration/
 app/runs/bench.txt
+app/dist-installer/

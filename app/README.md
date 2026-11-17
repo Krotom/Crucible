@@ -16,6 +16,15 @@ npm run typecheck
 
 If Electron reports "Electron uninstall", its binary was not downloaded; run `node node_modules/electron/install.js`.
 
+## Install and launch as a desktop app
+
+- **Installer.** `npm run installer` builds `dist-installer/BALTA-Crucible-Setup-<version>.exe` (needs NSIS; found in `C:\Program Files (x86)\NSIS` or through the `MAKENSIS` variable). It installs the app with its own Electron runtime (no Node.js needed), adds Start Menu shortcuts (including one in the `2026 WPILib Tools` folder when it exists, with the BALTA icon), an optional desktop shortcut, and an Add/Remove Programs entry.
+  Two optional pages: **Robot project** (where your robot code is; the app writes `%APPDATA%\BALTA Crucible\crucible.config.json` so Launch robot works) and **Patch a project?** (adds the bridge to that project with backups, see `docs/ROBOT_INTEGRATION.md`). Silent install: `Setup.exe /S /ROBOT=<project> /PATCH=1 /D=<install folder>` (`/D=` last). English and Turkish.
+  Later, **Patch a robot project** in the Start Menu does the same for any project.
+- **From the source folder.** `npm run app` builds if the sources changed and starts the app; `powershell -ExecutionPolicy Bypass -File scripts\install-shortcuts.ps1` creates a Start Menu shortcut (in `2026 WPILib Tools`) that does the same (`-Desktop` for the desktop too, `-Remove` to undo). Use one or the other: both create `BALTA Crucible.lnk` in the WPILib Tools folder.
+- The built app serves its page and the robot model from a loopback-only server in its own process and allows one window at a time.
+- **Patch a robot project from the command line:** `npm run integrate-robot -- <project>` checks, add `--apply` (and `--backup`) to patch.
+
 ## Using it
 
 - **Live:** start the robot sim (`./gradlew simulateJava`), enter the host (default `127.0.0.1`) and press Connect.
