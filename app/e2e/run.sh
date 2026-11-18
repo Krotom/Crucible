@@ -6,6 +6,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 export SP="${E2E_DIR:-/tmp/crucible-e2e}"
 export NODE_PATH="${NODE_PATH:-$(npm root -g)}"
+[ -x node_modules/electron/dist/electron ] || { echo "Electron binary missing: run  node node_modules/electron/install.js  first" >&2; exit 1; }
 mkdir -p "$SP/e2e/out"
 rm -rf "$SP/fakerobot"; cp -r e2e/fakerobot "$SP/fakerobot"; chmod +x "$SP/fakerobot/gradlew"; echo normal > "$SP/fakerobot/mode.txt"
 npm run build >/dev/null || exit 1

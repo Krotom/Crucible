@@ -182,6 +182,11 @@ describe('CI workflow', () => {
     expect(yml).toMatch(/bash e2e\/run\.sh/); expect(yml).toMatch(/xvfb/); expect(readFileSync(new URL('../e2e/run.sh', import.meta.url), 'utf8')).toMatch(/xvfb-run/)
     expect(yml).toMatch(/app\/package-lock\.json/); expect(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8').length).toBeGreaterThan(100)
   })
+  it('fetches the Electron binary explicitly before the UI suites (npm ci alone left dist/electron missing on the runner)', () => {
+    const install = yml.indexOf('node node_modules/electron/install.js'), run = yml.indexOf('bash e2e/run.sh')
+    expect(install).toBeGreaterThan(0); expect(install).toBeLessThan(run); expect(yml).toMatch(/test -x node_modules\/electron\/dist\/electron/)
+    expect(readFileSync(new URL('../e2e/run.sh', import.meta.url), 'utf8')).toMatch(/Electron binary missing/)
+  })
   it('is plain valid YAML structure: jobs with names, runs-on and steps, no tabs', () => {
     expect(yml).not.toMatch(/\t/); expect(yml).toMatch(/^jobs:\n {2}\w+:\n {4}name:/m); expect((yml.match(/runs-on:/g) ?? []).length).toBe(2); expect(yml).toMatch(/needs: checks/)
   })

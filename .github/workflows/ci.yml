@@ -38,6 +38,8 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: sudo apt-get update && sudo apt-get install -y xvfb python3-pil libnss3 libgbm1 libasound2t64 libgtk-3-0t64 x11-utils imagemagick
       - run: npm ci
+      # npm ci does not always fetch Electron's binary (the log showed dist/electron missing): fetch it explicitly, and fail here if it is still not there
+      - run: node node_modules/electron/install.js && test -x node_modules/electron/dist/electron
       - run: npm install --no-save --prefix "$RUNNER_TEMP/pw" playwright@1.63.0
       - run: bash e2e/run.sh
         env:
