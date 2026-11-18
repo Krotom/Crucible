@@ -120,7 +120,8 @@ it('robot code UI e2e', async () => {
   await robot.start()
   await check('R2 robot connects: link turns connected, frames flow, round trip + hello problem shown', async () => {
     await until(async () => (await rows())['Robot program'] === 'connected', 10000, 'connected')
-    await sleep(1500)
+    // wait for the frames instead of counting them after a fixed pause: a busy runner delivers them later, not never
+    await until(async () => Number((await rows())['Frames']) > 20, 15000, 'more than 20 frames')
     const r = await rows()
     expect(Number(r['Frames']) > 20, 'frames ' + r['Frames'])
     eq(r['Robot state'], 'disabled')
@@ -304,9 +305,9 @@ it('robot code UI e2e', async () => {
   }, page)
   await check('R19 a breakpoint pauses a robot-code sim (its clock stands still while the robot keeps sending), Play continues', async () => {
     const now = await page.evaluate(() => (window as any).crucible.sim.latest.time)
-    await page.click('[data-tab=analysis]'); await page.check('#bp-time-on'); await page.fill('#bp-time', String(Math.ceil(now) + 2)); await page.press('#bp-time', 'Tab')
-    await page.waitForFunction(() => !(window as any).crucible.sim.running, null, { timeout: 45000 }).catch(async (e) => { throw new Error('the breakpoint never paused the sim: ' + JSON.stringify(await page.evaluate(() => { const s = (window as any).crucible.sim; return { time: s.latest?.time, running: s.running, rate: s.simRate, connected: s.bridge?.connected, frames: s.bridge?.frames, bp: (document.getElementById('bp-time') as HTMLInputElement).value, bpOn: (document.getElementById('bp-time-on') as HTMLInputElement).checked } })) + ' wanted ' + (Math.ceil(now) + 2) + ' from ' + now + ' | ' + String(e.message).split('\n')[0]) })
-    const t0 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(Math.abs(t0 - (Math.ceil(now) + 2)) < 0.3, `paused near the breakpoint: ${t0} (wanted ${Math.ceil(now) + 2})`)
+    await page.click('[data-tab=analysis]'); await page.check('#bp-time-on'); await page.fill('#bp-time', String(Math.ceil(now) + 6)); await page.press('#bp-time', 'Tab')
+    await page.waitForFunction(() => !(window as any).crucible.sim.running, null, { timeout: 45000 }).catch(async (e) => { throw new Error('the breakpoint never paused the sim: ' + JSON.stringify(await page.evaluate(() => { const s = (window as any).crucible.sim; return { time: s.latest?.time, running: s.running, rate: s.simRate, connected: s.bridge?.connected, frames: s.bridge?.frames, bp: (document.getElementById('bp-time') as HTMLInputElement).value, bpOn: (document.getElementById('bp-time-on') as HTMLInputElement).checked } })) + ' wanted ' + (Math.ceil(now) + 6) + ' from ' + now + ' | ' + String(e.message).split('\n')[0]) })
+    const t0 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(Math.abs(t0 - (Math.ceil(now) + 6)) < 0.3, `paused near the breakpoint: ${t0} (wanted ${Math.ceil(now) + 6})`)
     const f0 = live.fromApp; await sleep(800); const t1 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(Math.abs(t1 - t0) < 0.03, 'sim clock frozen: ' + t0 + ' -> ' + t1); expect(live.fromApp > f0 + 10, 'the robot is still being answered')
     expect((await page.textContent('#bp-last'))!.includes('sim time'), await page.textContent('#bp-last')); await page.uncheck('#bp-time-on')
     await page.click('#play'); await sleep(1200); const t2 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(t2 > t1 + 0.5, 'Play continues: ' + t1 + ' -> ' + t2)

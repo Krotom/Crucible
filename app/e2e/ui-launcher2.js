@@ -62,10 +62,10 @@ function makeProject(dir, { patched }) {
   await check('P4 Check project: a patched project is all green, lockstep adds its layer; the plain one lists what is missing', async () => {
     await runCheck()
     let rows = await page.$$eval('#checks li', (l) => l.map((x) => [x.className, x.querySelector('.mk').textContent, x.firstElementChild.nextSibling.firstChild.textContent]))
-    eq(rows.map((r) => r[0]), ['ok', 'ok', 'ok', 'ok', 'ok'], 'all ok: ' + JSON.stringify(rows)); eq(rows.map((r) => r[1]).join(''), '✓✓✓✓✓')
-    eq(await T('#checks-sum'), '✓ 5 of 5 checks passed'); expect(!(await page.$eval('#checks-box', (d) => d.open)), 'collapsed to one line when everything is fine')
+    eq(rows.map((r) => r[0]), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok'], 'all ok: ' + JSON.stringify(rows)); eq(rows.map((r) => r[1]).join(''), '✓✓✓✓✓✓')
+    eq(await T('#checks-sum'), '✓ 6 of 6 checks passed'); expect(!(await page.$eval('#checks-box', (d) => d.open)), 'collapsed to one line when everything is fine')
     await page.selectOption('#sim-mode', 'lockstep'); await runCheck()
-    eq(await page.$$eval('#checks li', (l) => l.length), 6, 'lockstep row added')
+    eq(await page.$$eval('#checks li', (l) => l.length), 7, 'lockstep row added')
     await useProject(plain); await runCheck()
     rows = await page.$$eval('#checks li', (l) => l.map((x) => [x.className, x.querySelector('.dt').textContent]))
     expect(await page.$eval('#checks-box', (d) => d.open), 'open when something needs attention'); expect(/to look at/.test(await T('#checks-sum')) && (await page.$eval('#checks-sum', (e) => e.className)) === 'fail', await T('#checks-sum'))
