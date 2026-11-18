@@ -183,7 +183,7 @@ if (!integrated) {
 
 console.log(`\nDone. Next:
   1. Build the robot project once (gradlew build) to check it compiles.
-  2. Start the BALTA Crucible app, pick "Robot code (real time)" and press Launch robot.
+  2. Start the BALTA Crucible app, open the Robot tab, pick "Robot code (real time)" and press Launch robot.
   3. The mechanisms listed above: see docs/ROBOT_INTEGRATION.md ("Mechanisms") for the one line each.`)
 
 function printBlock(v) {

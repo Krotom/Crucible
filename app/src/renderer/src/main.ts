@@ -7,6 +7,7 @@ import { SimSource } from './lib/simsource'
 import { DataStore } from './lib/store'
 import { isNumericType, type Value } from './lib/structs'
 import { parseWpilog } from './lib/wpilog'
+import { LogView } from './lib/robotlog'
 import { dismissSplash, setupAbout, setupCapture, setupTabs, setupTheme } from './lib/chrome'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
@@ -342,7 +343,7 @@ function scheduleListRefresh(): void {
   listTimer = setTimeout(() => { listTimer = null; renderTopicList() }, 250)
 }
 
-// ---- robot launcher (Electron only: the main process owns the robot process)
+// ---- Robot tab: mode, NT host, the robot launcher and its log (the launcher is Electron only: the main process owns the robot process)
 interface CrucibleHost {
   startRobot(lockstep?: boolean): Promise<{ ok: boolean; message: string }>
   stopRobot(): Promise<{ ok: boolean }>
@@ -350,23 +351,59 @@ interface CrucibleHost {
   onRobotLog(cb: (line: string) => void): void
   onRobotExit(cb: (code: number | null) => void): void
 }
+const robotLog = new LogView($('robot-log'), {
+  count: $('log-count'), filter: $<HTMLInputElement>('log-filter'), follow: $<HTMLInputElement>('log-follow'),
+  copy: $<HTMLButtonElement>('log-copy'), save: $<HTMLButtonElement>('log-save'), clear: $<HTMLButtonElement>('log-clear'),
+}, (t) => { $('notice').textContent = t })
+
+// one NT host: the Data card (Connect) and the Robot tab edit the same value
+const hostEls = [$<HTMLInputElement>('host'), $<HTMLInputElement>('robot-host')]
+for (const el of hostEls) el.addEventListener('input', () => { for (const o of hostEls) if (o !== el) o.value = el.value })
+
+const modeEl = $<HTMLSelectElement>('sim-mode')
+const modeNames: Record<string, string> = { script: 'scripted robot', robot: 'robot code (real time)', lockstep: 'robot code (lockstep, Mode B)' }
+const modeHint = $('sim-mode-hint')
+const robotState = $('robot-state')
+let robotUp = false
+let launchedLockstep = false
 const host = (window as unknown as { crucibleHost?: CrucibleHost }).crucibleHost
+const refreshRobot = (): void => {
+  modeHint.textContent = `Mode: ${modeNames[modeEl.value]} (set on the Robot tab)`
+  modeHint.hidden = false
+  const btn = $('launch-robot')
+  btn.textContent = robotUp ? 'Stop robot' : 'Launch robot'
+  if (!host) robotState.textContent = 'Launching the robot needs the desktop app. Start the robot sim yourself with CRUCIBLE_BRIDGE=1 ./gradlew simulateJava.'
+  else if (!robotUp) robotState.textContent = modeEl.value === 'script' ? 'Scripted robot needs no robot program.' : 'Robot program not running.'
+  else if ((modeEl.value === 'lockstep') !== launchedLockstep) robotState.textContent = `Running in ${launchedLockstep ? 'lockstep' : 'real-time'} mode: stop and launch again to change the mode.`
+  else robotState.textContent = `Robot program running (${launchedLockstep ? 'lockstep' : 'real time'}).`
+}
+modeEl.addEventListener('change', refreshRobot)
 if (host) {
   const btn = $('launch-robot')
   btn.hidden = false
-  let robotUp = false
-  const refresh = (): void => { btn.textContent = robotUp ? 'Stop robot' : 'Launch robot' }
-  host.onRobotLog((line) => { $('notice').textContent = line.slice(0, 140) })
-  host.onRobotExit((code) => { robotUp = false; refresh(); $('notice').textContent = `robot sim exited (${code})` })
+  host.onRobotLog((line) => robotLog.add(line))
+  host.onRobotExit((code) => {
+    robotUp = false
+    robotLog.system(`[robot sim exited with code ${code}]`)
+    $('notice').textContent = `robot sim exited (${code})`
+    refreshRobot()
+  })
   btn.addEventListener('click', async () => {
-    if (robotUp) { await host.stopRobot(); robotUp = false; refresh(); return }
-    const r = await host.startRobot($<HTMLSelectElement>('sim-mode').value === 'lockstep')
+    if (robotUp) {
+      robotLog.system('[stopping robot sim]')
+      await host.stopRobot(); robotUp = false; refreshRobot(); return
+    }
+    launchedLockstep = modeEl.value === 'lockstep'
+    robotLog.system(`[launching robot sim, ${launchedLockstep ? 'lockstep (Mode B)' : 'real time'}: gradlew simulateJava --no-daemon]`)
+    const r = await host.startRobot(launchedLockstep)
+    robotLog.system(`[${r.message}]`)
     $('notice').textContent = r.message
     robotUp = r.ok
-    refresh()
+    refreshRobot()
   })
-  void host.robotStatus().then((s) => { robotUp = s.running; refresh() })
-}
+  void host.robotStatus().then((s) => { robotUp = s.running; refreshRobot() })
+} else robotLog.system('[desktop app only: the robot sim is not started from here in a browser]')
+refreshRobot()
 
 setupTabs()
 setupTheme()

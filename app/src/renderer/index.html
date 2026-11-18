@@ -56,6 +56,7 @@
       <aside id="topics-panel" class="sidebar">
         <div class="tabs" role="tablist">
           <button class="tab on" role="tab" data-tab="session" aria-selected="true">Session</button>
+          <button class="tab" role="tab" data-tab="robot" aria-selected="false">Robot</button>
           <button class="tab" role="tab" data-tab="topics" aria-selected="false">Topics</button>
         </div>
 
@@ -63,14 +64,13 @@
           <div class="card">
             <h3>Simulation</h3>
             <label class="field"><span>Game</span><select id="game-select"><option value="test">Test game</option><option value="rebuilt">REBUILT</option></select></label>
-            <label class="field"><span>Robot</span><select id="sim-mode"><option value="script">Scripted robot</option><option value="robot">Robot code (real time)</option><option value="lockstep">Robot code (lockstep, Mode B)</option></select></label>
             <label class="field"><span>Opponent</span><select id="opponent" title="Another robot on the field: a blocker holds still (push it, get blocked by it); a cycler picks up FUEL and fires it at its own HUB"><option value="none">None</option><option value="blocker">Blocker</option><option value="cycler">Red cycler</option></select></label>
             <div class="row2">
               <label class="field"><span>Step</span><select id="step-dt" title="Physics step (in lockstep also the time of one exchange): larger is faster and coarser"><option value="0.001">1 ms</option><option value="0.002" selected>2 ms</option><option value="0.005">5 ms</option></select></label>
               <label class="field"><span>Seed</span><input id="seed" value="42" inputmode="numeric" /></label>
             </div>
             <button id="start-sim" class="primary wide">Start sim</button>
-            <button id="launch-robot" class="wide" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
+            <p id="sim-mode-hint" class="hint" hidden></p>
           </div>
 
           <div class="card">
@@ -80,6 +80,32 @@
             <p class="hint">or drop a .wpilog anywhere in the window</p>
             <label class="field"><span>NT host</span><input id="host" value="127.0.0.1" spellcheck="false" /></label>
             <button id="connect" class="wide">Connect</button>
+          </div>
+        </section>
+
+        <section id="tab-robot" class="tabpanel" hidden>
+          <div class="card">
+            <h3>Robot code</h3>
+            <label class="field"><span>Mode</span><select id="sim-mode" title="What drives the simulated robot. Start sim (Session tab) uses this choice"><option value="script">Scripted robot</option><option value="robot">Robot code (real time)</option><option value="lockstep">Robot code (lockstep, Mode B)</option></select></label>
+            <label class="field"><span>NT host</span><input id="robot-host" value="127.0.0.1" spellcheck="false" title="Where the robot program runs (the same host the Data card connects to)" /></label>
+            <button id="launch-robot" class="wide" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
+            <p id="robot-state" class="hint"></p>
+          </div>
+
+          <div class="card logcard">
+            <div class="logbar">
+              <h3>Gradle output</h3>
+              <span class="grow"></span>
+              <span id="log-count" class="log-count">0 lines</span>
+            </div>
+            <div class="logbar">
+              <input id="log-filter" placeholder="Filter lines" spellcheck="false" />
+              <label class="check" title="Keep the newest line in view"><input id="log-follow" type="checkbox" checked />Follow</label>
+              <button id="log-copy" title="Copy the shown lines">Copy</button>
+              <button id="log-save" title="Save the shown lines to a text file">Save</button>
+              <button id="log-clear" title="Clear the log">Clear</button>
+            </div>
+            <div id="robot-log" class="log" role="log" aria-live="off" tabindex="0"></div>
           </div>
         </section>
 

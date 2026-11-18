@@ -25,6 +25,7 @@ export function setupTabs(): void {
       t.setAttribute('aria-selected', String(on))
       $(`tab-${t.dataset.tab}`).hidden = !on
     }
+    document.querySelector('.shell')?.classList.toggle('wide', name === 'robot') // wider sidebar for the log
   }
   for (const t of tabs) t.addEventListener('click', () => show(t.dataset.tab!))
 }

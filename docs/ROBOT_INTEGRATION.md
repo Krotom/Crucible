@@ -26,7 +26,7 @@ node scripts/integrate-robot.mjs "C:\path\to\your\robot-project" --apply   (inst
 3. In your drivetrain class, changes `if (Utils.isSimulation()) { startSimThread(); }` to `if (Utils.isSimulation() && !SimBridge.isEnabled()) { ... }`. Without this CTRE's own drivetrain simulation would move the wheels a second time.
 4. In `build.gradle`, changes `wpi.sim.addGui().defaultEnabled = true` to `!"1".equals(System.getenv("CRUCIBLE_BRIDGE"))`. Without this the simulation GUI overwrites the app's joystick and Driver Station data every frame and the robot never moves.
 
-Then build once (`gradlew build`), start BALTA Crucible, pick **Robot code (real time)** and press **Launch robot**. `--remove` takes the block and the sim-thread guard out again (it leaves the copied library files and the `build.gradle` line; delete or revert those by hand).
+Then build once (`gradlew build`), start BALTA Crucible, open the **Robot** tab, pick **Robot code (real time)** and press **Launch robot**. `--remove` takes the block and the sim-thread guard out again (it leaves the copied library files and the `build.gradle` line; delete or revert those by hand).
 
 Checked by applying it to the OffSeason robot project as it was before the bridge existed: it compiled and, started from the app, drove over a BUMP and into a wall with odometry that follows the physics.
 

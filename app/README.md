@@ -58,7 +58,7 @@ volumes and shooting (M5), the real robot definition (M4).
 
 ## Robot code in the loop (M3)
 
-Choose **Robot code (NT)** next to Start sim: the app is then the physics authority for the real robot program. The robot's
+Choose **Robot code (NT)** as the Mode on the Robot tab: the app is then the physics authority for the real robot program. The robot's
 Talons keep running their control loops (Phoenix sim) and publish their applied voltages through the bridge; the app steps a
 swerve model (tire forces per module, DC motor models, current limits, the walls and balls of the test game) and returns rotor,
 CANcoder and Pigeon states. The robot's own odometry then follows the app's physics.
@@ -67,10 +67,10 @@ The frame exchange uses a dedicated local WebSocket (port 5811) served by the ro
 All seven Talon mechanisms (turret, shooter, feeder, indexer, hood, intake driver and roller) and the swerve run under the
 app's physics, defined in `robots/offseason/robot.yaml`; the readout lists any mechanism the robot has that the file does not.
 
-1. **Launch robot** (Electron only) starts `gradlew simulateJava --no-daemon` in the robot project with `CRUCIBLE_BRIDGE=1` (the project
-   folder is `robotDir` in `app/crucible.config.json`, else the sibling repo). Or start it yourself:
+1. On the **Robot** tab pick the mode (Scripted robot, Robot code real time, or lockstep) and the NT host, then **Launch robot** (Electron only): it starts `gradlew simulateJava --no-daemon` in the robot project with `CRUCIBLE_BRIDGE=1` (the project
+   folder is `robotDir` in `app/crucible.config.json`, else the sibling repo). The **Gradle output** log below it shows everything the build and the robot print (colored by severity, with a filter, Follow, Copy, Save and Clear; the last 5000 lines are kept). Or start the robot yourself:
    `CRUCIBLE_BRIDGE=1 ./gradlew simulateJava`. The Crucible bridge and the sim GUI do not mix, see the contract.
-2. **Start sim** in Robot code mode connects over NT (host box) and shows the robot's status in the readout.
+2. **Start sim** (Session tab) in Robot code mode connects over NT (host box) and shows the robot's status in the readout.
 3. **Enable** and the Teleop/Auto/Test picker are the Driver Station. Drive with a gamepad (standard mapping, presented to the
    robot as an Xbox controller on port 0) or the keyboard: W/S forward and back, A/D strafe, Q/E rotate, J/K the A and B
    buttons, L/H the right and left triggers. The robot code's own mapping applies.
@@ -107,7 +107,7 @@ the FUEL counts, the Game Data and the G403/G407 fouls.
 
 ## Lockstep (Mode B, M8)
 
-Pick **Robot code (lockstep, Mode B)** next to Start sim, then **Launch robot** (it starts the robot with `CRUCIBLE_MODE=lockstep`). The robot's clock is paused and moves only when the app sends a Step, the
+Pick **Robot code (lockstep, Mode B)** as the Mode on the Robot tab, then **Launch robot** (it starts the robot with `CRUCIBLE_MODE=lockstep`). The robot's clock is paused and moves only when the app sends a Step, the
 robot's Talons are a Java emulation (`EmuTalon`) and its swerve drivetrain a Java layer (`EmuSwerve`), so a run is **repeatable** (two runs of the same timed inputs give the same physics state at every sample) and can
 go **faster than real time**: the step dropdown sets the simulated time of one exchange and of one physics step (1 ms: 1.5x, 2 ms: 2.5x, 5 ms: 3.5 to 4x real time, measured with the real robot project). The speed
 dropdown paces it (`max` is as fast as it goes). Vision is off in this mode (the PhotonVision sim is not repeatable). Scripted runs tie inputs to the sim clock with `session.at(simTime, fn)`; the buttons are wall-clock timed
