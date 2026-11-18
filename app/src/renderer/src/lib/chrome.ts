@@ -1,5 +1,6 @@
 // The application chrome around the 3D view: tabs, theme, About, the splash screen and the screenshot / video buttons.
 import { saveBlob, screenshot, timestampName, VideoRecorder, type Saver } from './capture'
+import { keyLabel, SHORTCUTS } from './shortcuts'
 
 declare const __APP_VERSION__: string
 
@@ -8,6 +9,8 @@ export interface ChromeOptions {
   render: () => void
   notify: (text: string) => void
   host?: Saver
+  /** the score and timer to burn into screenshots and videos, or null for none */
+  banner?: () => { left: string; mid: string; right: string } | null
 }
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
@@ -15,6 +18,10 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 function storage(): Storage | null {
   try { return localStorage } catch { return null }
 }
+
+let showTabImpl: (name: string) => void = () => {}
+/** Switches the side panel to a tab ('session', 'robot' or 'topics'). */
+export function showTab(name: string): void { showTabImpl(name) }
 
 export function setupTabs(): void {
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('.tab')]
@@ -25,8 +32,35 @@ export function setupTabs(): void {
       t.setAttribute('aria-selected', String(on))
       $(`tab-${t.dataset.tab}`).hidden = !on
     }
+    document.querySelector('.shell')?.classList.toggle('wide', name === 'robot' || name === 'analysis' || name === 'tune') // wider sidebar for the log and the charts
   }
+  showTabImpl = show
   for (const t of tabs) t.addEventListener('click', () => show(t.dataset.tab!))
+}
+
+/** The keyboard shortcut sheet, built from the same table that runs the shortcuts. */
+export function setupShortcutsDialog(): { open: () => void } {
+  const dlg = $<HTMLDialogElement>('shortcuts')
+  const list = $('shortcut-list')
+  for (const group of ['Simulation', 'View', 'Log', 'Help'] as const) {
+    const h = document.createElement('h4')
+    h.textContent = group
+    list.appendChild(h)
+    for (const sc of SHORTCUTS.filter((x) => x.group === group)) {
+      const row = document.createElement('div')
+      row.className = 'sc'
+      const label = document.createElement('span')
+      label.textContent = sc.label
+      const key = document.createElement('kbd')
+      key.textContent = keyLabel(sc.key)
+      row.append(label, key)
+      list.appendChild(row)
+    }
+  }
+  const open = (): void => { if (!dlg.open) dlg.showModal() }
+  $('help-btn').addEventListener('click', open)
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close() })
+  return { open }
 }
 
 export function setupTheme(): void {
@@ -44,6 +78,8 @@ export function setupTheme(): void {
   })
   paint()
 }
+
+export function appVersion(): string { return typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev' }
 
 export function setupAbout(): void {
   const version = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev'
@@ -70,7 +106,7 @@ export function setupCapture(o: ChromeOptions): void {
 
   shotBtn.addEventListener('click', async () => {
     try {
-      const blob = await screenshot(o.canvas, o.render)
+      const blob = await screenshot(o.canvas, o.render, o.banner)
       const where = await saveBlob(timestampName('balta-crucible', 'png'), blob, o.host)
       if (where) o.notify(`Screenshot saved: ${where}`)
     } catch (e) { o.notify(`Screenshot failed: ${(e as Error).message}`) }
@@ -84,7 +120,7 @@ export function setupCapture(o: ChromeOptions): void {
   }
   recBtn.addEventListener('click', async () => {
     if (!rec.active) {
-      try { rec.start(o.canvas, 30) } catch (e) { o.notify(`Cannot record: ${(e as Error).message}`); return }
+      try { rec.start(o.canvas, 30, 8_000_000, o.banner) } catch (e) { o.notify(`Cannot record: ${(e as Error).message}`); return }
       timer = setInterval(() => { const s = Math.floor(rec.seconds); recTime.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }, 250)
       recTime.textContent = '0:00'
       paint()

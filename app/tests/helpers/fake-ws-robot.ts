@@ -26,7 +26,7 @@ export class FakeRobotWs {
   /** called for every message the app sends, after it is recorded (a lockstep robot answers Step here) */
   onMessage: (m: WsMessage) => void = () => {}
 
-  async start(): Promise<void> {
+  async start(port = 0): Promise<void> {
     this.server.on('upgrade', (req, socket) => {
       const accept = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
       socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`)
@@ -37,7 +37,7 @@ export class FakeRobotWs {
       socket.on('error', () => {})
       this.onConnect()
     })
-    await new Promise<void>((r) => this.server.listen(0, '127.0.0.1', r))
+    await new Promise<void>((r) => this.server.listen(port, '127.0.0.1', r))
     this.port = (this.server.address() as AddressInfo).port
   }
 

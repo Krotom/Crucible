@@ -1,0 +1,51 @@
+#!/bin/bash
+# fake robot project: what it prints depends on mode.txt next to it
+dir="$(cd "$(dirname "$0")" && pwd)"
+mode=$(cat "$dir/mode.txt")
+echo "> Task :compileJava"
+echo "args: $*"
+echo "CRUCIBLE_BRIDGE=${CRUCIBLE_BRIDGE:-unset} CRUCIBLE_MODE=${CRUCIBLE_MODE:-unset}"
+echo "FOO=${FOO:-unset}"
+echo "$$" > "$dir/pid.txt"
+case "$mode" in
+  normal)
+    echo "WARNING: Driver Station not connected"
+    echo "ERROR: something went wrong" >&2
+    echo "	at frc.robot.Robot.robotInit(Robot.java:42)"
+    echo "BUILD SUCCESSFUL in 2s"
+    sleep 777 &
+    echo $! > "$dir/child.txt"
+    sleep 600
+    ;;
+  exit3) echo "BUILD FAILED in 1s"; exit 3 ;;
+  flood) seq 1 20000 | sed 's/^/flood line /'; sleep 600 ;;
+  partial) printf "last words without newline"; exit 0 ;;
+  ansi) printf '\033[31mred text\033[0m and plain\n'; sleep 600 ;;
+  long) printf 'L%.0s' $(seq 1 3000); echo; sleep 600 ;;
+  build)
+    for t in compileJava processResources classes jar; do echo "> Task :$t"; sleep 0.7; done
+    echo "> Task :simulateJava"
+    echo "********** Robot program starting **********"
+    echo "robot says hello"
+    echo "ERROR: robot problem"
+    sleep 600 ;;
+  traces)
+    echo "> Task :compileJava"
+    echo "src/main/java/frc/robot/Shooter.java:17: error: cannot find symbol"
+    echo "> Task :simulateJava"
+    echo "Exception in thread main"
+    echo "	at frc.robot.Robot.robotInit(Robot.java:42)"
+    echo "	at frc.robot.Missing.run(Missing.java:7)"
+    sleep 600 ;;
+  errors)
+    echo "line a"; echo "ERROR: first problem"; echo "	at a.B.c(B.java:1)"; echo "	at a.B.d(B.java:2)"
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do echo "filler $i"; done
+    echo "WARNING: careful"
+    echo "ERROR: second problem"
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do echo "more filler $i"; done
+    echo "Exception in thread main"; echo "	at x.Y.z(Y.java:3)"
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do echo "tail filler $i"; done
+    sleep 600 ;;
+  buildfail) echo "> Task :compileJava"; echo "BUILD FAILED in 1s"; exit 1 ;;
+  slow) for i in $(seq 1 600); do echo "tick $i"; sleep 0.1; done ;;
+esac

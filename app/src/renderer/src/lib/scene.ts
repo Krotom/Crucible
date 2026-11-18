@@ -1,4 +1,5 @@
 // Three.js scene in WPILib coordinates (Z up, +X forward, field origin at a corner), so poses apply without conversion.
+import { allianceHex } from './a11y'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FieldDefinition, PieceSpec, RenderFrame } from '../../../engine/types'
@@ -25,6 +26,13 @@ export class SceneView {
   private captureBox: THREE.LineSegments | null = null
   private components: THREE.Group[] = []
   private ro: ResizeObserver
+  private sensorObjs: THREE.Object3D[] = []
+  /** what the overlays show: the robot's collision box, the intake volume, the scoring volumes */
+  private show = { boxes: true, capture: true, sensors: true }
+  /** robot-camera inset (drawn into the corner of the main view); null = off */
+  private pip: { mode: 'front' | 'top'; frac: number } | null = null
+  private pipCam = new THREE.PerspectiveCamera(70, 4 / 3, 0.03, 100)
+  private robotHalfX = 0.43
 
   constructor(private host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -139,10 +147,10 @@ export class SceneView {
     }
     for (const sn of field.sensors) {
       const geo = new THREE.BoxGeometry(sn.half[0] * 2, sn.half[1] * 2, sn.half[2] * 2)
-      const color = sn.alliance === 'red' ? 0xff5566 : sn.alliance === 'blue' ? 0x4cc2ff : 0x7bed9f
+      const color = sn.alliance === 'red' || sn.alliance === 'blue' ? allianceHex(sn.alliance) : 0x7bed9f
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false }))
       const w = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color }))
-      for (const o of [m, w]) { o.position.set(sn.center[0], sn.center[1], sn.center[2]); o.rotation.z = sn.yaw ?? 0; g.add(o) }
+      for (const o of [m, w]) { o.position.set(sn.center[0], sn.center[1], sn.center[2]); o.rotation.z = sn.yaw ?? 0; o.visible = this.show.sensors; g.add(o); this.sensorObjs.push(o) }
     }
     const grid = new THREE.GridHelper(Math.max(field.length, field.width) * 2, Math.round(Math.max(field.length, field.width) * 2), 0x2d343d, 0x232830)
     grid.rotation.x = Math.PI / 2
@@ -175,6 +183,8 @@ export class SceneView {
       new THREE.LineBasicMaterial({ color: 0xff9f43 }),
     )
     this.robotBox.position.z = 0
+    this.robotBox.visible = this.show.boxes
+    this.robotHalfX = robotHalf[0]
     this.robot.add(this.robotBox)
     // the intake capture volume, drawn in the world (green while it is catching pieces)
     this.captureBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(2, 2, 2)), new THREE.LineBasicMaterial({ color: 0x555d66 }))
@@ -189,6 +199,7 @@ export class SceneView {
     if (this.simGroup) { this.scene.remove(this.simGroup); this.simGroup = null }
     this.pieceMeshes = []
     this.otherMeshes = []
+    this.sensorObjs = []
     if (this.robotBox) { this.robot.remove(this.robotBox); this.robotBox = null }
     this.captureBox = null
     this.base.visible = true
@@ -209,7 +220,7 @@ export class SceneView {
     })
     if (this.captureBox) {
       const c = f.capture
-      this.captureBox.visible = c !== null
+      this.captureBox.visible = c !== null && this.show.capture
       if (c) {
         this.captureBox.position.set(c.center[0], c.center[1], c.center[2])
         this.captureBox.rotation.z = c.yaw
@@ -238,7 +249,57 @@ export class SceneView {
     this.controls.update()
   }
 
-  render(): void { this.renderer.render(this.scene, this.camera) }
+  /** Which overlays are drawn: the robot's collision box, the intake capture volume, the scoring volumes. */
+  setOverlays(o: { boxes?: boolean; capture?: boolean; sensors?: boolean }): void {
+    Object.assign(this.show, o)
+    if (this.robotBox) this.robotBox.visible = this.show.boxes
+    for (const s of this.sensorObjs) s.visible = this.show.sensors
+    if (this.captureBox && !this.show.capture) this.captureBox.visible = false
+  }
+
+  /** The robot camera inset: 'front' looks ahead from the bumper (what the intake sees), 'top' looks straight down. null switches it off. */
+  setRobotCam(mode: 'front' | 'top' | null): void { this.pip = mode ? { mode, frac: 0.3 } : null }
+  get robotCamOn(): boolean { return this.pip !== null }
+  /** The robot's pose, for the effects that follow it. */
+  get robotObject(): THREE.Object3D { return this.robot }
+  get simObject(): THREE.Group | null { return this.simGroup }
+
+  render(): void {
+    const r = this.renderer
+    r.render(this.scene, this.camera)
+    if (!this.pip || !this.simGroup) return
+    const w = this.host.clientWidth, h = this.host.clientHeight
+    const pw = Math.round(w * this.pip.frac), ph = Math.round((pw * 3) / 4)
+    const x = 12, y = 12 // bottom-left corner, in CSS pixels
+    const c = this.pipCam
+    const yaw = new THREE.Euler().setFromQuaternion(this.robot.quaternion, 'ZYX').z
+    const fx = Math.cos(yaw), fy = Math.sin(yaw)
+    const p = this.robot.position
+    if (this.pip.mode === 'front') {
+      c.up.set(0, 0, 1)
+      c.position.set(p.x + fx * (this.robotHalfX + 0.04), p.y + fy * (this.robotHalfX + 0.04), 0.55)
+      c.lookAt(p.x + fx * 6, p.y + fy * 6, 0.12)
+    } else {
+      c.up.set(fx, fy, 0)
+      c.position.set(p.x, p.y, 7)
+      c.lookAt(p.x, p.y, 0)
+    }
+    c.aspect = pw / ph
+    c.updateProjectionMatrix()
+    const robotVisible = this.robot.visible
+    this.robot.visible = this.pip.mode === 'top' // from the bumper the robot's own body would be in the way
+    r.setScissorTest(true)
+    r.setViewport(x, y, pw, ph)
+    r.setScissor(x, y, pw, ph)
+    r.autoClear = false
+    r.clearDepth()
+    r.render(this.scene, c)
+    r.autoClear = true
+    r.setScissorTest(false)
+    r.setViewport(0, 0, w, h)
+    this.robot.visible = robotVisible
+  }
+
 
   private resize(): void {
     const w = this.host.clientWidth

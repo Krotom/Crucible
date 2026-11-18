@@ -26,7 +26,7 @@ node scripts/integrate-robot.mjs "C:\path\to\your\robot-project" --apply   (inst
 3. In your drivetrain class, changes `if (Utils.isSimulation()) { startSimThread(); }` to `if (Utils.isSimulation() && !SimBridge.isEnabled()) { ... }`. Without this CTRE's own drivetrain simulation would move the wheels a second time.
 4. In `build.gradle`, changes `wpi.sim.addGui().defaultEnabled = true` to `!"1".equals(System.getenv("CRUCIBLE_BRIDGE"))`. Without this the simulation GUI overwrites the app's joystick and Driver Station data every frame and the robot never moves.
 
-Then build once (`gradlew build`), start BALTA Crucible, pick **Robot code (real time)** and press **Launch robot**. `--remove` takes the block and the sim-thread guard out again (it leaves the copied library files and the `build.gradle` line; delete or revert those by hand).
+Then build once (`gradlew build`), start BALTA Crucible, open the **Robot** tab, pick **Robot code (real time)** and press **Launch robot**. `--remove` takes the block and the sim-thread guard out again (it leaves the copied library files and the `build.gradle` line; delete or revert those by hand).
 
 Checked by applying it to the OffSeason robot project as it was before the bridge existed: it compiled and, started from the app, drove over a BUMP and into a wall with odometry that follows the physics.
 
@@ -54,6 +54,10 @@ Mode B (deterministic, faster than real time) replaces the Talon firmware contro
 - Vision (PhotonVision sim) must be off in lockstep, because its random noise and NetworkTables timing are not repeatable.
 
 Mode A (real time) is enough for driver practice, tuning and most testing; add Mode B when you want repeatable batch runs.
+
+## Vision (optional, not read yet)
+
+With the app's vision camera switched on (Robot tab), the app sends the robot a message (bridge type 9: the AprilTags the simulated camera sees and a noisy robot pose, see NT_CONTRACT section 15). The robot library does not read it yet, so nothing changes in your code until a reader is added (the natural place is an `addVisionMeasurement` call on the drivetrain's pose estimator).
 
 ## If something does not work
 

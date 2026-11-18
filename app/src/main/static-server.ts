@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
+import { PLUGIN_FILE } from '../engine/plugin'
 
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -31,13 +32,16 @@ function safeFile(root: string, rel: string): string | null {
 }
 
 /** Starts the server; resolves with its base URL. */
-export function startStaticServer(rendererDir: string, appRoot: string, configDirs: string[] = []): Promise<{ url: string; close: () => void }> {
+export function startStaticServer(rendererDir: string, appRoot: string, configDirs: string[] = [], gamesDir: string | null = null): Promise<{ url: string; close: () => void }> {
   const server = http.createServer((req, res) => {
     const pathname = decodeURIComponent((req.url ?? '/').split('?')[0])
     let file: string | null = null
     if (pathname.startsWith('/model/')) {
       const dir = resolveModelDir(appRoot, configDirs)
       file = dir ? safeFile(dir, pathname.slice('/model/'.length)) : null
+    } else if (pathname.startsWith('/games/') && gamesDir) {
+      const name = pathname.slice('/games/'.length)
+      file = PLUGIN_FILE.test(name) ? safeFile(gamesDir, name) : null // only plain .js files of the games folder
     } else {
       file = safeFile(rendererDir, pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, ''))
     }

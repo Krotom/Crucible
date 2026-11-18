@@ -36,6 +36,12 @@ export class BallSystem {
   private spacing: number
   private captureActive = false
 
+  /** Changes the shooter's efficiency and backspin while it runs (the next shot uses them). */
+  tuneShooter(efficiency?: number, backspin?: number): void {
+    if (efficiency !== undefined) this.spec.shooter.efficiency = efficiency
+    if (backspin !== undefined) this.spec.shooter.backspin = backspin
+  }
+
   constructor(private spec: BallHandlingSpec, private host: BallHost) {
     let acc = 0
     for (const s of spec.stages) { this.stageStart.push(acc); acc += s.length }

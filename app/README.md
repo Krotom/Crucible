@@ -1,166 +1,169 @@
 # BALTA Crucible app
 
-Electron + TypeScript + three.js. At this stage the app is a viewer for an existing robot: it connects to a running
-robot over NetworkTables 4 or opens a `.wpilog`, shows the robot in 3D and plots numeric topics. It also runs the
-physics engine core on a test game (M2); the bridge to your robot code comes in M3.
+Electron + TypeScript + three.js + Rapier. BALTA Crucible runs your real FRC robot code against a physics simulation of the robot and the REBUILT field, and analyses what happens: the app is the physics authority, your robot program keeps running its own control loops and gets motor, encoder and gyro values back. It is also a log viewer (live NetworkTables 4 or `.wpilog`) with a 3D view and plots.
 
-## Run
+**Status.** Everything in the plan (milestones M0 to M13 in [docs/PLAN.md](../docs/PLAN.md)) and every item of [docs/IDEAS.md](../docs/IDEAS.md) is built and tested. The things to keep in mind before trusting a number from it:
+
+- **The physics has not been validated against the real robot.** Mass, tire friction, bumper friction, FUEL drag, bounce and spin values are estimates, tagged `GUESS` in `robots/offseason/robot.yaml`. The calibration tools can fit the shot and drive values to measured data, but no real data has been fitted yet. See *Trusting the numbers* below.
+- **The vision camera** sends the robot code a simulated AprilTag pose (bridge message 9), but the robot library does not read it yet; the tag layout is assumed.
+- **Windows and macOS packaging** and the Windows/macOS self-update paths are written but have not been run on those systems (they are built and tested on Linux only). The Linux package and its self-update are tested end to end.
+
+## Install
+
+- **Download.** Every release on the repository's Releases page has a Windows installer (`BALTA-Crucible-Setup-<version>.exe`), a Linux archive (`BALTA-Crucible-<version>-linux-x64.tar.gz`) and a macOS zip per processor type (`...-mac-arm64.zip` for Apple silicon, `...-mac-x64.zip` for Intel), with `SHA256SUMS.txt`. Releases are made automatically, see [docs/RELEASING.md](../docs/RELEASING.md).
+  - **Windows:** run the installer (Start Menu shortcuts, one in `2026 WPILib Tools` when that folder exists, optional desktop shortcut, Add/Remove Programs entry). The installer is not code-signed, so SmartScreen may ask you to confirm ("More info" > "Run anyway"). Optional pages: **Robot project** (where your robot code is; the app writes `%APPDATA%\BALTA Crucible\crucible.config.json` so Launch robot works) and **Patch a project?** (adds the bridge to that project with backups, see [docs/ROBOT_INTEGRATION.md](../docs/ROBOT_INTEGRATION.md)). Silent install: `Setup.exe /S /ROBOT=<project> /PATCH=1 /D=<install folder>` (`/D=` last). English and Turkish.
+  - **Linux:** unpack the archive anywhere you can write to (the app updates itself in place, which needs that) and run `./BALTA-Crucible`; `balta-crucible.desktop` is a launcher entry. The archive has no setuid sandbox helper, so the launcher starts the app with `--no-sandbox` unless `chrome-sandbox` is root-owned and setuid.
+  - **macOS:** unzip, move `BALTA Crucible.app` where you like (`/Applications` works if your account can write there, which self-update needs). The app is signed ad hoc, not with an Apple Developer ID and not notarised, so the first start needs right-click > Open (or `xattr -dr com.apple.quarantine "BALTA Crucible.app"`).
+- **Self-update.** On start (at most once a day; switch it off in Preferences) the app looks for a newer release and says so with a toast; **About > Check for updates > Install the update** downloads the file for your platform, checks it against the release's `SHA256SUMS.txt` (and its Ed25519 signature when signing is set up), quits, swaps itself and starts the new version. Nothing is downloaded until you press Install. A copy that cannot write its own folder, or a development run, offers the release page instead. Details and limits: [docs/RELEASING.md](../docs/RELEASING.md).
+- **From the source folder.** `npm run app` builds if the sources changed and starts the app (Windows: `powershell -ExecutionPolicy Bypass -File scripts\install-shortcuts.ps1` makes a Start Menu shortcut that does the same; `-Desktop`, `-Remove`).
+- **Patch a robot project from the command line:** `npm run integrate-robot -- <project>` checks, add `--apply` (and `--backup`) to patch.
+
+The built app serves its page and the robot model from a loopback-only server in its own process and allows one window at a time.
+
+## Run from source
 
 ```bash
 npm install
-npm run dev        # Electron window (renderer served by Vite, so the robot model is available)
-npm run web        # renderer only, in a normal browser at http://localhost:5174 (handy for quick checks)
-npm test           # parser, struct and NT4 client tests
+npm run dev          # Electron window (renderer served by Vite, so the robot model is available)
+npm run web          # renderer only, in a normal browser at http://localhost:5174 (quick checks)
+npm run app          # build if needed, then start the app (what the shortcut does)
+npm test             # unit tests (vitest)
 npm run typecheck
+npm run e2e          # UI tests against the real app under a virtual display (see docs/TESTING.md)
+npm run package      # package for this platform into dist-release/ (see docs/RELEASING.md)
+npm run batch -- runs/rebuilt-cycle.json     # scripted runs with robot code, headless (needs the robot project and a JDK)
+npm run calibrate    # fit the shot and drive models to measured CSV files
 ```
 
-If Electron reports "Electron uninstall", its binary was not downloaded; run `node node_modules/electron/install.js`.
-
-## Install and launch as a desktop app
-
-- **Installer.** `npm run installer` builds `dist-installer/BALTA-Crucible-Setup-<version>.exe` (needs NSIS; found in `C:\Program Files (x86)\NSIS` or through the `MAKENSIS` variable). It installs the app with its own Electron runtime (no Node.js needed), adds Start Menu shortcuts (including one in the `2026 WPILib Tools` folder when it exists, with the BALTA icon), an optional desktop shortcut, and an Add/Remove Programs entry.
-  Two optional pages: **Robot project** (where your robot code is; the app writes `%APPDATA%\BALTA Crucible\crucible.config.json` so Launch robot works) and **Patch a project?** (adds the bridge to that project with backups, see `docs/ROBOT_INTEGRATION.md`). Silent install: `Setup.exe /S /ROBOT=<project> /PATCH=1 /D=<install folder>` (`/D=` last). English and Turkish.
-  Later, **Patch a robot project** in the Start Menu does the same for any project.
-- **From the source folder.** `npm run app` builds if the sources changed and starts the app; `powershell -ExecutionPolicy Bypass -File scripts\install-shortcuts.ps1` creates a Start Menu shortcut (in `2026 WPILib Tools`) that does the same (`-Desktop` for the desktop too, `-Remove` to undo). Use one or the other: both create `BALTA Crucible.lnk` in the WPILib Tools folder.
-- The built app serves its page and the robot model from a loopback-only server in its own process and allows one window at a time.
-- **Patch a robot project from the command line:** `npm run integrate-robot -- <project>` checks, add `--apply` (and `--backup`) to patch.
+If Electron reports "Electron uninstall", its binary was not downloaded; run `node node_modules/electron/install.js`. Testing is described in [docs/TESTING.md](../docs/TESTING.md).
 
 ## Using it
 
-- **Live:** start the robot sim (`./gradlew simulateJava`), enter the host (default `127.0.0.1`) and press Connect.
-  The app subscribes to every topic on port 5810 and reconnects by itself.
-- **Log:** Open log… or drop a `.wpilog` on the window. Space plays and pauses, the slider and a click on the plot
-  seek. Truncated logs (power loss) open with every complete record.
-- **3D view:** the robot pose and the component poses follow the two pickers in the top left; they are chosen
-  automatically (`Swerve/Pose`, `Mechanism3d/Components`). Orbit with the left mouse button, pan with the right one.
-- **Plot:** click a numeric topic in the list to add or remove it; each line is decimated to 6000 points.
+The side panel has five tabs (keys 1 to 5): **Session** (the sim: game, opponent, alliance, start position, step, seed, presets, data), **Robot** (launch the robot code, log, testing tools), **Topics** (the signals to plot), **Analysis** and **Tune**.
 
-## Simulation (M2)
+- **Live:** start the robot sim (`./gradlew simulateJava`), enter the host (default `127.0.0.1`) and press Connect. The app subscribes to every topic on port 5810 and reconnects by itself.
+- **Log:** Open log… (the last eight are under **Recent files**) or drop a `.wpilog` on the window. Space plays and pauses, the slider and a click on the plot seek. Truncated logs (power loss) open with every complete record.
+- **3D view:** the robot pose and the component poses follow the two pickers in the top left (chosen automatically: `Swerve/Pose`, `Mechanism3d/Components`). Orbit with the left mouse button, pan with the right one.
+- **Plot:** click a numeric topic to add or remove it; each line is decimated to 6000 points. **CSV** and **PNG** export every sample or the chart.
+- **Reference log** (Data card): a second `.wpilog` (a real match, say) drawn dashed on the plot, listed under its own heading in Topics; **Shift** moves it in time to line it up with the sim.
 
-**Start sim** runs the engine in a Web Worker with the `game-test` module (a made-up 8 x 5 m field: walls, a block, a goal bin that
-scores 2 points in auto and 1 in teleop, and 30 balls dropped from a seeded random layout) and a scripted robot that drives
-a lap through the pile. Balls are real rigid bodies (restitution, friction, rolling damping, quadratic air drag, CCD), the
-robot is a kinematic body that shoves them.
+### Keyboard
 
-- Play/Pause, speed (0.25x to 8x), Step (10 ms), Reset (with the seed box), Save state / Load state (an in-memory snapshot).
-- The top-right readout shows phase, sim time, rate, score, ball counts and a **state hash**. The same seed gives the same
-  hash at the same step on every run, in Node and in the app; restoring a saved state replays the identical future.
-- The sim also publishes `/Sim/*` topics (pose, speed, scores, ball counts) into the topic list and plots.
-- The orange wireframe on the robot is its collision box.
+Press **?** (or the keyboard button in the title bar) for the list, **Ctrl+K** for the command palette (every action below, presets, language and colour switches). Plain keys are off while you type in a box; the driving keys are never shortcuts.
 
-Engine layout (`src/engine`, no DOM): `engine.ts` (Rapier world, fixed step 1 ms, plug-in host, scoring, match flow, snapshots),
-`types.ts` (the `GameModule` interface), `rng.ts` (seeded RNG and state hash), `worker.ts` + `protocol.ts` (real-time loop and
-messages). `src/games/test.ts` is the test game. Material coefficients are factors that multiply with the surface they touch
-(a ball restitution of 0.55 on a floor of 1.0 rebounds to 0.55^2 of the drop height).
+| Key | Action | Key | Action |
+|---|---|---|---|
+| Space | Play / pause | 1 to 5 | Session, Robot, Topics, Analysis, Tune |
+| . | Step 10 ms (paused) | P | Fold the sim panel |
+| Ctrl+Enter | Start / stop the sim | F | Focus the robot |
+| Shift+R | Reset the sim | C / Shift+C | Next / previous camera |
+| ← / Shift+← | Back 1 s / 5 s (scripted robot) | M | Ruler |
+| B | Scoreboard overlay | T | Dark / light theme |
+| G | Controls (gamepad, driving keys) | Ctrl+K | Command palette |
+| N / Shift+N | Next / previous error in the log | Ctrl+L / Ctrl+F | Clear / filter the log |
 
-Not in yet: robot-vs-wall contact (the scripted robot ignores walls), speed-dependent foam restitution, Magnus lift, capture
-volumes and shooting (M5), the real robot definition (M4).
+Driving the robot (sim with robot code): **W S** forward and back, **A D** strafe, **Q E** rotate, **J K** the A and B buttons, **L H** the right and left triggers; a gamepad works too (standard mapping, presented to the robot as an Xbox controller on port 0). The keys can be rebound and the gamepad remapped in **Controls…** (G).
 
-## Robot code in the loop (M3)
+## Session tab: the simulation
 
-Choose **Robot code (NT)** next to Start sim: the app is then the physics authority for the real robot program. The robot's
-Talons keep running their control loops (Phoenix sim) and publish their applied voltages through the bridge; the app steps a
-swerve model (tire forces per module, DC motor models, current limits, the walls and balls of the test game) and returns rotor,
-CANcoder and Pigeon states. The robot's own odometry then follows the app's physics.
+**Start sim** runs the engine in a Web Worker. Games: the made-up **Test game** (8 x 5 m, a goal bin, 30 balls dropped from a seeded layout), **REBUILT** (the 2026 field: guardrails, walls, both HUBS, the BUMPS, 408 FUEL in the neutral zone as in the manual; assumptions in [rules/REBUILT_RULES_EXTRACT.md](../rules/REBUILT_RULES_EXTRACT.md)), or a **game plugin** (see below).
 
-The frame exchange uses a dedicated local WebSocket (port 5811) served by the robot, not NetworkTables; see the contract.
-All seven Talon mechanisms (turret, shooter, feeder, indexer, hood, intake driver and roller) and the swerve run under the
-app's physics, defined in `robots/offseason/robot.yaml`; the readout lists any mechanism the robot has that the file does not.
+- **Modes** (Robot tab): *Scripted robot* (a built-in lap, no robot code), *Robot code (real time)* (Mode A: your robot program drives, 1x speed) and *Robot code (lockstep, Mode B)* (the robot's clock is paused and moves only when the app steps it: repeatable and faster than real time).
+- **Transport:** Play/Pause, speed (0.25x to 8x, `max` in lockstep), Step (10 ms), Reset (with the seed box), **Save state / Load state** (three slots). The scripted sim keeps a snapshot every half second for the last minute: **⟲ 1 s** / **⟲ 5 s** (or ← / Shift+←) rewind exactly that much, a click on the timeline goes back to that moment. With robot code the program cannot be rewound.
+- **Alliance and start position:** red starts on the far side facing the other way; X / Y / Yaw override the default. Opponents: a blocker, a red cycler, a blue ally cycler, ally + red cycler.
+- **Presets:** save the game, mode, opponent, alliance, start position, step, seed, battery, faults, vision and breakpoints under a name and load them with one click (or from Ctrl+K).
+- **The panel** at the top right of the 3D view shows phase, sim time and score in its header (click to fold; drag to move, double-click to reset). Rows are grouped (Match, Field, Game, Robot, Robot link, Mechanisms, Determinism); hovering a row explains it. The **state hash** at the bottom is the same at the same step on every run, in Node and in the app, and restoring a saved state replays the identical future. The sim also publishes `/Sim/*` topics.
+- **3D tools:** the **Camera** select (Overview, Top-down, Driver chase, Follow robot, Blue HUB, Red HUB); **View ▾** (collision box, intake volume, scoring volumes, rules zones, robot trail, shot arcs and landing spots, scoreboard, robot-camera inset, and *score and timer in screenshots and video*); **Ruler** (two clicks on the floor). The camera and record buttons in the title bar save a PNG or a WebM of the 3D view.
+- **Timeline** above the transport: the match phases to scale, score (blue above, red below), foul, impact and shot markers with tooltips.
 
-1. **Launch robot** (Electron only) starts `gradlew simulateJava --no-daemon` in the robot project with `CRUCIBLE_BRIDGE=1` (the project
-   folder is `robotDir` in `app/crucible.config.json`, else the sibling repo). Or start it yourself:
-   `CRUCIBLE_BRIDGE=1 ./gradlew simulateJava`. The Crucible bridge and the sim GUI do not mix, see the contract.
-2. **Start sim** in Robot code mode connects over NT (host box) and shows the robot's status in the readout.
-3. **Enable** and the Teleop/Auto/Test picker are the Driver Station. Drive with a gamepad (standard mapping, presented to the
-   robot as an Xbox controller on port 0) or the keyboard: W/S forward and back, A/D strafe, Q/E rotate, J/K the A and B
-   buttons, L/H the right and left triggers. The robot code's own mapping applies.
-4. Reset, Save and Load work as in the scripted sim; the robot's odometry is re-seeded to the robot's new position.
+## Robot tab: robot code in the loop
 
-Drivetrain numbers are in `src/robots/offseason.ts`: gear ratios, wheel radius, coupling and module positions come from
-`TunerConstants.java`; the mass (52 kg) and tire friction (1.2) are guesses until measured.
+1. Pick the mode, the robot project (**Choose…**, the last five are under **Recent projects…**; it needs a `gradlew`) and press **Launch robot** (desktop app only). It runs `gradlew simulateJava --no-daemon` there with `CRUCIBLE_BRIDGE=1` (lockstep adds `CRUCIBLE_MODE=lockstep`). Or start the robot yourself: `CRUCIBLE_BRIDGE=1 ./gradlew simulateJava`. The Crucible bridge and the WPILib sim GUI do not mix. **Check project** lists what is ready and what is missing (gradlew, Java, the bridge library and its hook, the sim GUI guard, the emulation layer for lockstep).
+2. **Start sim** (Session tab) connects to the robot over the bridge (WebSocket port 5811, plus NetworkTables 5810 for the component poses). **Enable** and the Teleop/Auto/Test picker are the Driver Station. **Start match** (REBUILT) resets the engine and runs the field system: the robot is enabled in AUTO and TELEOP and disabled in between and after, and receives the match time and the Game Data character.
+3. A status line says what the robot process is doing (Starting, Building with a bar and the task count, Running, Stopped, Exited, Failed with the reason). **Relaunch** stops and starts again; **Also start the sim when launching** presses Start sim for you.
+4. **Gradle output** log: Errors / Warnings / Info toggles, ▲ ▼ (or N / Shift+N) between errors, All / Build / Robot tabs, clickable file references (they open the file at that line in your editor: set `editor` in `crucible.config.json`, for example `code --goto {file}:{line}`), Follow, Copy, Save, Clear, and **Past runs…** (the last 20 are kept). **Extra environment** passes `KEY=VALUE` lines (such as `JAVA_HOME`) to Gradle and the robot.
+5. **Robot testing** card: a battery model that sags under load; things that go wrong (brownout at a voltage, latency, sensor noise, dropped CAN ids); a mechanism inspector (volts, speed, position, current); **Controls…**.
+6. **Test scenarios**: a scripted driver (forward, strafe, spin, climb the BUMP) plays sticks against your robot code and checks where the robot ends up; each run starts a fresh sim and takes the keyboard from you.
+7. **Vision camera**: a simulated AprilTag camera on the robot (assumed tag layout). The 3D view shows the tags (green when seen), the view cone and the reported pose (amber, joined to the true position); the robot is sent the tags and a noisy pose over bridge message 9 ([docs/NT_CONTRACT.md](../docs/NT_CONTRACT.md) section 15). The robot library does not read it yet.
 
-## Balls (M5)
+Robot-code details: the drivetrain, all seven Talon mechanisms and the swerve run under the app's physics, defined in `robots/offseason/robot.yaml` (the readout lists any mechanism the robot has that the file does not). Drivetrain numbers come from `TunerConstants.java`; mass and friction are guesses until measured. Wheels that keep driving against a wall slip, so the robot's wheel odometry runs ahead of its real position; the Pigeon gets the real tilt (the chassis acceleration is computed but Phoenix 6's `Pigeon2SimState` has no setter for it).
 
-With the robot code in the loop, the intake catches balls (the green box is the capture volume), they ride the stages to the shooter, and a ball
-launched from the turret flies with drag, spin and foam bounce. The readout shows pieces held, the three beam breaks (`#` = blocked), pieces
-caught and shots. In the test game, the elevated cyan "hub" volume at (4.6, 4.0) is where the robot code aims its turret and scores 3 points
-in teleop. The ball numbers are in the `ballHandling` section of `robots/offseason/robot.yaml` and are guesses until measured.
+**Lockstep (Mode B)** replaces the Talon firmware loops with a Java emulation (`EmuTalon`) and the swerve control with `EmuSwerve`, so two runs of the same timed inputs give the same physics state at every sample, at 1.5x (1 ms step) to about 4x (5 ms) real time. Vision is off in this mode. Scripted runs tie inputs to the sim clock with `session.at(simTime, fn)`. The robot accepts one app at a time (the newest connection wins).
 
-## REBUILT and match control (M6)
+## Analysis tab
 
-Pick **REBUILT** next to Start sim. The field has the guardrails, walls, both HUBS (hollow, with the 41.7 in opening) and the BUMPS; FUEL is staged as in the manual (see
-`rules/REBUILT_RULES_EXTRACT.md` section 10 for what is assumed; the neutral pile is the manual's 408 FUEL, kept real time by freezing resting FUEL and a 2 ms step, see `docs/PERFORMANCE.md`). In Robot code mode, **Start match** resets the engine and runs the field system: the
-robot is enabled in AUTO and TELEOP and disabled in between and after, and it receives the match time and the Game Data character. The readout shows which HUBS are active,
-the FUEL counts, the Game Data and the G403/G407 fouls.
+- **Match summary:** score, breakdown (Auto / Teleop / Endgame / Fouls), shots and accuracy, pickups, pickup-to-launch times, distance, top speed, impacts, fouls with the rule broken, a pickup-to-launch histogram, a shot map (scored / missed, aim lines, the robot's path) and the event feed with filters. A summary opens when a match ends (switch it off with the box in the tab).
+- **Exports:** **Save report…** (standalone HTML), **Events CSV…**, **Save run (.json)…** (the `report.json` shape `npm run batch` writes), **Save .wpilog…** (everything recorded, opens here, in AdvantageScope or any WPILOG tool), **Report into project** (writes the HTML to `crucible/reports/` in the robot project so it can be committed).
+- **Share:** **Share run…** writes one `.run.json` with the set-up and the result; **Open shared…** restores the settings and loads the result as run A. The driver's keys are not recorded: bots and test scenarios repeat from the set-up, a human drive does not.
+- **Attempts:** every match that reaches its end, with a note each, best / average / record / trend, and CSV.
+- **Strategy board:** draw paths, drop numbered markers, keep boards by name, save a PNG, and turn a spot or the first path into the start position.
+- **Compare runs:** two `report.json` files (or the current run) in a table with who did better, plus score and path charts.
+- **Pause when…:** breakpoints on a shot, a pickup, a score, a foul, a phase change, an impact over a speed, or a sim time.
+- **Seed sweep:** the scripted match with many seeds in a worker (mean ± spread of both scores, wins, every run). Test game and REBUILT only. For robot code use `npm run batch` with `seeds`.
 
-## Contact and pushing (M7)
+## Tune tab
 
-- **Bumpers:** a chamfered footprint with explicit mass and yaw inertia (`chassis.moi`, `friction`, `restitution`, `chamfer` in the robot definition, all guesses). Wall contact multiplies the
-  bumper friction with the wall's, bumper against bumper averages them.
-- **BUMPS:** the robot climbs them. The game module supplies the floor height (`terrain(x, y)`); a plane through the four module contact points gives the body's height, pitch and roll
-  (drawn, and sent to the robot's Pigeon), and the slope pushes on the chassis (`-m g grad h`), so a climb costs energy. The body stays planar for physics.
-- **Other robots:** tick **opponent** next to Start sim for a second (red) robot that holds still and can only be pushed. It is traction-limited like any robot (`mu * m * g`): it holds against a push
-  up to that force and slides above it. In code, `RobotSpec.others` takes a mass, a footprint, a start and an optional script.
-- **Contact feedback:** every contact the drive did not cause is reported as a `robot-impact` event (the speed it changed, and whether it was the field or a robot) once it ends, and shown as `hits`
-  in the readout. The Pigeon gets the real tilt (pitch, roll and their rates). The chassis acceleration (impacts included, in g, 8 g limit) is computed too, but Phoenix 6's
-  `Pigeon2SimState` has no acceleration setters, so the robot code cannot read it. Wheels that keep driving against a wall slip, so the robot's wheel odometry runs ahead of its real position.
+- **Physics sliders:** tire friction, robot mass, shot efficiency, backspin, bumper friction, with the robot definition's value as the default (per-row **default**, or **Reset all**). Friction and the shot values act at once in a running sim; mass and bumper friction apply at the next Reset. Floor presets set the tire friction. Changed values are remembered, mark the tab with a dot, and every new sim (and the seed sweep) starts with them.
+- **Sensitivity:** moves each value 10% down and up from what is set now and reports how three quick probes change: the speed 0.25 s after a full-power start (grip-limited: tire friction matters, mass cancels out), after a gentle 3 V start (motor-limited: mass matters), and the range of one fixed shot (efficiency, backspin). It measures these probes, not whole matches, so a value none of them touches (bumper friction) shows "no effect on these probes".
+- **Calibration:** pick Shots or Drive, paste or open the measured CSV (formats in `src/calibration/data.ts`; **Example** makes made-up data), **Fit** shows the error before and after, the fitted values, which parameters the data does not pin down and the residuals. **Apply to the sim** moves the sliders, **Copy yaml** gives the lines for `robot.yaml`, **Report…** saves an HTML report. `npm run calibrate -- example | shots <csv> | drive <csv> [--volts 12] [--mass] [--apply]` does the same from the command line.
+- **What is measured:** the `GUESS` / `CODE` / `CAD` / `FIT` tags in `robot.yaml`'s comments as a list, so you can see which numbers are still placeholders.
 
-## Lockstep (Mode B, M8)
+### Trusting the numbers
 
-Pick **Robot code (lockstep, Mode B)** next to Start sim, then **Launch robot** (it starts the robot with `CRUCIBLE_MODE=lockstep`). The robot's clock is paused and moves only when the app sends a Step, the
-robot's Talons are a Java emulation (`EmuTalon`) and its swerve drivetrain a Java layer (`EmuSwerve`), so a run is **repeatable** (two runs of the same timed inputs give the same physics state at every sample) and can
-go **faster than real time**: the step dropdown sets the simulated time of one exchange and of one physics step (1 ms: 1.5x, 2 ms: 2.5x, 5 ms: 3.5 to 4x real time, measured with the real robot project). The speed
-dropdown paces it (`max` is as fast as it goes). Vision is off in this mode (the PhotonVision sim is not repeatable). Scripted runs tie inputs to the sim clock with `session.at(simTime, fn)`; the buttons are wall-clock timed
-(interactive, not repeatable). The robot accepts one app at a time (the newest connection wins): close other Crucible windows before a run.
+The shot model computes the exit speed from the flywheel (`efficiency * 2π * wheel radius * rps`), flies the ball with quadratic drag and Magnus lift, and bounces it with a speed-dependent foam restitution. Calibration fits only efficiency and backspin, to measured **range**. Not covered: flight **time** (computed but never compared with a measurement), the real flywheel's spin-up and sag when a ball passes (the shooter velocity loop was not compared with the real controller), ball compression and slip in the shooter, and real shot scatter (the sim is deterministic for a seed). Use the sim for map logic, relative comparisons and bug-hunting; use measured shots (fit on some, check on shots you held out) before believing a distance to a few centimetres.
 
-## Scripted runs, bots, capture, calibration (M9 to M12)
+## Preferences and quality of life
 
-- **Scripted runs.** A run script (JSON, see `runs/rebuilt-cycle.json`) lists timed driver actions (`ds`, `sticks`, `buttons`, `match`) in simulated time. `npm run batch -- runs/rebuilt-cycle.json` starts the robot project in lockstep for each
-  script, runs it, and writes `runs/out/<name>/report.{json,md,html}` plus a comparison `summary.md`; a file may list several scripts or give `seeds` to repeat each one. Two runs of one script give byte-identical reports.
-  The report has score over time, shots (fired, reached a HUB, accuracy), shot bursts and cycle times, pickup-to-launch times, distance, top speed and contacts, a drive path and shot map.
-- **Other robots.** The Opponent menu adds a blocker or a red cycler. In a script, `bots` takes routes or cycles (pick up FUEL, drive to a firing spot, fire at the bot's own HUB, with a seeded spread); keep the straight line to a firing spot clear of the HUB.
-- **Screenshot and video.** The camera and record buttons in the title bar save a PNG of the 3D view or a WebM recording (the app asks where to save; a browser downloads).
-- **Calibration.** `npm run calibrate -- example` writes synthetic example files; `-- shots shots.csv` fits launch efficiency and backspin to measured shots, `-- drive accel.csv [--volts 12] [--mass]` fits tire friction (and mass) to a measured acceleration;
-  `--apply` writes the fitted values into `robots/offseason/robot.yaml`. The reports say when a parameter is not pinned down by the data. File formats: `src/calibration/data.ts`. Nothing has been fitted to real data yet.
+- **Toasts** (bottom right) carry every message; the status bar line still shows the latest. Click to dismiss; a repeated message shows a counter.
+- **Preferences** (gear in the title bar): **Turkish interface** (the fixed labels; messages built at run time stay English), **colour-blind-safe colours** (blue and orange, in the interface and the 3D field zones from the next sim start; robot and bumper colours are unchanged), **larger text** (a 1.2x window zoom), **look for updates at start**, the **local API** and the **game plugins folder**.
+- **Remembered:** game, mode, opponent, step, seed, host, view toggles, log toggles, tune values and more are kept between runs.
+- **Game plugins:** put a `.js` file in the games folder (Preferences > Open the game plugins folder) and restart; it appears in the Game list as "name (plugin)". The file exports a function that returns a game module (`GameModule` in `src/engine/types.ts`; a working example is `examples/game-plugin.js`). A plugin runs inside the simulation with its permissions: use only files you trust. Plugins load in the built app, not in `npm run dev`, and the seed sweep does not support them.
+- **Local API** (off by default): HTTP on `127.0.0.1:5812`; every request needs `Authorization: Bearer <token>` (shown in Preferences; a new token cuts off the old one) and requests from web pages are refused. `GET /api/status`; `POST /api/command` with `{"action": "start" | "stop" | "reset" | "play" | "pause" | "step" | "preset" | "set" | "attempts"}` (`preset` needs `name`, `set` needs `id` and `value`). HTTP only: there is no event stream.
 
-## Brand
+## Scripted runs, bots, batch
 
-The name is BALTA Crucible. The images (emblem, wordmark, icons) are built from the BALTA Robotics logo file by `tools/build-brand-assets.mjs`; colors are gold #cb8e00, silver #dcdcdc, black #010101. The theme button switches dark and light
-(the choice is remembered). Reports carry the same header and follow the reader's light or dark setting.
+A run script (JSON, see `runs/rebuilt-cycle.json`) lists timed driver actions (`ds`, `sticks`, `buttons`, `match`) in simulated time. `npm run batch -- runs/rebuilt-cycle.json` starts the robot project in lockstep for each script, runs it and writes `runs/out/<name>/report.{json,md,html}` plus a comparison `summary.md`; a file may list several scripts or give `seeds` to repeat each one. Two runs of one script give byte-identical reports. The report has score over time, shots (fired, reached a HUB, accuracy), bursts and cycle times, pickup-to-launch times, distance, top speed, contacts, a drive path and a shot map. In a script, `bots` takes routes or cycles for other robots (pick up FUEL, drive to a firing spot, fire at the bot's own HUB, with a seeded spread); keep the straight line to a firing spot clear of the HUB.
 
-## Robot model
+## Engine and physics notes
 
-The model folder uses the AdvantageScope layout (`model.glb` for the chassis, `model_N.glb` per component,
-`config.json`). It is not stored in this repo (about 26 MB). The folder is found in this order:
-`CRUCIBLE_MODEL_DIR`, `modelDir` in `app/crucible.config.json` (git-ignored), then the sibling robot repo at
-`../../OffSeasonCode/OffSeasonCode/advantagescope/Robot_OffSeason`. The dev server serves it at `/model/*`; a packaged
-build will bundle the model from the robot definition (M4).
+Engine layout (`src/engine`, no DOM): `engine.ts` (Rapier world, fixed step, plug-in host, scoring, match flow, snapshots), `types.ts` (the `GameModule` interface), `rng.ts` (seeded RNG and state hash), `worker.ts` + `protocol.ts` (real-time loop and messages), `setup.ts` (what a simulation is made of, shared by the live worker and the sweep). Material coefficients are factors that multiply with the surface they touch (a ball restitution of 0.55 on a floor of 1.0 rebounds to 0.55² of the drop height).
 
-To check the renderer in a plain browser against a real log: `CRUCIBLE_SAMPLE_LOG=<path> npm run web`, then in the console
-`fetch('/dev-sample-log').then(r => r.blob()).then(b => crucible.openLogFile(new File([b], 'x.wpilog')))`.
+- **Balls** are real rigid bodies (restitution, friction, rolling damping, quadratic air drag, Magnus lift, CCD). With robot code the intake catches them into a virtual queue that rides the stages (beam breaks `#` = blocked) to the shooter, which launches a rigid body with the computed state. Resting FUEL is frozen to keep 408 pieces real time ([docs/PERFORMANCE.md](../docs/PERFORMANCE.md)).
+- **Bumpers:** a chamfered footprint with mass and yaw inertia (`chassis.moi`, `friction`, `restitution`, `chamfer`; guesses). **BUMPS:** the game module supplies the floor height; a plane through the four module contact points gives height, pitch and roll (drawn, and sent to the Pigeon), and the slope pushes on the chassis. **Other robots** are traction-limited like any robot (`mu * m * g`). Every contact the drive did not cause is a `robot-impact` event.
+- **Determinism:** the same seed and inputs give the same state hash at the same step.
+
+## Brand and robot model
+
+The name is BALTA Crucible. The images (emblem, wordmark, icons) are built from the BALTA Robotics logo file by `tools/build-brand-assets.mjs`; colors are gold #cb8e00, silver #dcdcdc, black #010101. The theme button switches dark and light (remembered); reports follow the reader's light or dark setting. The icons in `build/` are not committed: `npm run icons` makes them from the brand emblem when they are missing (commit your own `build/icon.png` and `icon.ico` with `git add -f` to use exact ones).
+
+The robot model folder uses the AdvantageScope layout (`model.glb`, `model_N.glb` per component, `config.json`). It is not stored in this repo (about 26 MB). It is found in this order: `CRUCIBLE_MODEL_DIR`, `modelDir` in `crucible.config.json` (git-ignored; the installer writes one under `%APPDATA%\BALTA Crucible`), then the sibling robot repo at `../../OffSeasonCode/OffSeasonCode/advantagescope/Robot_OffSeason`. Both the dev server and the built app serve it at `/model/*`; without it the app shows no robot model but everything else works.
+
+To check the renderer in a plain browser against a real log: `CRUCIBLE_SAMPLE_LOG=<path> npm run web`, then in the console `fetch('/dev-sample-log').then(r => r.blob()).then(b => crucible.openLogFile(new File([b], 'x.wpilog')))`.
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| `src/main`, `src/preload` | Electron shell (thin for now) |
-| `src/renderer/src/lib/wpilog.ts` | `.wpilog` reader: indexes records, decodes lazily (a 60 MB log opens in about 0.4 s) |
-| `src/renderer/src/lib/structs.ts` | WPILib struct decoding (Pose2d, Pose3d, ...) |
-| `src/renderer/src/lib/store.ts` | One data model for log and live sources |
-| `src/renderer/src/lib/nt4.ts` | NT4 client |
-| `src/renderer/src/lib/scene.ts` | three.js scene in WPILib coordinates (Z up) |
-| `src/renderer/src/lib/plot.ts` | uPlot panel |
-| `src/engine`, `src/games` | physics engine and game modules (see Simulation) |
-| `src/engine/bridge`, `src/engine/drivetrain.ts` | sim bridge (frames, NT client, session) and the swerve model |
-| `src/engine/balls.ts` | the hybrid ball model: capture, stages, beam breaks, launch |
-| `src/engine/mechanism.ts`, `motors.ts` | rotary mechanism physics and motor constants |
-| `robots/offseason/robot.yaml`, `src/robots/` | robot definition and its loader/checker |
-| `src/main/robot.ts` | robot process launcher for the Electron main process |
-| `tests/` | unit tests (engine: ballistics, drag, bounce, determinism, snapshots, scoring, golden hash); `real-log.test.ts` runs only when `CRUCIBLE_SAMPLE_LOG` is set |
+| `src/main`, `src/preload` | Electron main process: window, loopback server (`static-server.ts`), robot launcher (`robot.ts`), run logs, preflight, recent files, project reports, local API (`api.ts`), update check (`update.ts`) and self-update (`updater.ts`, key in `update-key.ts`) |
+| `src/renderer/src/main.ts` | Wiring of the page; the features live in `src/renderer/src/lib/` |
+| `src/renderer/src/lib` | Viewer (`wpilog.ts`, `structs.ts`, `store.ts`, `nt4.ts`, `scene.ts`, `plot.ts`), sim UI (`simsource.ts`, `simmodel.ts`, `simpanel.ts`, `viewfx.ts`, `visionview.ts`), robot tab (`robotrun.ts`, `robotlog.ts`, `scenarios.ts`, `controls-ui.ts`), analysis (`analysis.ts`, `analysis-view.ts`, `compare*.ts`, `attempts.ts`, `runfile.ts`, `strategy.ts`, `wpilogwriter.ts`), tune (`tune-ui.ts`, `guesses.ts`), chrome (`chrome.ts`, `quality.ts`, `team.ts`, `toast.ts`, `cmdpalette.ts`, `presets.ts`, `i18n.ts`, `a11y.ts`, `versions.ts`, `shortcuts.ts`, `keybinds.ts`) |
+| `src/engine`, `src/games` | Physics engine and game modules (test game, REBUILT); `plugin.ts` checks outside game modules |
+| `src/engine/bridge`, `drivetrain.ts` | Sim bridge (frames, WebSocket transport, NT client, faults, session) and the swerve model |
+| `src/engine/balls.ts`, `mechanism.ts`, `motors.ts`, `vision.ts`, `tuning.ts`, `sweep.ts`, `breaks.ts` | Ball model, rotary mechanisms, motor constants, AprilTag camera, tunable values, seed sweep, breakpoints |
+| `src/calibration` | Shot and drive fits, the sensitivity probes, calibration reports |
+| `robots/offseason/robot.yaml`, `src/robots/` | Robot definition and its loader/checker |
+| `scripts/` | Packaging (`package.mjs`, `build-installer.mjs`, `make-icons.mjs`), releases (`release-notes.mjs`, `sign-release.mjs`, `update-keys.mjs`), `smoke-packaged.mjs`, `batch.mjs`, `calibrate.mjs`, `integrate-robot.mjs`, `launch.mjs` |
+| `installer/` | NSIS installer script and art |
+| `examples/` | A working game plugin |
+| `tests/`, `e2e/` | Unit tests and UI tests ([docs/TESTING.md](../docs/TESTING.md)) |
+| `../.github/workflows` | `ci.yml` (checks and UI tests on every push) and `release.yml` (releases) |
 
-## Known limits (M1)
+## Known limits
 
-- The field is a placeholder rectangle (16.541 x 8.069 m); the real field comes with the REBUILT module (M6).
-- Only struct types made of doubles are decoded (poses, translations, rotations, speeds, module states).
-- A production build (`npm run build`) does not yet serve the robot model; use `npm run dev`.
-- Live data is kept as the last 60 000 samples per topic.
+- The physics is unvalidated against the real robot (see *Trusting the numbers*); mass, friction and the ball values are estimates.
+- Only struct types made of doubles are decoded from logs and NetworkTables (poses, translations, rotations, speeds, module states); live data keeps the last 60 000 samples per topic.
+- The vision message is sent but the robot library does not read it; the AprilTag layout is assumed.
+- TOWER scoring and the endgame climb are not in the REBUILT module (see the rules extract).
+- The Turkish interface covers fixed labels only.
+- Packaged Windows and macOS builds and their self-update paths have not been run on those systems.
+- Game plugins do not load in `npm run dev`.

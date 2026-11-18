@@ -1,0 +1,212 @@
+name: Release
+
+# A release is made when the version in app/package.json changes on main (the tag v<version> is created with the release), when a tag v* is pushed,
+# or by hand (Actions > Release > Run workflow; "publish" off builds everything and keeps the files as workflow artifacts without releasing).
+# Windows gets the installer, Linux a tar.gz, macOS one zip per processor type; every file is listed in SHA256SUMS.txt (signed when a signing key is set up),
+# which is what the app's self-update checks before it installs anything.
+on:
+  push:
+    branches: [main]
+    paths: ['app/package.json']
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the release (off: build only, files stay as workflow artifacts)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      publish: ${{ steps.v.outputs.publish }}
+      skip: ${{ steps.v.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./app/package.json').version")
+          tag="v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          case "$version" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::the tag $GITHUB_REF_NAME does not match the version in app/package.json ($version): expected $tag"
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then publish="${{ inputs.publish }}"; else publish=true; fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          # a push to main that did not change the version (a dependency changed, say) must not touch a release that exists
+          skip=false
+          if [ "$GITHUB_REF_TYPE" = "branch" ] && [ "$GITHUB_EVENT_NAME" = "push" ] && gh release view "$tag" >/dev/null 2>&1; then skip=true; fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          echo "version $version, tag $tag, publish $publish, skip $skip"
+      - name: Release notes (fails when the version has no CHANGELOG entry)
+        if: steps.v.outputs.skip != 'true'
+        run: node app/scripts/release-notes.mjs "${{ steps.v.outputs.version }}" > notes.md
+      - uses: actions/upload-artifact@v4
+        if: steps.v.outputs.skip != 'true'
+        with:
+          name: notes
+          path: notes.md
+
+  checks:
+    name: Typecheck and unit tests
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx vitest run
+
+  icons:
+    name: Icons
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get update && sudo apt-get install -y imagemagick
+      - run: node app/scripts/make-icons.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: icons
+          path: app/build/
+          if-no-files-found: error
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: [plan, checks, icons]
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows, os: windows-latest }
+          - { name: linux, os: ubuntu-latest }
+          - { name: mac-arm64, os: macos-latest }
+          - { name: mac-x64, os: macos-15-intel }
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      # npm ci does not always fetch Electron's binary: fetch it explicitly and fail here if it is missing
+      - run: node node_modules/electron/install.js
+      - uses: actions/download-artifact@v4
+        with:
+          name: icons
+          path: app/build
+      - name: NSIS (Windows installer)
+        if: matrix.name == 'windows'
+        run: |
+          choco install nsis -y --no-progress
+          echo "MAKENSIS=C:\\Program Files (x86)\\NSIS\\makensis.exe" >> "$GITHUB_ENV"
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.name }}
+          path: |
+            app/dist-release/*.exe
+            app/dist-release/*.tar.gz
+            app/dist-release/*.zip
+          if-no-files-found: error
+      # the Linux build is started for real, and updates itself from a local release server, before anything is released
+      - name: Start the packaged app and try the self-update (Linux)
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb libnss3 libgbm1 libasound2t64 libgtk-3-0t64
+          npm install --no-save --prefix "$RUNNER_TEMP/pw" playwright@1.63.0
+          export NODE_PATH="$RUNNER_TEMP/pw/node_modules"
+          version=$(node -p "require('./package.json').version")
+          rm -rf "$RUNNER_TEMP/smoke" && mkdir "$RUNNER_TEMP/smoke"
+          tar -xzf "dist-release/BALTA-Crucible-$version-linux-x64.tar.gz" -C "$RUNNER_TEMP/smoke"
+          xvfb-run -a node scripts/smoke-packaged.mjs "$RUNNER_TEMP/smoke/BALTA-Crucible-$version-linux-x64/balta-crucible" "$version"
+          xvfb-run -a node e2e/update-packaged.mjs "dist-release/BALTA-Crucible-$version-linux-x64.tar.gz"
+
+  publish:
+    name: Publish the release
+    needs: [plan, build]
+    if: needs.plan.outputs.publish == 'true' && needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: notes
+          path: .
+      - name: Checksums, and the signature
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          cd dist
+          ls -l
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          cd ..
+          if [ -n "$UPDATE_SIGNING_KEY" ]; then
+            node app/scripts/sign-release.mjs dist/SHA256SUMS.txt
+          elif grep -q 'BEGIN PUBLIC KEY' app/src/main/update-key.ts; then
+            echo "::error::the app carries a public update key but the UPDATE_SIGNING_KEY secret is not set: installed copies would refuse this release"
+            exit 1
+          fi
+      - name: Create the release, or update its files
+        run: |
+          prerelease=""
+          if [ "${{ needs.plan.outputs.prerelease }}" = "true" ]; then prerelease="--prerelease"; fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "BALTA Crucible ${{ needs.plan.outputs.version }}" --notes-file notes.md --target "$GITHUB_SHA" $prerelease
+          fi

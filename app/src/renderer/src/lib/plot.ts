@@ -1,7 +1,7 @@
 // Plot panel on uPlot: numeric topics against time, with a playback cursor and click-to-seek.
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
-import { indexAt, type DataStore } from './store'
+import { indexAt, type DataStore, type Series } from './store'
 import { isNumericType } from './structs'
 
 const COLORS = ['#4cc2ff', '#ff9f43', '#7bed9f', '#ff6b81', '#c58bff', '#f6e05e', '#5eead4', '#fb923c']
@@ -14,6 +14,8 @@ export class PlotPanel {
   private ro: ResizeObserver
   private lastBuild = 0
   private window: [number, number] | null = null
+  /** a second log whose topics (named `ref:<topic>`) are drawn dashed on the same time axis, shifted so its start lines up with the main data */
+  private ref: { store: DataStore; offset: () => number } | null = null
 
   constructor(private host: HTMLElement, private onSeek: (t: number) => void, private onChange: (names: string[]) => void) {
     this.host.style.position = 'relative'
@@ -25,6 +27,20 @@ export class PlotPanel {
   }
 
   has(name: string): boolean { return this.names.includes(name) }
+
+  setReference(store: DataStore | null, offset: () => number = () => 0): void { this.ref = store ? { store, offset } : null }
+  /** Takes the reference topics off the plot (the reference log was closed). */
+  dropReference(): void { this.names = this.names.filter((n) => !n.startsWith('ref:')) }
+
+  /** The series behind a plotted name and how far its times are shifted onto the main time axis (0 for the main data). */
+  private resolve(name: string, store: DataStore): { s: Series; shift: number } | null {
+    if (name.startsWith('ref:')) {
+      const s = this.ref?.store.series.get(name.slice(4))
+      return s && this.ref ? { s, shift: store.tMin - this.ref.store.tMin + this.ref.offset() } : null
+    }
+    const s = store.series.get(name)
+    return s ? { s, shift: 0 } : null
+  }
   get topics(): string[] { return [...this.names] }
 
   toggle(name: string, store: DataStore): void {
@@ -50,7 +66,7 @@ export class PlotPanel {
     const now = performance.now()
     if (!force && now - this.lastBuild < 250) return
     this.lastBuild = now
-    const plottable = this.names.filter((n) => store.series.has(n) && isNumericType(store.series.get(n)!.type))
+    const plottable = this.names.filter((n) => { const r = this.resolve(n, store); return r !== null && isNumericType(r.s.type) })
     this.u?.destroy()
     this.u = null
     this.host.querySelector('.plot-empty')?.remove()
@@ -62,19 +78,22 @@ export class PlotPanel {
       this.cursor.style.display = 'none'
       return
     }
-    this.window = store.mode === 'live' ? [Math.max(store.tMin, store.tMax - 30), store.tMax] : [store.tMin, store.tMax]
+    // the time window: the main data's (the last 30 s while live); with no main data, the span of the reference
+    const mainEmpty = store.mode === 'none'
+    const refSpan = this.ref ? this.ref.store.tMax - this.ref.store.tMin : 0
+    this.window = mainEmpty ? [0, Math.max(1, refSpan)] : store.mode === 'live' ? [Math.max(store.tMin, store.tMax - 30), store.tMax] : [store.tMin, store.tMax]
     const [x0, x1] = this.window
     const tables: uPlot.AlignedData[] = plottable.map((n) => {
-      const s = store.series.get(n)!
-      const lo = Math.max(0, indexAt(s.times, x0) - 1)
-      const hi = Math.min(s.times.length - 1, indexAt(s.times, x1) + 1)
+      const { s, shift } = this.resolve(n, mainEmpty ? { ...store, tMin: 0 } as DataStore : store)!
+      const lo = Math.max(0, indexAt(s.times, x0 - shift) - 1)
+      const hi = Math.min(s.times.length - 1, indexAt(s.times, x1 - shift) + 1)
       const count = hi - lo + 1
       const step = Math.max(1, Math.ceil(count / MAX_POINTS))
       const xs: number[] = []
       const ys: number[] = []
       for (let i = lo; i <= hi; i += step) {
         const v = s.get(i)
-        xs.push(s.times[i])
+        xs.push(s.times[i] + shift)
         ys.push(typeof v === 'boolean' ? (v ? 1 : 0) : (v as number))
       }
       return [xs, ys]
@@ -91,7 +110,7 @@ export class PlotPanel {
       ],
       series: [
         { label: 't (s)' },
-        ...plottable.map((n, i) => ({ label: n.split('/').slice(-2).join('/'), stroke: COLORS[i % COLORS.length], width: 1.5, spanGaps: true, points: { show: false } })),
+        ...plottable.map((n, i) => ({ label: (n.startsWith('ref:') ? 'ref ' : '') + n.replace(/^ref:/, '').split('/').slice(-2).join('/'), stroke: COLORS[i % COLORS.length], width: 1.5, spanGaps: true, points: { show: false }, ...(n.startsWith('ref:') ? { dash: [6, 4] } : {}) })),
       ],
       hooks: {
         ready: [(u) => { u.over.addEventListener('click', (e) => { this.onSeek(u.posToVal(e.offsetX, 'x')) }) }],
@@ -99,6 +118,46 @@ export class PlotPanel {
     }
     this.u = new uPlot(opts, data, this.host)
     this.cursor.style.display = 'block'
+  }
+
+  /** The plotted topics as CSV: every sample of every plotted topic (not just the visible window), long form: topic,time_s,value. */
+  csv(store: DataStore): string {
+    const q = (v: string): string => `"${v.replace(/"/g, '""')}"`
+    const out = ['topic,time_s,value']
+    for (const n of this.names) {
+      const r = this.resolve(n, store)
+      if (!r || !isNumericType(r.s.type)) continue
+      const { s, shift } = r
+      for (let i = 0; i < s.times.length; i++) {
+        const v = s.get(i)
+        out.push(`${q(n)},${s.times[i] + shift},${typeof v === 'boolean' ? (v ? 1 : 0) : v}`)
+      }
+    }
+    return out.join('\n') + '\n'
+  }
+
+  /** The chart as a PNG with its legend (uPlot's legend is HTML, so it is drawn onto the image here). */
+  png(): Promise<Blob | null> {
+    const u = this.u
+    if (!u) return Promise.resolve(null)
+    const src = u.root.querySelector('canvas') as HTMLCanvasElement
+    const labels = this.names.map((n, i) => ({ text: n, color: COLORS[i % COLORS.length] }))
+    const lh = 18 * Math.ceil(labels.length / 2) + 8
+    const c = document.createElement('canvas')
+    c.width = src.width
+    c.height = src.height + lh * (src.width / Math.max(1, this.host.clientWidth))
+    const k = src.width / Math.max(1, this.host.clientWidth)
+    const g = c.getContext('2d')!
+    g.fillStyle = '#111316'
+    g.fillRect(0, 0, c.width, c.height)
+    g.font = `${12 * k}px system-ui, sans-serif`
+    labels.forEach((l, i) => {
+      const x = (8 + (i % 2) * (this.host.clientWidth / 2)) * k, y = (14 + Math.floor(i / 2) * 18) * k
+      g.fillStyle = l.color; g.fillRect(x, y - 9 * k, 14 * k, 3 * k)
+      g.fillStyle = '#dcdcdc'; g.fillText(l.text.length > 46 ? '…' + l.text.slice(-45) : l.text, x + 20 * k, y)
+    })
+    g.drawImage(src, 0, lh * k)
+    return new Promise((res) => c.toBlob((b) => res(b), 'image/png'))
   }
 
   setCursor(t: number): void {

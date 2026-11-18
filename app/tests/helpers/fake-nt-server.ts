@@ -27,7 +27,7 @@ export class FakeNtServer {
   values: ClientValue[] = []
   port = 0
 
-  async start(): Promise<void> {
+  async start(port = 0): Promise<void> {
     this.server.on('upgrade', (req, socket) => {
       const proto = String(req.headers['sec-websocket-protocol'])
       const accept = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64')
@@ -37,7 +37,7 @@ export class FakeNtServer {
       socket.on('data', (d: Buffer) => this.onData(d))
       socket.on('error', () => {})
     })
-    await new Promise<void>((r) => this.server.listen(0, '127.0.0.1', r))
+    await new Promise<void>((r) => this.server.listen(port, '127.0.0.1', r))
     this.port = (this.server.address() as AddressInfo).port
   }
 

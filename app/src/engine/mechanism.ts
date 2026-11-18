@@ -30,6 +30,8 @@ export class MechanismModel {
   private motor: MotorModel
   private prevRotorRps = 0
   private accel = 0
+  /** estimated battery current of the last step, amps: winding current times duty (|volts| / 12) */
+  supplyAmps = 0
 
   constructor(readonly spec: MechanismSpec) {
     const base = MOTORS[spec.motor]
@@ -37,7 +39,7 @@ export class MechanismModel {
     this.motor = parallel(base, spec.count)
   }
 
-  reset(): void { this.angle = 0; this.speed = 0; this.prevRotorRps = 0; this.accel = 0 }
+  reset(): void { this.angle = 0; this.speed = 0; this.prevRotorRps = 0; this.accel = 0; this.supplyAmps = 0 }
 
   step(dt: number, volts: number): void {
     const { gearRatio: g, inertia: j, frictionVolts: vf = 0, limits } = this.spec
@@ -60,6 +62,7 @@ export class MechanismModel {
       if (this.angle > hi) { this.angle = hi; if (this.speed > 0) this.speed = 0 }
       else if (this.angle < lo) { this.angle = lo; if (this.speed < 0) this.speed = 0 }
     }
+    this.supplyAmps = (Math.abs((v - m.ke * g * this.speed) / m.resistance) * Math.min(12, Math.abs(v))) / 12
     const rps = (g * this.speed) / TWO_PI
     this.accel = (rps - this.prevRotorRps) / dt
     this.prevRotorRps = rps

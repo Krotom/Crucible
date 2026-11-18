@@ -164,6 +164,37 @@ export class Engine {
   get phase(): string { return this.phaseName() }
   private lastHash = ''
 
+  /**
+   * Adjusts physical values while the sim runs: tire friction and the shot (efficiency, backspin) act at once; robot mass and bumper friction
+   * are read when the robot body is built, so they apply from the next reset().
+   */
+  tune(p: { mu?: number; mass?: number; efficiency?: number; backspin?: number; bumperFriction?: number }): void {
+    if (this.drivetrain) {
+      if (p.mu !== undefined) this.drivetrain.spec.mu = p.mu
+      if (p.mass !== undefined) this.drivetrain.spec.mass = p.mass
+    }
+    this.ballSystem?.tuneShooter(p.efficiency, p.backspin)
+    if (p.bumperFriction !== undefined) this.robotSpec.chassis = { ...this.robotSpec.chassis, friction: p.bumperFriction }
+  }
+
+  /** Estimated current drawn from the battery by the drivetrain and the mechanisms in the last step, amps. */
+  batteryAmps(): number {
+    let a = this.drivetrain?.currentAmps ?? 0
+    for (const m of this.mechanisms.values()) a += m.supplyAmps
+    return a
+  }
+
+  /** Frees the physics world (WebAssembly memory): call when an engine is thrown away, as the seed sweep does after every run. */
+  dispose(): void { this.world?.free() }
+
+  /** The alliance the simulated robot plays for. */
+  /** The robot's ground position and heading right now (field frame). */
+  robotGroundPose(): { x: number; y: number; yaw: number } {
+    const t = this.robot.translation(), q = this.robot.rotation()
+    return { x: t.x, y: t.y, yaw: 2 * Math.atan2(q.z, q.w) }
+  }
+  get robotAlliance(): Alliance { return this.robotSpec.alliance ?? 'blue' }
+
   /** The Game Data string the field system would send the robot now. */
   get gameData(): string { return this.game.gameData ? this.game.gameData(this.gameState, this.time) : '' }
   get scoreTotals(): Record<Alliance, number> { return { ...this.scores } }
@@ -774,11 +805,20 @@ export class Engine {
   }
   private observers: ((e: GameEvent, time: number) => void)[] = []
 
+  /** Watches every score entry (points, who, why) as it is added. Returns a function that removes it. */
+  observeScores(fn: (s: ScoreEntry) => void): () => void {
+    this.scoreObservers.push(fn)
+    return () => { this.scoreObservers = this.scoreObservers.filter((o) => o !== fn) }
+  }
+  private scoreObservers: ((s: ScoreEntry) => void)[] = []
+
   private applyScores(scores: Score[]): void {
     for (const s of scores) {
       this.scores[s.alliance] += s.points
-      this.scoreLog.push({ ...s, time: this.time })
+      const entry = { ...s, time: this.time }
+      this.scoreLog.push(entry)
       if (this.scoreLog.length > SCORE_LOG_CAP) this.scoreLog.shift()
+      for (const o of this.scoreObservers) o(entry)
     }
   }
 

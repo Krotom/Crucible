@@ -137,7 +137,11 @@ export class Drivetrain {
     add(this.unwrappedYaw); add(this.accX); add(this.accY); add(this.pitch); add(this.roll)
   }
 
+  /** Estimated battery current of the last step, amps: the winding current of every module motor times its duty (|volts| / 12). */
+  currentAmps = 0
+
   reset(): void {
+    this.currentAmps = 0
     for (const s of this.states) { s.wheelAngle = 0; s.wheelSpeed = 0; s.azimuth = 0; s.azimuthSpeed = 0; s.prevDriveRotorRps = 0; s.prevSteerRotorRps = 0; s.driveAccel = 0; s.steerAccel = 0 }
     this.unwrappedYaw = 0; this.lastYaw = null; this.lastOmega = 0
     this.accX = 0; this.accY = 0; this.pitch = 0; this.roll = 0; this.pitchRate = 0; this.rollRate = 0
@@ -157,6 +161,7 @@ export class Drivetrain {
     let fy = 0
     let torque = 0
 
+    let amps = 0
     sp.modules.forEach((mod, i) => {
       const s = this.states[i]
       const rx = cy * mod.x - sy * mod.y
@@ -181,6 +186,8 @@ export class Drivetrain {
         if (Math.abs(tau) > tauMax) w = s.azimuthSpeed + (Math.sign(tau) * tauMax * dt) / sp.steerInertia
         s.azimuthSpeed = w
         s.azimuth += w * dt
+        const iSteer = Math.min(sp.steerCurrentLimit, Math.abs((vEff - sm.ke * sp.steerRatio * w) / sm.resistance))
+        amps += (iSteer * Math.min(12, Math.abs(vEff))) / 12
       }
 
       // ---- drive wheel: motor torque plus implicit contact stiffness
@@ -213,6 +220,7 @@ export class Drivetrain {
       }
       s.wheelSpeed = w
       s.wheelAngle += w * dt
+      amps += (Math.min(sp.driveCurrentLimit, Math.abs((vEff - dm.ke * sp.driveRatio * w) / dm.resistance)) * Math.min(12, Math.abs(vEff))) / 12
 
       const wx = fLong * dx - fLat * dy
       const wy = fLong * dy + fLat * dx
@@ -228,6 +236,7 @@ export class Drivetrain {
       s.prevDriveRotorRps = driveRps
       s.prevSteerRotorRps = steerRps
     })
+    this.currentAmps = amps
 
     // continuous yaw for the Pigeon
     if (this.lastYaw !== null) {
