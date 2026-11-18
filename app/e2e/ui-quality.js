@@ -3,6 +3,7 @@ const fs = require('fs')
 const { check, expect, eq, sleep, summary, launch } = require('./lib')
 const { makeLog } = require('./wpilog')
 const SP = process.env.SP
+const VERSION = require('../package.json').version // the app's own version: a release must not break the checks that read it
 const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
 const LOG1 = OUT + '/q-first.wpilog', LOG2 = OUT + '/q-second.wpilog'
 fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
@@ -159,10 +160,10 @@ fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
 
   // ---------------------------------------------------------------- update check and what's new
   await check('Q20 an updated app announces itself with a toast (never a blocking dialog); a first run says nothing; the toast opens the list of changes', async () => {
-    await ev(() => localStorage.removeItem('crucible-lastseen')); await reload(); eq((await toasts()).filter((t) => t.includes('Updated to')).length, 0, 'first run: silent'); eq(await ev(() => localStorage.getItem('crucible-lastseen')), '1.1.0')
+    await ev(() => localStorage.removeItem('crucible-lastseen')); await reload(); eq((await toasts()).filter((t) => t.includes('Updated to')).length, 0, 'first run: silent'); eq(await ev(() => localStorage.getItem('crucible-lastseen')), VERSION)
     await ev(() => localStorage.setItem('crucible-lastseen', '1.0.0')); await reload()
-    expect((await toasts()).some((t) => t.includes('Updated to v1.1.0')), 'toast: ' + (await toasts())); eq(await page.$eval('#whatsnew', (d) => d.open), false, 'no dialog in the way')
-    await page.evaluate(() => document.querySelector('#toasts .toast')?.click()); await page.waitForSelector('#whatsnew[open]'); expect((await T('#whatsnew-body')).includes('1.1.0'), await T('#whatsnew-body')); await page.keyboard.press('Escape')
+    expect((await toasts()).some((t) => t.includes('Updated to v' + VERSION)), 'toast: ' + (await toasts())); eq(await page.$eval('#whatsnew', (d) => d.open), false, 'no dialog in the way')
+    await page.evaluate(() => document.querySelector('#toasts .toast')?.click()); await page.waitForSelector('#whatsnew[open]'); expect((await T('#whatsnew-body')).includes(VERSION), await T('#whatsnew-body')); await page.keyboard.press('Escape')
     await reload(); eq((await toasts()).filter((t) => t.includes('Updated to')).length, 0, 'only once')
   })
   await check('Q21 About: What\'s new button and an update check that says what happened in words (newer, current, none yet, unreachable)', async () => {
@@ -170,7 +171,7 @@ fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
     const fake = (code, body, fail) => app.evaluate(({ shell }, { code, body, fail }) => { globalThis.__opened = []; shell.openExternal = async (u) => { globalThis.__opened.push(u) }; globalThis.fetch = async () => { if (fail) throw new Error('getaddrinfo ENOTFOUND api.github.com'); return { status: code, json: async () => body } } }, { code, body, fail })
     await fake(200, { tag_name: 'v9.9.9', html_url: 'https://github.com/example/x/releases/tag/v9.9.9' }); await page.click('#update-btn'); await sleep(500)
     expect((await T('#update-status')).includes('9.9.9 is available'), await T('#update-status')); await page.click('#update-status a'); await sleep(200); eq(await app.evaluate(() => globalThis.__opened), ['https://github.com/example/x/releases/tag/v9.9.9'], 'opened the release page in the browser')
-    await fake(200, { tag_name: 'v1.1.0' }); await page.click('#update-btn'); await sleep(400); expect((await T('#update-status')).includes('latest version'), await T('#update-status'))
+    await fake(200, { tag_name: 'v' + VERSION }); await page.click('#update-btn'); await sleep(400); expect((await T('#update-status')).includes('latest version'), await T('#update-status'))
     await fake(404, { message: 'Not Found' }); await page.click('#update-btn'); await sleep(400); expect((await T('#update-status')).includes('No release has been published'), await T('#update-status'))
     await fake(0, null, true); await page.click('#update-btn'); await sleep(400); expect((await T('#update-status')).includes('Could not reach'), await T('#update-status')); expect(!(await page.$eval('#update-btn', (b) => b.disabled)), 'the button is usable again')
     await fake(200, { tag_name: 'v9.9.9', html_url: 'javascript:alert(1)' }); await page.click('#update-btn'); await sleep(400); eq(await page.$$eval('#update-status a', (a) => a.length), 0, 'no link for a non-https address'); await page.keyboard.press('Escape')

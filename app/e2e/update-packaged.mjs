@@ -26,6 +26,7 @@ const appDir = path.join(install, fs.readdirSync(install)[0])
 const exe = path.join(appDir, 'balta-crucible')
 const appPkg = path.join(appDir, 'resources', 'app', 'package.json')
 const version = (f) => JSON.parse(fs.readFileSync(f, 'utf8')).version
+const OLD_VERSION = version(appPkg) // the version of the package under test, whatever it is
 
 // the "new release": the same folder with another version and a marker, packed under the name a real release has
 const newName = 'BALTA-Crucible-9.0.0-linux-x64'
@@ -81,7 +82,7 @@ await check('U3 a damaged download is refused, the message says why, and nothing
   await page.click('#update-install')
   await page.waitForFunction(() => document.getElementById('update-status').textContent.includes('not installed'), null, { timeout: 60000 })
   const t = await page.textContent('#update-status'); expect(t.includes('checksum'), t)
-  expect(version(appPkg) === '1.1.0', 'still the old version'); expect(!fs.existsSync(path.join(appDir, 'resources', 'app', 'UPDATED_MARKER')), 'no marker')
+  expect(version(appPkg) === OLD_VERSION, 'still the old version'); expect(!fs.existsSync(path.join(appDir, 'resources', 'app', 'UPDATED_MARKER')), 'no marker')
   expect(!(await page.$eval('#update-install', (b) => b.disabled)), 'the button works again'); expect(pids().length > 0, 'the app is still running')
 })
 mode = 'good'

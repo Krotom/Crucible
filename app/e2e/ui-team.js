@@ -3,6 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const { check, expect, eq, sleep, summary, launch, APP, setPlaying } = require('./lib')
 const SP = process.env.SP
+const VERSION = require('../package.json').version // the app's own version: a release must not break the checks that read it
 const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
 ;(async () => {
   let { app, page, errors, userData } = await launch()
@@ -183,7 +184,7 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
     const unk = await post('explode', {}, token); eq(unk.status, 400); expect(unk.json.error.includes('unknown action "explode"'), unk.json.error)
   })
   await check('T19 status, start, play, pause, step, reset and stop work through the API and match what the page shows', async () => {
-    const s0 = await call('/api/status', {}, token); eq(s0.status, 200); eq(s0.json.result.simActive, false); eq(s0.json.result.version, '1.1.0'); eq((await post('reset', {}, token)).status, 400, 'reset without a sim says so')
+    const s0 = await call('/api/status', {}, token); eq(s0.status, 200); eq(s0.json.result.simActive, false); eq(s0.json.result.version, VERSION); eq((await post('reset', {}, token)).status, 400, 'reset without a sim says so')
     await page.click('[data-tab=session]'); await page.selectOption('#game-select', 'test'); const st = await post('start', {}, token); eq(st.status, 200); eq(st.json.result.simActive, true); await sleep(400); expect(await page.$eval('#start-sim', (b) => b.textContent === 'Stop sim'), 'the page shows the sim running')
     const a = await call('/api/status', {}, token); expect(typeof a.json.result.time === 'number' && a.json.result.robot && typeof a.json.result.robot.x === 'number', JSON.stringify(a.json.result)); eq(a.json.result.phase, 'auto')
     await post('pause', {}, token); await sleep(300); const t1 = (await call('/api/status', {}, token)).json.result.time; await sleep(500); const t2 = (await call('/api/status', {}, token)).json.result.time; eq(t1, t2, 'paused')

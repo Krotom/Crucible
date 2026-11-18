@@ -5,9 +5,9 @@ How a release is made, what is in it, how the app updates itself from it, and wh
 ## Making a release
 
 1. Bump `version` in `app/package.json` (and `app/package-lock.json`: `npm version <x.y.z> --no-git-tag-version` does both) and add an entry for that version at the top of `CHANGELOG` in `app/src/renderer/src/lib/versions.ts`. The entry is the release notes and the app's "What's new"; a unit test fails when the current version has no entry, and the release stops at its first step without one.
-2. Merge to `main`. The **Release** workflow (`.github/workflows/release.yml`) runs because `app/package.json` changed, creates the tag `v<version>` together with the GitHub release, and attaches the files.
+2. Merge to `main`. The **CI** workflow runs first. When it has **fully succeeded** (every job, the UI suites included) on that commit, the **Release** workflow (`.github/workflows/release.yml`) follows it (a `workflow_run` trigger) and, if the version in `app/package.json` has no release yet, builds that same commit, creates the tag `v<version>` together with the GitHub release, and attaches the files. When CI fails, the Release run shows as skipped and nothing is built or published: fix CI, and the Release follows the next green CI run.
 
-Other ways in: push a tag `v<version>` yourself (it must match `package.json`, or the workflow stops), or run the workflow by hand (Actions > Release > Run workflow). By hand, **publish** is off by default: everything is built and the files stay as workflow artifacts without making a release. A push to `main` that touches `app/package.json` without changing the version (a dependency, say) finds the release already exists and does nothing, so published files are never silently replaced. To replace the files of an existing release, push its tag again or run the workflow by hand with publish on: it uploads with `--clobber`.
+Other ways in: push a tag `v<version>` yourself (it must match `package.json`, or the workflow stops), or run the workflow by hand (Actions > Release > Run workflow). A tag, or a manual run with publish on, is **refused unless CI has succeeded on that commit** (the plan job asks for it). By hand, **publish** is off by default: everything is built and the files stay as workflow artifacts without making a release (no CI result needed then). A green CI run on `main` that does not bring a new version (a dependency, a test) finds the release already exists and does nothing, so published files are never silently replaced. To replace the files of an existing release, push its tag again or run the workflow by hand with publish on: it uploads with `--clobber`.
 
 A version with a hyphen (`1.2.0-beta.1`) is published as a pre-release; the app's update check ignores pre-releases (it asks for the latest full release).
 
@@ -15,7 +15,7 @@ A version with a hyphen (`1.2.0-beta.1`) is published as a pre-release; the app'
 
 | Job | What |
 |---|---|
-| plan | reads the version, checks a pushed tag matches it, decides whether to skip (version unchanged on `main`), writes the release notes from the CHANGELOG |
+| plan | lets a `workflow_run` go on only when CI succeeded in full on a push to `main`; reads the version, checks a pushed tag matches it, refuses a tag or a manual publish whose commit CI has not passed, decides whether to skip (the release for this version exists), writes the release notes from the CHANGELOG; every later job builds the commit CI ran on |
 | checks | typecheck and unit tests |
 | icons | makes `build/icon.png` and `icon.ico` from the brand emblem with ImageMagick (`build/` is not committed) |
 | build (4 jobs) | Windows (NSIS installer), Linux (tar.gz), macOS Apple silicon (zip), macOS Intel (zip); each runs `npm run package` on its own system |

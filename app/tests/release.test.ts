@@ -32,9 +32,17 @@ describe('release workflow', () => {
     for (const m of yml.matchAll(/node (scripts\/[\w.-]+\.mjs|e2e\/[\w.-]+\.mjs)/g)) expect(() => read(`../${m[1]}`), m[1]).not.toThrow()
     for (const m of yml.matchAll(/npm run ([\w:-]+)/g)) expect(pkg.scripts[m[1]], `npm run ${m[1]}`).toBeTruthy()
   })
-  it('releases on a version change on main, on a v* tag, or by hand; a push that keeps the version does not touch an existing release', () => {
-    expect(yml).toMatch(/branches: \[main\]\n\s+paths: \['app\/package\.json'\]/); expect(yml).toMatch(/tags: \['v\*'\]/); expect(yml).toMatch(/workflow_dispatch/)
+  it('releases only after CI has fully succeeded on main (a new version), on a v* tag, or by hand; a CI run without a new version does not touch an existing release', () => {
+    expect(yml).toMatch(/workflow_run:\n\s+workflows: \[CI\]\n\s+types: \[completed\]\n\s+branches: \[main\]/); expect(yml).toMatch(/tags: \['v\*'\]/); expect(yml).toMatch(/workflow_dispatch/)
+    expect(yml).not.toMatch(/paths: \['app\/package\.json'\]/) // the release no longer starts beside CI: it follows it
+    expect(yml).toMatch(/github\.event\.workflow_run\.conclusion == 'success'/); expect(yml).toMatch(/github\.event\.workflow_run\.event == 'push'/)
     expect(yml).toMatch(/skip=true/); expect(yml).toMatch(/if: needs\.plan\.outputs\.skip != 'true'/); expect(yml).toMatch(/does not match the version in app\/package\.json/)
+  })
+  it('builds the commit CI ran on, and refuses a tag or a manual publish that CI has not passed', () => {
+    expect(yml).toMatch(/ref: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/) // a workflow_run's own SHA is the newest commit of main, not the one CI tested
+    expect((yml.match(/ref: \$\{\{ needs\.plan\.outputs\.sha \}\}/g) ?? []).length).toBe(4) // checks, icons, every build, publish
+    expect(yml).toMatch(/--target "\$\{\{ needs\.plan\.outputs\.sha \}\}"/)
+    expect(yml).toMatch(/gh run list --workflow CI --commit[^\n]*--status success/); expect(yml).toMatch(/the CI workflow has not succeeded on commit/); expect(yml).toMatch(/actions: read/)
   })
   it('gates the build on the checks, publishes only from the last job, and gives only that job write access', () => {
     expect(yml).toMatch(/build:[\s\S]*needs: \[plan, checks, icons\]/); expect(yml).toMatch(/publish:[\s\S]*needs: \[plan, build\]/)

@@ -1,13 +1,17 @@
 name: Release
 
-# A release is made when the version in app/package.json changes on main (the tag v<version> is created with the release), when a tag v* is pushed,
-# or by hand (Actions > Release > Run workflow; "publish" off builds everything and keeps the files as workflow artifacts without releasing).
+# A release is made after the CI workflow has FULLY succeeded on main (every job of it) and the version in app/package.json has no release yet (the tag v<version>
+# is created with the release); when a tag v* is pushed; or by hand (Actions > Release > Run workflow; "publish" off builds everything and keeps the files as
+# workflow artifacts without releasing). A tag or a manual publish is refused unless CI has succeeded on that commit.
 # Windows gets the installer, Linux a tar.gz, macOS one zip per processor type; every file is listed in SHA256SUMS.txt (signed when a signing key is set up),
 # which is what the app's self-update checks before it installs anything.
 on:
-  push:
+  # runs when CI has finished on main; the plan job lets it go on only when CI succeeded and the version is new
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths: ['app/package.json']
+  push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -22,13 +26,17 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   plan:
     name: Plan
+    # a workflow_run starts for every CI run that finishes: only a push to main whose CI succeeded in full goes on (the others show as skipped, not failed)
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
+      sha: ${{ steps.v.outputs.sha }}
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
       prerelease: ${{ steps.v.outputs.prerelease }}
@@ -36,6 +44,8 @@ jobs:
       skip: ${{ steps.v.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -43,6 +53,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           version=$(node -p "require('./app/package.json').version")
           tag="v$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -54,11 +66,23 @@ jobs:
           fi
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then publish="${{ inputs.publish }}"; else publish=true; fi
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
-          # a push to main that did not change the version (a dependency changed, say) must not touch a release that exists
+          # a CI run on main that did not bring a new version (a dependency changed, say) must not touch a release that exists
           skip=false
-          if [ "$GITHUB_REF_TYPE" = "branch" ] && [ "$GITHUB_EVENT_NAME" = "push" ] && gh release view "$tag" >/dev/null 2>&1; then skip=true; fi
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ] && gh release view "$tag" >/dev/null 2>&1; then skip=true; fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
-          echo "version $version, tag $tag, publish $publish, skip $skip"
+          echo "version $version, tag $tag, publish $publish, skip $skip, commit $sha"
+      - name: CI must have fully succeeded on this commit (a tag or a manual publish)
+        if: github.event_name != 'workflow_run' && steps.v.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ok=$(gh run list --workflow CI --commit "${{ steps.v.outputs.sha }}" --status success --json databaseId --jq length)
+          if [ "$ok" = "0" ]; then
+            echo "::error::the CI workflow has not succeeded on commit ${{ steps.v.outputs.sha }}: wait for it, or fix it, before releasing"
+            exit 1
+          fi
+          echo "CI succeeded on ${{ steps.v.outputs.sha }}"
       - name: Release notes (fails when the version has no CHANGELOG entry)
         if: steps.v.outputs.skip != 'true'
         run: node app/scripts/release-notes.mjs "${{ steps.v.outputs.version }}" > notes.md
@@ -79,6 +103,8 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -96,6 +122,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -127,6 +155,8 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -199,6 +229,8 @@ jobs:
       TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -233,5 +265,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" dist/* --title "BALTA Crucible ${{ needs.plan.outputs.version }}" --notes-file notes.md --target "$GITHUB_SHA" $prerelease
+            gh release create "$TAG" dist/* --title "BALTA Crucible ${{ needs.plan.outputs.version }}" --notes-file notes.md --target "${{ needs.plan.outputs.sha }}" $prerelease
           fi
