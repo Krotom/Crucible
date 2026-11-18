@@ -18,6 +18,8 @@ export interface PanelModel {
 export interface SimInfo {
   running: boolean
   simRate: number
+  /** wall time per physics step and the frame rate of the page, for the performance rows */
+  perf?: { stepMs: number; worstMs: number; dtMs: number; fps?: number }
   bridge: BridgeInfo | null
   /** the scoring volumes of the field and the robot's alliance, for the distance to its HUB */
   hubs?: { x: number; y: number; alliance: string }[]
@@ -51,6 +53,18 @@ export function buildSimModel(f: RenderFrame, info: SimInfo): PanelModel {
       { id: 'speed', label: 'Speed', value: info.running ? `${info.simRate.toFixed(2)}x real time` : 'Paused', tone: info.running ? undefined : 'warn', hint: 'How fast the simulation runs compared with the clock on the wall' },
     ],
   })
+
+  if (info.running && info.perf && info.perf.stepMs > 0) {
+    const p = info.perf
+    // a step must cost less than the time it simulates, or the sim cannot keep up with the clock
+    const load = p.stepMs / p.dtMs
+    sections[0].rows.push({
+      id: 'cost', label: 'Physics cost', value: `${p.stepMs.toFixed(2)} ms per ${p.dtMs.toFixed(0)} ms step (${(load * 100).toFixed(0)}%), worst ${p.worstMs.toFixed(1)}`,
+      tone: load > 0.9 ? 'bad' : load > 0.6 ? 'warn' : undefined,
+      hint: 'Wall time one physics step takes against the simulated time it covers. Over 100% the sim cannot keep up with real time: use a larger step (Session tab) or fewer pieces in motion.',
+    })
+    if (p.fps !== undefined) sections[0].rows.push({ id: 'fps', label: 'Drawing', value: `${p.fps.toFixed(0)} frames per second`, tone: p.fps < 30 ? 'warn' : undefined, hint: 'How often the 3D view is redrawn' })
+  }
 
   const field: Row[] = [
     { id: 'pieces', label: 'FUEL on field', value: `${f.pieceCount} (${f.awakeCount} moving)`, hint: 'Game pieces in the world. Resting ones are frozen to keep the sim fast.' },

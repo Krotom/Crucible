@@ -504,7 +504,25 @@ export class Engine {
     return out
   }
 
+  /** wall time spent in step(), since the last takeStepStats(): only for the performance readout, never read by the simulation */
+  private stepWall = { sum: 0, max: 0, n: 0 }
+  takeStepStats(): { avgMs: number; worstMs: number; steps: number } {
+    const w = this.stepWall
+    const r = { avgMs: w.n > 0 ? w.sum / w.n : 0, worstMs: w.max, steps: w.n }
+    this.stepWall = { sum: 0, max: 0, n: 0 }
+    return r
+  }
+
   step(): void {
+    const t0 = performance.now()
+    this.stepInner()
+    const ms = performance.now() - t0
+    const w = this.stepWall
+    w.sum += ms; w.n++
+    if (ms > w.max) w.max = ms
+  }
+
+  private stepInner(): void {
     for (const [id, m] of this.mechanisms) m.step(this.dt, this.mechanismVolts.get(id) ?? 0)
     const v0 = this.robot.linvel()
     if (this.drivetrain) this.driveFromMotors()

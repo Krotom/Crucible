@@ -56,3 +56,21 @@ describe('sim panel model', () => {
     expect(value(waiting, 'link', 'rtt')).toBeUndefined()
   })
 })
+
+describe('performance rows', () => {
+  const base = { running: true, simRate: 1, bridge: null }
+  it('shows the cost of a physics step against the time it covers, and warns when it is close to it', () => {
+    const f = frame()
+    const ok = value(buildSimModel(f, { ...base, perf: { stepMs: 0.5, worstMs: 2, dtMs: 2, fps: 60 } }), 'match', 'cost')!
+    expect(ok.value).toContain('25%')
+    expect(ok.tone).toBeUndefined()
+    expect(value(buildSimModel(f, { ...base, perf: { stepMs: 1.4, worstMs: 5, dtMs: 2 } }), 'match', 'cost')!.tone).toBe('warn')
+    expect(value(buildSimModel(f, { ...base, perf: { stepMs: 2.4, worstMs: 9, dtMs: 2 } }), 'match', 'cost')!.tone).toBe('bad')
+  })
+  it('shows the frame rate when known and nothing while paused', () => {
+    const f = frame()
+    expect(value(buildSimModel(f, { ...base, perf: { stepMs: 0.5, worstMs: 2, dtMs: 2, fps: 24 } }), 'match', 'fps')!.tone).toBe('warn')
+    expect(value(buildSimModel(f, { ...base, perf: { stepMs: 0.5, worstMs: 2, dtMs: 2 } }), 'match', 'fps')).toBeUndefined()
+    expect(value(buildSimModel(f, { ...base, running: false, perf: { stepMs: 0.5, worstMs: 2, dtMs: 2 } }), 'match', 'cost')).toBeUndefined()
+  })
+})

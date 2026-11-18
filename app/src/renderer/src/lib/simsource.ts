@@ -22,6 +22,7 @@ export class SimSource {
   /** how many simulated seconds the sim can be taken back (0 with robot code) */
   canRewind = 0
   simRate = 0
+  perf: { stepMs: number; worstMs: number; dtMs: number } | undefined
   bridge: BridgeInfo | null = null
   /** Called for every frame the worker sends (not just the latest one per screen refresh), with the events since the previous frame. */
   onFrame: ((f: RenderFrame, events: UiEvent[]) => void) | null = null
@@ -68,6 +69,7 @@ export class SimSource {
     this.slots = m.slots
     this.canRewind = m.canRewind
     this.simRate = m.simRate
+    this.perf = m.perf
     this.bridge = m.bridge ?? null
     if (f.time < this.lastTime - 1e-9) { this.store.startLive('Sim'); this.lastPushed = -1 } // reset or state load: time went backwards
     this.lastTime = f.time

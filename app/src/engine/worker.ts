@@ -34,6 +34,7 @@ let lastTick = performance.now()
 let lastPost = 0
 let rateWindow = { wall: performance.now(), sim: 0 }
 let simRate = 0
+let perf: { stepMs: number; worstMs: number; dtMs: number } | undefined
 let lastSimTime = 0
 
 const post = (m: FromWorker): void => (self as unknown as Worker).postMessage(m)
@@ -110,7 +111,7 @@ function postFrame(): void {
   else frame.hash = lastHash
   const st = bridge?.status
   post({
-    type: 'frame', frame, running, speed, hasSnapshot: slots.some((x) => x !== null), slots: slots.map((x) => x !== null), canRewind: bridge ? 0 : Math.max(0, engineTime() - (ring[0]?.time ?? engineTime())), simRate, events: pendingEvents.splice(0),
+    type: 'frame', frame, running, speed, hasSnapshot: slots.some((x) => x !== null), slots: slots.map((x) => x !== null), canRewind: bridge ? 0 : Math.max(0, engineTime() - (ring[0]?.time ?? engineTime())), simRate, perf, events: pendingEvents.splice(0),
     bridge: st && {
       connected: st.connected, frames: st.frames, robotTime: st.robotTime, skipped: st.skipped, robotEnabled: st.robotEnabled, hello: st.helloDevices,
       helloIssues: st.helloIssues, components: st.components, fms: bridge?.fms ?? false, rttMs: (bridge?.rtt ?? 0) * 1000, leadMs: (bridge?.lead ?? 0) * 1000,
@@ -148,6 +149,7 @@ function tick(): void {
   if (engine && bridge) { rateWindow.sim += Math.max(0, engine.time - lastSimTime); lastSimTime = engine.time } // the robot drives the clock: measure how fast it runs
   if (now - rateWindow.wall > 500) {
     simRate = rateWindow.sim / ((now - rateWindow.wall) / 1000)
+    if (engine) { const st = engine.takeStepStats(); if (st.steps > 0) perf = { stepMs: st.avgMs, worstMs: st.worstMs, dtMs: engine.dt * 1000 } }
     rateWindow = { wall: now, sim: 0 }
   }
   if ((running || bridge) && now - lastPost > 16) { lastPost = now; postFrame() }

@@ -78,7 +78,7 @@ export interface BridgeInfo {
 
 export type FromWorker =
   | WorkerReady
-  | { type: 'frame'; frame: RenderFrame; running: boolean; speed: number; hasSnapshot: boolean; slots: boolean[]; canRewind: number; simRate: number; bridge?: BridgeInfo; events: UiEvent[] }
+  | { type: 'frame'; frame: RenderFrame; running: boolean; speed: number; hasSnapshot: boolean; slots: boolean[]; canRewind: number; simRate: number; perf?: { stepMs: number; worstMs: number; dtMs: number }; bridge?: BridgeInfo; events: UiEvent[] }
   | { type: 'error'; message: string }
   /** a breakpoint stopped the run */
   | { type: 'paused'; reason: string; time: number }
