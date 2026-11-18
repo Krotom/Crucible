@@ -49,9 +49,9 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
-      # The runner image already has Xvfb and the libraries Electron needs; only ui-layout needs ImageMagick and Pillow (for its pixel checks). Install everything only if the image changes.
+      # The runner image already has Xvfb and the libraries Electron needs; ImageMagick and Pillow (pixel checks in ui-layout and ui-view) are not on it. Install only what is missing.
       - run: |
-          if ! command -v xvfb-run >/dev/null || [ "${{ matrix.suite }}" = "ui-layout" ]; then
+          if ! command -v xvfb-run >/dev/null || ! python3 -c 'import PIL' 2>/dev/null || ! command -v import >/dev/null; then
             sudo apt-get update && sudo apt-get install -y xvfb libnss3 libgbm1 libasound2t64 libgtk-3-0t64 x11-utils python3-pil imagemagick
           fi
       - run: npm ci

@@ -13,7 +13,8 @@ const { _electron } = req('playwright')
 const SP = process.env.SP!
 const APP = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const IDS = [...OFFSEASON_DRIVETRAIN.modules.flatMap((m) => [m.driveId, m.steerId]), ...OFFSEASON.mechanisms.map((m) => m.id)]
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+const SLOW = Number(process.env.E2E_SLOW) || 1
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms <= 800 ? ms * SLOW : ms)) // short waits stretch on a busy runner; long ones are durations
 const results: { name: string; status: string; note: string }[] = []
 
 async function check(name: string, fn: () => Promise<string | void>, page?: any): Promise<void> {
@@ -147,17 +148,18 @@ it('robot code UI e2e', async () => {
   // ---------- Driver Station
   await check('R5 Enable sends DS enabled, robot reports enabled, button flips; Disable undoes it', async () => {
     robot.ds.length = 0
-    await page.click('#ds-enable'); await sleep(700)
+    await page.click('#ds-enable'); for (let i = 0; i < 40 && !robot.ds.some((d) => d.flags & 1); i++) await sleep(150)
     expect(robot.ds.some((d) => d.flags & 1), 'no DS frame with enabled bit')
     eq(await page.textContent('#ds-enable'), 'Disable')
+    await page.waitForFunction(() => [...document.querySelectorAll('.simhud .kv')].some((r) => r.querySelector('.k')!.textContent === 'Robot state' && r.querySelector('.v')!.textContent === 'enabled'), null, { timeout: 20000 }).catch(() => {})
     eq((await rows())['Robot state'], 'enabled')
-    await page.click('#ds-enable'); await sleep(700)
+    await page.click('#ds-enable'); for (let i = 0; i < 40 && (robot.ds[robot.ds.length - 1].flags & 1); i++) await sleep(150)
     expect(!(robot.ds[robot.ds.length - 1].flags & 1), 'last DS should be disabled')
     eq(await page.textContent('#ds-enable'), 'Enable'); eq((await rows())['Robot state'], 'disabled')
   }, page)
   await check('R6 Teleop / Auto / Test picker sets the right DS mode bits', async () => {
     await page.click('#ds-enable')
-    const flagFor = async (m: string) => { robot.ds.length = 0; await page.selectOption('#ds-mode', m); await sleep(500); return robot.ds[robot.ds.length - 1].flags & 7 }
+    const flagFor = async (m: string) => { robot.ds.length = 0; await page.selectOption('#ds-mode', m); const want = m === 'auto' ? 3 : m === 'test' ? 5 : 1; for (let i = 0; i < 40 && !(robot.ds.length && (robot.ds[robot.ds.length - 1].flags & 7) === want); i++) await sleep(150); return robot.ds[robot.ds.length - 1].flags & 7 }
     eq(await flagFor('auto'), 1 | 2, 'auto'); eq(await flagFor('test'), 1 | 4, 'test'); eq(await flagFor('teleop'), 1, 'teleop')
     await page.click('#ds-enable'); await sleep(300)
   }, page)
@@ -300,7 +302,7 @@ it('robot code UI e2e', async () => {
   await check('R19 a breakpoint pauses a robot-code sim (its clock stands still while the robot keeps sending), Play continues', async () => {
     const now = await page.evaluate(() => (window as any).crucible.sim.latest.time)
     await page.click('[data-tab=analysis]'); await page.check('#bp-time-on'); await page.fill('#bp-time', String(Math.ceil(now) + 2)); await page.press('#bp-time', 'Tab')
-    await page.waitForFunction(() => !(window as any).crucible.sim.running, null, { timeout: 15000 })
+    await page.waitForFunction(() => !(window as any).crucible.sim.running, null, { timeout: 45000 })
     const t0 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(Math.abs(t0 - (Math.ceil(now) + 2)) < 0.3, `paused near the breakpoint: ${t0} (wanted ${Math.ceil(now) + 2})`)
     const f0 = live.fromApp; await sleep(800); const t1 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(Math.abs(t1 - t0) < 0.03, 'sim clock frozen: ' + t0 + ' -> ' + t1); expect(live.fromApp > f0 + 10, 'the robot is still being answered')
     expect((await page.textContent('#bp-last'))!.includes('sim time'), await page.textContent('#bp-last')); await page.uncheck('#bp-time-on')

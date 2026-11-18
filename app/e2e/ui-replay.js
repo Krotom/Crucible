@@ -19,7 +19,7 @@ fs.writeFileSync(OUT + '/ref.wpilog', makeLog(10))
     await page.waitForFunction(() => document.querySelector('.simhud .kv') && crucible.sim.ready, null, { timeout: 15000 }); await sleep(300)
   }
   // press a button that changes the sim time (back 1 s, back 5 s ...) and wait for the new time to reach the page before reading it
-  const press = async (sel) => { const before = await ev(() => crucible.sim.latest.time); await page.click(sel); await page.waitForFunction((b) => crucible.sim.latest.time !== b, before, { timeout: 20000 }); for (let i = 0, last = null, same = 0; i < 150 && same < 3; i++) { const now = await ev(() => [crucible.sim.latest.time.toFixed(2), crucible.recorder.time.toFixed(2)]); same = now[0] === last && now[0] === now[1] ? same + 1 : 0; last = now[0]; await sleep(120) } }
+  const press = async (sel) => { const st = await ev((s) => ({ off: document.querySelector(s).disabled, t: crucible.sim.latest.time, back: crucible.sim.canRewind }), sel); if (st.off) throw new Error(`${sel} is off at ${st.t} s (rewindable ${st.back} s)`); const before = await ev(() => crucible.sim.latest.time); await page.click(sel); await page.waitForFunction((b) => crucible.sim.latest.time !== b, before, { timeout: 20000 }); for (let i = 0, last = null, same = 0; i < 150 && same < 3; i++) { const now = await ev(() => [crucible.sim.latest.time.toFixed(2), crucible.recorder.time.toFixed(2)]); same = now[0] === last && now[0] === now[1] ? same + 1 : 0; last = now[0]; await sleep(120) } }
   const runTo = async (t, speed = '8') => { await page.selectOption('#speed', speed); await page.click('#play'); await page.waitForFunction((t) => crucible.sim.latest && crucible.sim.latest.time >= t, t, { timeout: 90000 }); await page.click('#play'); await sleep(350); await page.selectOption('#speed', '1') }
   const steps = async (n) => { for (let i = 0; i < n; i++) await page.click('#sim-step'); await sleep(300) }
   const stubSave = (p) => app.evaluate(({ dialog }, p) => { dialog.showSaveDialog = async () => (p ? { canceled: false, filePath: p } : { canceled: true, filePath: undefined }) }, p)
@@ -31,7 +31,7 @@ fs.writeFileSync(OUT + '/ref.wpilog', makeLog(10))
     expect(!(await page.$eval('#sim-back1', (b) => b.disabled)), 'enabled with history')
     await press('#sim-back1'); const t1 = await simT(); expect(Math.abs(t1 - (t0 - 1)) < 0.011, `back 1 s: ${t0} -> ${t1}`)
     await press('#sim-back5'); const t2 = await simT(); expect(Math.abs(t2 - (t1 - 5)) < 0.011, `back 5 s: ${t1} -> ${t2}`)
-    for (let i = 0; i < 12 && (await simT()) >= 5; i++) await press('#sim-back5') // a late pause can leave the time well past 8 s: go back until less than 5 s are left
+    for (let i = 0; i < 20 && (await simT()) >= 5; i++) await press((await simT()) >= 6 ? '#sim-back5' : '#sim-back1') // a late pause can leave the time well past 8 s: go back until between 1 and 5 s are left (the back buttons are off within 0.25 s of the start)
     await press('#sim-back5'); expect((await simT()) >= 0 && (await simT()) < 0.011, 'clamped at the start: ' + (await simT()))
     expect(await page.$eval('#sim-back1', (b) => b.disabled), 'disabled again at 0')
   })

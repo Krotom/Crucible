@@ -208,6 +208,7 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
   await check('L2 Play at the end restarts from the beginning; speed 8x finishes sooner', async () => {
     await page.selectOption('#speed', '8'); await page.click('#play'); await page.waitForFunction(() => document.getElementById('play').textContent === 'Play', null, { timeout: 8000 })
     const t = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t >= 9.9, 'ended at ' + t)
+    await page.selectOption('#speed', '1') // at 8x a busy page could already be seconds in
     await page.click('#play'); await sleep(300); const t2 = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t2 < 5, 'restart from start, got ' + t2)
     await page.click('#play'); await page.selectOption('#speed', '1')
   })
