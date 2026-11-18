@@ -100,7 +100,7 @@ ballHandling:
     exitForward: 0.15
     exitHeight: 0.62
     wheelRadius: 0.0286
-    efficiency: 0.7
+    efficiency: 0.85            # GUESS: the value at which the robot code's own shot tables (distance to shooter speed and hood angle) score from about 1.6 to 4 m in the sim; 0.7 fell short from 2.4 m on. Not measured: fit it to real shots (Tune > Calibration)
     elevationAtHoodZeroDeg: 80
     hoodDegPerRotation: 10      # Mechanism3d
     backspin: 0.2

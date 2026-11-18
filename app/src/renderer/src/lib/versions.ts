@@ -16,6 +16,15 @@ export interface Release { version: string; title: string; items: string[] }
 
 /** Newest first. Add an entry for each release. */
 export const CHANGELOG: Release[] = [
+  { version: '1.1.1', title: 'Aim fixes, robot launch and a faster 3D view', items: [
+    'Robot code in lockstep now knows where it stands and which way it faces after every sim start, Reset and Start match (it kept the old position and doubled its heading), so the turret aims at the HUB from any start',
+    'Shot efficiency 0.85 (was 0.70): the robot code\'s own shot tables now score from about 1.6 to 4 m in the sim. Still a guess: fit it to real shots in Tune > Calibration',
+    'The app stops the robot program it started when it quits, so no robot simulation is left holding the robot\'s ports',
+    'Robot launch: names the program that holds the robot\'s ports and offers "Stop the old robot"; Gradle uses WPILib\'s own JDK when it is installed',
+    'The scripted cyclers fire from inside their own alliance zone and get through the FUEL pile',
+    'The robot model draws as a few dozen meshes instead of about 10,000: the 3D view is several times faster',
+    'The Windows installer shows Turkish text correctly',
+  ] },
   { version: '1.1.0', title: 'Robot tab, analysis and testing tools', items: [
     'Robot tab: launcher, live Gradle log with error navigation, clickable source links, past runs',
     'Analysis tab: match summary, shot map, timeline, event breakpoints, compare runs, seed sweep',
