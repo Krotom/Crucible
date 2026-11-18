@@ -40,11 +40,14 @@ export class SimPanel {
     let collapsed = false
     try { collapsed = storage()?.getItem(KEY) === '1' } catch { /* not remembered */ }
     this.setCollapsed(collapsed)
-    this.head.addEventListener('click', () => {
-      const next = !this.collapsed
-      this.setCollapsed(next)
-      try { storage()?.setItem(KEY, next ? '1' : '0') } catch { /* not remembered */ }
-    })
+    this.head.addEventListener('click', () => this.toggle())
+  }
+
+  /** Folds or unfolds the details and remembers the choice. */
+  toggle(): void {
+    const next = !this.collapsed
+    this.setCollapsed(next)
+    try { storage()?.setItem(KEY, next ? '1' : '0') } catch { /* not remembered */ }
   }
 
   get collapsed(): boolean { return this.root.classList.contains('collapsed') }

@@ -21,6 +21,7 @@
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 11v5.2M12 7.7v.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
       <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6.5 9.5 12 15l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-keys" viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 10.2h.1M10 10.2h.1M13 10.2h.1M16 10.2h.1M7.5 14h9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
       <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l1.6 2H19a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 19 18H5a1.5 1.5 0 0 1-1.5-1.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
     </svg>
 
@@ -49,6 +50,7 @@
         <button id="shot-btn" class="icon-btn" title="Screenshot of the 3D view (PNG)" aria-label="Screenshot"><svg class="i"><use href="#i-camera" /></svg></button>
         <button id="rec-btn" class="icon-btn rec" title="Record the 3D view to a WebM video" aria-label="Record video"><svg class="i"><use href="#i-rec" /></svg><span id="rec-time" class="rec-time" hidden>0:00</span></button>
         <button id="theme-btn" class="icon-btn" title="Switch between dark and light" aria-label="Theme"><svg class="i"><use href="#i-sun" /></svg></button>
+        <button id="help-btn" class="icon-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg class="i"><use href="#i-keys" /></svg></button>
         <button id="about-btn" class="icon-btn" title="About BALTA Crucible" aria-label="About"><svg class="i"><use href="#i-info" /></svg></button>
       </div>
     </header>
@@ -89,7 +91,15 @@
             <h3>Robot code</h3>
             <label class="field"><span>Mode</span><select id="sim-mode" title="What drives the simulated robot. Start sim (Session tab) uses this choice"><option value="script">Scripted robot</option><option value="robot">Robot code (real time)</option><option value="lockstep">Robot code (lockstep, Mode B)</option></select></label>
             <label class="field"><span>NT host</span><input id="robot-host" value="127.0.0.1" spellcheck="false" title="Where the robot program runs (the same host the Data card connects to)" /></label>
-            <button id="launch-robot" class="wide" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
+            <div class="btnrow">
+              <button id="launch-robot" class="wide" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
+              <button id="relaunch-robot" hidden title="Stop the robot and launch it again (after a code change)">Relaunch</button>
+            </div>
+            <div class="runline" title="What the robot process is doing, read from its output">
+              <span id="run-dot" class="dot dim"></span><span id="run-phase">Not running</span><span class="grow"></span><span id="run-time" class="dimtext"></span>
+            </div>
+            <div id="run-bar" class="runbar" hidden><span></span></div>
+            <label class="check wrapcheck" title="After Launch robot, also press Start sim: the sim waits for the robot program to connect"><input id="auto-sim" type="checkbox" />Also start the sim when launching</label>
             <p id="robot-state" class="hint"></p>
           </div>
 
@@ -98,6 +108,15 @@
               <h3>Gradle output</h3>
               <span class="grow"></span>
               <span id="log-count" class="log-count">0 lines</span>
+            </div>
+            <div class="logbar levels">
+              <label class="check lv error" title="Show error lines"><input id="lv-error" type="checkbox" checked />Errors</label>
+              <label class="check lv warn" title="Show warning lines"><input id="lv-warn" type="checkbox" checked />Warnings</label>
+              <label class="check lv" title="Show ordinary output"><input id="lv-info" type="checkbox" checked />Info</label>
+              <span class="grow"></span>
+              <button id="err-prev" title="Previous error (Shift+N)" disabled>▲</button>
+              <span id="err-count" class="err-count">0 errors</span>
+              <button id="err-next" title="Next error (N)" disabled>▼</button>
             </div>
             <div class="logbar">
               <input id="log-filter" placeholder="Filter lines" spellcheck="false" />
@@ -165,6 +184,15 @@
       <span class="grow"></span>
       <span class="legal">BALTA Crucible <span id="app-version"></span> · BALTA Robotics</span>
     </footer>
+
+    <dialog id="shortcuts">
+      <form method="dialog">
+        <h2 class="dlg-title">Keyboard shortcuts</h2>
+        <div id="shortcut-list" class="shortcut-list"></div>
+        <p class="about-line dim small">Driving the robot: W S forward and back, A D strafe, Q E rotate, J intake, K idle, L shoot, H shoot on the move. Shortcuts do nothing while you type in a box.</p>
+        <div class="about-actions"><button class="primary">Close</button></div>
+      </form>
+    </dialog>
 
     <dialog id="about">
       <form method="dialog">

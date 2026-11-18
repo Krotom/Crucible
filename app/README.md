@@ -35,6 +35,13 @@ If Electron reports "Electron uninstall", its binary was not downloaded; run `no
   automatically (`Swerve/Pose`, `Mechanism3d/Components`). Orbit with the left mouse button, pan with the right one.
 - **Plot:** click a numeric topic in the list to add or remove it; each line is decimated to 6000 points.
 
+## Robot tab, shortcuts, remembered settings
+
+- **Run status.** Under Launch robot a line says what the robot process is doing, read from its output: Starting, Building (with a moving bar and the Gradle task count), Running (waiting for / connected to the sim), Stopped, Exited, or Failed (exit code or "Build failed"), with the elapsed time. **Relaunch** (while running) stops the robot, waits for it to exit, and launches it again. **Also start the sim when launching** presses Start sim for you (robot-code modes only); the sim waits for the robot program to connect.
+- **Log.** Errors / Warnings / Info toggles hide a severity (the app's own lines and BUILD SUCCESSFUL always show); the ▲ ▼ buttons (or **N** / **Shift+N**) jump between errors, counting a message and its stack trace once.
+- **Shortcuts.** Press **?** (or the keyboard button in the title bar) for the list: Space play/pause, **.** step 10 ms, Ctrl+Enter start/stop the sim, Shift+R reset, 1/2/3 tabs, P fold the sim panel, F focus the robot, T theme, Ctrl+L clear the log, Ctrl+F filter the log. Plain-key shortcuts are off while typing in a box, and the driving keys (W A S D Q E J K L H) are never shortcuts.
+- **Remembered.** Game, robot mode, opponent, step, seed, NT host, the auto-start option and the log toggles are kept between runs.
+
 ## Simulation (M2)
 
 **Start sim** runs the engine in a Web Worker with the `game-test` module (a made-up 8 x 5 m field: walls, a block, a goal bin that

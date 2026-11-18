@@ -1,5 +1,6 @@
 // The application chrome around the 3D view: tabs, theme, About, the splash screen and the screenshot / video buttons.
 import { saveBlob, screenshot, timestampName, VideoRecorder, type Saver } from './capture'
+import { keyLabel, SHORTCUTS } from './shortcuts'
 
 declare const __APP_VERSION__: string
 
@@ -16,6 +17,10 @@ function storage(): Storage | null {
   try { return localStorage } catch { return null }
 }
 
+let showTabImpl: (name: string) => void = () => {}
+/** Switches the side panel to a tab ('session', 'robot' or 'topics'). */
+export function showTab(name: string): void { showTabImpl(name) }
+
 export function setupTabs(): void {
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('.tab')]
   const show = (name: string): void => {
@@ -27,7 +32,33 @@ export function setupTabs(): void {
     }
     document.querySelector('.shell')?.classList.toggle('wide', name === 'robot') // wider sidebar for the log
   }
+  showTabImpl = show
   for (const t of tabs) t.addEventListener('click', () => show(t.dataset.tab!))
+}
+
+/** The keyboard shortcut sheet, built from the same table that runs the shortcuts. */
+export function setupShortcutsDialog(): { open: () => void } {
+  const dlg = $<HTMLDialogElement>('shortcuts')
+  const list = $('shortcut-list')
+  for (const group of ['Simulation', 'View', 'Log', 'Help'] as const) {
+    const h = document.createElement('h4')
+    h.textContent = group
+    list.appendChild(h)
+    for (const sc of SHORTCUTS.filter((x) => x.group === group)) {
+      const row = document.createElement('div')
+      row.className = 'sc'
+      const label = document.createElement('span')
+      label.textContent = sc.label
+      const key = document.createElement('kbd')
+      key.textContent = keyLabel(sc.key)
+      row.append(label, key)
+      list.appendChild(row)
+    }
+  }
+  const open = (): void => { if (!dlg.open) dlg.showModal() }
+  $('help-btn').addEventListener('click', open)
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close() })
+  return { open }
 }
 
 export function setupTheme(): void {

@@ -10,7 +10,10 @@ import { parseWpilog } from './lib/wpilog'
 import { LogView } from './lib/robotlog'
 import { SimPanel } from './lib/simpanel'
 import { buildSimModel } from './lib/simmodel'
-import { dismissSplash, setupAbout, setupCapture, setupTabs, setupTheme } from './lib/chrome'
+import { dismissSplash, setupAbout, setupCapture, setupShortcutsDialog, setupTabs, setupTheme, showTab } from './lib/chrome'
+import { RobotRun, formatElapsed } from './lib/robotrun'
+import { bindSettings } from './lib/settings'
+import { findShortcut, keyName } from './lib/shortcuts'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
@@ -201,9 +204,6 @@ function togglePlay(): void {
   playing = !playing
   playEl.textContent = playing ? 'Pause' : 'Play'
 }
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLSelectElement)) { e.preventDefault(); togglePlay() }
-})
 $<HTMLSelectElement>('speed').addEventListener('change', (e) => {
   speed = Number((e.target as HTMLSelectElement).value)
   if (sim.active) sim.send({ type: 'speed', value: speed })
@@ -345,58 +345,141 @@ interface CrucibleHost {
 const robotLog = new LogView($('robot-log'), {
   count: $('log-count'), filter: $<HTMLInputElement>('log-filter'), follow: $<HTMLInputElement>('log-follow'),
   copy: $<HTMLButtonElement>('log-copy'), save: $<HTMLButtonElement>('log-save'), clear: $<HTMLButtonElement>('log-clear'),
+  levels: { error: $<HTMLInputElement>('lv-error'), warn: $<HTMLInputElement>('lv-warn'), info: $<HTMLInputElement>('lv-info') },
+  errCount: $('err-count'), errPrev: $<HTMLButtonElement>('err-prev'), errNext: $<HTMLButtonElement>('err-next'),
 }, (t) => { $('notice').textContent = t })
 
 // one NT host: the Data card (Connect) and the Robot tab edit the same value
 const hostEls = [$<HTMLInputElement>('host'), $<HTMLInputElement>('robot-host')]
-for (const el of hostEls) el.addEventListener('input', () => { for (const o of hostEls) if (o !== el) o.value = el.value })
+for (const el of hostEls) {
+  el.addEventListener('input', () => {
+    // the other box follows, and tells its own listeners (so the remembered value is saved whichever box was edited)
+    for (const o of hostEls) if (o !== el && o.value !== el.value) { o.value = el.value; o.dispatchEvent(new Event('input')) }
+  })
+}
 
 const modeEl = $<HTMLSelectElement>('sim-mode')
 const modeNames: Record<string, string> = { script: 'scripted robot', robot: 'robot code (real time)', lockstep: 'robot code (lockstep, Mode B)' }
 const modeHint = $('sim-mode-hint')
 const robotState = $('robot-state')
+const run = new RobotRun()
 let robotUp = false
 let launchedLockstep = false
+const exitWaiters: (() => void)[] = []
 const host = (window as unknown as { crucibleHost?: CrucibleHost }).crucibleHost
+
+/** The status line under the buttons: what the robot process is doing, how long, and a moving bar while it builds. */
+function paintRun(): void {
+  run.connected = sim.active && !!sim.bridge?.connected
+  $('run-dot').className = `dot ${run.tone === 'dim' ? '' : run.tone}`
+  setIfChanged($('run-phase'), run.label)
+  setIfChanged($('run-time'), run.phase === 'idle' ? '' : formatElapsed(run.elapsed(Date.now())))
+  $('run-bar').hidden = !(run.phase === 'starting' || run.phase === 'building')
+}
+function setIfChanged(el: HTMLElement, text: string): void { if (el.textContent !== text) el.textContent = text }
+setInterval(paintRun, 250)
+
 const refreshRobot = (): void => {
   modeHint.textContent = `Mode: ${modeNames[modeEl.value]} (set on the Robot tab)`
   modeHint.hidden = false
   const btn = $('launch-robot')
   btn.textContent = robotUp ? 'Stop robot' : 'Launch robot'
+  $('relaunch-robot').hidden = !(host && robotUp)
   if (!host) robotState.textContent = 'Launching the robot needs the desktop app. Start the robot sim yourself with CRUCIBLE_BRIDGE=1 ./gradlew simulateJava.'
   else if (!robotUp) robotState.textContent = modeEl.value === 'script' ? 'Scripted robot needs no robot program.' : 'Robot program not running.'
   else if ((modeEl.value === 'lockstep') !== launchedLockstep) robotState.textContent = `Running in ${launchedLockstep ? 'lockstep' : 'real-time'} mode: stop and launch again to change the mode.`
   else robotState.textContent = `Robot program running (${launchedLockstep ? 'lockstep' : 'real time'}).`
+  paintRun()
 }
 modeEl.addEventListener('change', refreshRobot)
+
+async function launchRobot(): Promise<void> {
+  if (!host) return
+  launchedLockstep = modeEl.value === 'lockstep'
+  run.start(Date.now())
+  paintRun()
+  robotLog.system(`[launching robot sim, ${launchedLockstep ? 'lockstep (Mode B)' : 'real time'}: gradlew simulateJava --no-daemon]`)
+  const r = await host.startRobot(launchedLockstep)
+  robotLog.system(`[${r.message}]`)
+  $('notice').textContent = r.message
+  robotUp = r.ok
+  if (!r.ok) run.launchFailed(Date.now())
+  refreshRobot()
+  // the sim waits for the robot program to connect, so it can be started right away
+  if (r.ok && $<HTMLInputElement>('auto-sim').checked && modeEl.value !== 'script' && !sim.active) $('start-sim').click()
+}
+
+async function stopRobot(): Promise<void> {
+  if (!host) return
+  run.stop()
+  robotLog.system('[stopping robot sim]')
+  await host.stopRobot()
+  robotUp = false
+  refreshRobot()
+}
+
 if (host) {
-  const btn = $('launch-robot')
-  btn.hidden = false
-  host.onRobotLog((line) => robotLog.add(line))
+  $('launch-robot').hidden = false
+  host.onRobotLog((line) => { robotLog.add(line); run.feed(line) })
   host.onRobotExit((code) => {
     robotUp = false
+    run.exit(code, Date.now())
     robotLog.system(`[robot sim exited with code ${code}]`)
     $('notice').textContent = `robot sim exited (${code})`
     refreshRobot()
+    for (const w of exitWaiters.splice(0)) w()
   })
-  btn.addEventListener('click', async () => {
+  $('launch-robot').addEventListener('click', () => { void (robotUp ? stopRobot() : launchRobot()) })
+  $('relaunch-robot').addEventListener('click', async () => {
     if (robotUp) {
-      robotLog.system('[stopping robot sim]')
-      await host.stopRobot(); robotUp = false; refreshRobot(); return
+      // wait for the old process's exit report, or it would end the new run
+      const exited = new Promise<void>((res) => { exitWaiters.push(res); setTimeout(res, 6000) })
+      await stopRobot()
+      await exited
     }
-    launchedLockstep = modeEl.value === 'lockstep'
-    robotLog.system(`[launching robot sim, ${launchedLockstep ? 'lockstep (Mode B)' : 'real time'}: gradlew simulateJava --no-daemon]`)
-    const r = await host.startRobot(launchedLockstep)
-    robotLog.system(`[${r.message}]`)
-    $('notice').textContent = r.message
-    robotUp = r.ok
-    refreshRobot()
+    await launchRobot()
   })
-  void host.robotStatus().then((s) => { robotUp = s.running; refreshRobot() })
+  void host.robotStatus().then((st) => { robotUp = st.running; if (st.running) { run.start(Date.now()); run.feed('> Task :simulateJava') } refreshRobot() })
 } else robotLog.system('[desktop app only: the robot sim is not started from here in a browser]')
+
+// remembered between runs: the choices in the side panels and the log's severity toggles
+bindSettings(['game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
+for (const el of hostEls) el.value = hostEls[0].value // restored values may differ if only one was saved
+robotLog.syncLevels()
 refreshRobot()
 
+// ---- keyboard shortcuts (the table in lib/shortcuts.ts also fills the cheat sheet)
+const shortcutsDialog = { open: () => {} }
+const actions: Record<string, () => void> = {
+  play: togglePlay,
+  step: () => { if (sim.active && !robotMode) $('sim-step').click() },
+  'toggle-sim': () => $('start-sim').click(),
+  reset: () => { if (sim.active) $('sim-reset').click() },
+  'tab-session': () => showTab('session'),
+  'tab-robot': () => showTab('robot'),
+  'tab-topics': () => showTab('topics'),
+  panel: () => simPanel.toggle(),
+  focus: () => view.focusRobot(),
+  theme: () => $('theme-btn').click(),
+  'log-clear': () => robotLog.clear(),
+  'log-filter': () => { showTab('robot'); $('log-filter').focus() },
+  'err-next': () => { showTab('robot'); robotLog.jumpError(1) },
+  'err-prev': () => { showTab('robot'); robotLog.jumpError(-1) },
+  help: () => shortcutsDialog.open(),
+}
+window.addEventListener('keydown', (e) => {
+  if (e.repeat || document.querySelector('dialog[open]')) return
+  const name = keyName(e)
+  const sc = findShortcut(name)
+  if (!sc) return
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement
+  if (typing && !sc.key.includes('ctrl+')) return // plain keys belong to the field while typing; Ctrl combinations always work
+  e.preventDefault()
+  actions[sc.run]?.()
+})
+
 setupTabs()
+shortcutsDialog.open = setupShortcutsDialog().open
 setupTheme()
 setupAbout()
 setupCapture({ canvas: view.renderer.domElement, render: () => view.render(), notify: (t) => { $('notice').textContent = t }, host: (window as unknown as { crucibleHost?: { saveFile?: never } }).crucibleHost as never })
