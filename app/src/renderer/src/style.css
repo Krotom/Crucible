@@ -50,6 +50,9 @@
 :root[data-cb]:not([data-theme='light']) { --blue: #3b8fd6; --red: #e69f00; }
 :root[data-cb][data-theme='light'] { --blue: #0a4a94; --red: #b45f00; }
 
+/* an element with the hidden attribute stays hidden even when a class gives it display: flex or grid */
+[hidden] { display: none !important; }
+
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
 body { display: flex; flex-direction: column; overflow: hidden; }
@@ -78,8 +81,8 @@ button:hover:not(:disabled), select:hover { border-color: var(--line-strong); ba
 button:active:not(:disabled) { transform: translateY(0.5px); }
 button:disabled { opacity: 0.42; cursor: default; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 650; }
-button.primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); }
+button.primary, button.cta { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 650; }
+button.primary:hover:not(:disabled), button.cta:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); }
 button.wide { width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 7px 10px; }
 select { padding-right: 6px; max-width: 100%; }
 input[type='range'] { accent-color: var(--accent); padding: 0; height: 18px; }

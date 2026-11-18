@@ -184,6 +184,14 @@ fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
     await reload(); await page.click('#prefs-btn'); expect(!(await page.isChecked('#pref-autoupdate')), 'kept after a reload'); await page.check('#pref-autoupdate'); await page.keyboard.press('Escape')
     const r = await ev(() => window.crucibleHost.installUpdate()); expect(r.ok === false && /Check for updates first|development/.test(r.error), 'installing without a packaged app is refused: ' + JSON.stringify(r))
   })
+  await check('Q24 the About box shows one Close button and no install button until an update is found (hidden stays hidden whatever the CSS says)', async () => {
+    await page.click('#about-btn'); await page.waitForSelector('#about[open]')
+    eq(await page.$$eval('#about button.primary', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.textContent.trim())), ['Close'], 'only Close is visible')
+    eq(await page.isVisible('#update-actions'), false, 'no install row'); eq(await page.isVisible('#update-progress'), false, 'no progress bar')
+    // every element that carries the hidden attribute in the page is really not displayed
+    const leaks = await page.$$eval('[hidden]', (els) => els.filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.id || e.className || e.tagName)); eq(leaks, [], 'hidden elements that are shown anyway')
+    await page.click('#about .primary'); await sleep(300); eq(await page.$eval('#about', (d) => d.open), false, 'Close closes it')
+  })
   await check('Q22 no console errors or page errors during any of this', async () => { eq(errors, [], 'errors') })
 
   await app.close()
