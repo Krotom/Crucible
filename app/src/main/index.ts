@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { listLogs, readLog, RunLog } from './logstore'
 import { javaVersion, preflight, preflightBlocks } from './preflight'
 import { chooseJava } from './javahome'
-import { freeRobotPorts, portOwners } from './ports'
+import { freeRobotPorts, portOwners, within } from './ports'
 import { chooseRobotDir, findSourceFile, openInEditor, parseEnvText, readConfig, recentRobotDirs, resolveRobotDir, RobotLauncher, simulateCommand } from './robot'
 import { startStaticServer } from './static-server'
 import { RecentFiles } from './recent'
@@ -80,7 +80,7 @@ async function startRobot(lockstep?: boolean, envText?: string): Promise<Record<
 /** The pre-flight check with this machine's Java choice and port look-up. While the app's own robot runs, its ports are its own: not a conflict. */
 async function robotPreflight(dir: string | null, lockstep: boolean) {
   const java = chooseJava(readConfig(userDir()), dir)
-  return preflight(dir, lockstep, () => javaVersion(6000, java.command), { javaFrom: java.source, ports: launcher?.running ? undefined : () => portOwners() })
+  return preflight(dir, lockstep, () => javaVersion(6000, java.command), { javaFrom: java.source, ports: launcher?.running ? undefined : () => within(portOwners(), 2500, []) })
 }
 
 ipcMain.handle('robot:check', async (_e, lockstep?: boolean) => robotPreflight(robotDir(), lockstep === true))

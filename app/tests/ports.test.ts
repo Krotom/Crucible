@@ -1,6 +1,6 @@
 // The robot's ports (who holds them, stopping an old robot simulation) and the Java choice (WPILib's own JDK), with fake command output and a fake file system.
 import { describe, expect, it } from 'vitest'
-import { describeOwners, freeRobotPorts, isRobotSim, parseLsof, parseNetstat, parseTasklistName, portOwners, type PortOwner } from '../src/main/ports'
+import { describeOwners, freeRobotPorts, isRobotSim, listeningPorts, parseLsof, parseNetstat, parseTasklistName, portOwners, within, type PortOwner } from '../src/main/ports'
 import { chooseJava, findWpilibJdk, projectWpilibYear, type JavaFs } from '../src/main/javahome'
 import { preflight, preflightBlocks } from '../src/main/preflight'
 
@@ -131,5 +131,42 @@ describe('WPILib\'s own Java', () => {
     expect(chooseJava({ javaHome: 'D:\\missing' }, null, { ...base, fs: win }).source).toBe('wpilib') // a configured folder without a java is not used
     expect(chooseJava({}, null, { ...base, fs: win })).toEqual({ home: 'C:\\Users\\Public\\wpilib\\2026\\jdk', command: 'C:\\Users\\Public\\wpilib\\2026\\jdk\\bin\\java.exe', source: 'wpilib' })
     expect(chooseJava({}, null, { ...base, fs: files() })).toEqual({ home: null, command: 'java', source: 'path' })
+  })
+})
+
+describe('Linux look-up and the time cap', () => {
+  const PROC = [
+    '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode',
+    '   0: 00000000:16C3 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 1111 1 0 100 0 0 10 0',
+    '   1: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 2222 1 0 100 0 0 10 0',
+    '   2: 0100007F:E2A0 0100007F:16C3 01 00000000:00000000 00:00000000 00000000  1000        0 3333 1 0 100 0 0 10 0',
+  ].join('\n')
+
+  it('listeningPorts reads LISTEN sockets only', () => {
+    expect(listeningPorts(PROC).sort((a, b) => a - b)).toEqual([0x16c3, 0x1f90]) // 5827 and 8080; the connected one (state 01) is not listening
+  })
+
+  it('does not run lsof at all when none of the robot ports is listening', async () => {
+    const calls: string[] = []
+    const run = async (cmd: string, args: string[]): Promise<string> => { calls.push(`${cmd} ${args.join(' ')}`); return '' }
+    expect(await portOwners([5811, 5810, 1735], run, 'linux', () => PROC)).toEqual([])
+    expect(calls).toEqual([])
+  })
+
+  it('asks lsof only about the busy ports when one is listening', async () => {
+    const calls: string[] = []
+    const run = async (cmd: string, args: string[]): Promise<string> => { calls.push(`${cmd} ${args.join(' ')}`); return 'p4242\ncjava\nn*:5827' }
+    const tcp = PROC.replace('16C3', '16C3') // 0x16C3 = 5827
+    const owners = await portOwners([5827, 5811], run, 'linux', () => tcp)
+    expect(owners).toEqual([{ port: 5827, pid: 4242, name: 'java' }])
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toContain('-iTCP:5827')
+    expect(calls[0]).not.toContain('5811')
+  })
+
+  it('within gives the fallback when the answer is late or fails', async () => {
+    expect(await within(new Promise<number[]>((r) => setTimeout(() => r([1]), 300)), 20, [])).toEqual([])
+    expect(await within(Promise.reject(new Error('x')), 100, ['fallback'])).toEqual(['fallback'])
+    expect(await within(Promise.resolve(7), 100, 0)).toBe(7)
   })
 })

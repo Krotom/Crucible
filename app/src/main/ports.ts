@@ -2,6 +2,7 @@
 // IDE, a crashed run) keeps its ports, and the next start then fails inside the robot with "Address already in use". The pre-flight check asks here
 // first, so the message names the holder, and the Robot tab can stop it. Plain Node (no Electron), so it can be tested with fake command output.
 import { execFile } from 'node:child_process'
+import fs from 'node:fs'
 
 export interface PortOwner { port: number; pid: number; name: string }
 
@@ -56,15 +57,40 @@ const defaultRun: Run = (cmd, args) => new Promise((resolve) => {
 })
 
 /** The processes listening on `ports` right now. Empty when it cannot be asked (a missing command is not a reason to block a launch). */
-export async function portOwners(ports: number[] = ROBOT_PORTS, run: Run = defaultRun, platform: string = process.platform): Promise<PortOwner[]> {
+export async function portOwners(ports: number[] = ROBOT_PORTS, run: Run = defaultRun, platform: string = process.platform, readText: (p: string) => string = readFileText): Promise<PortOwner[]> {
   if (platform === 'win32') {
     const hits = parseNetstat(await run('netstat', ['-ano', '-p', 'TCP']), ports)
     const names = new Map<number, string>()
     for (const pid of new Set(hits.map((h) => h.pid))) names.set(pid, parseTasklistName(await run('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'])))
     return hits.map((h) => ({ ...h, name: names.get(h.pid) || 'unknown' })).sort((a, b) => a.port - b.port)
   }
-  const out = await run('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fpcn'])
+  // Linux: /proc/net/tcp lists the listening ports at once; lsof (which reads every process) is only needed to name the holder of a busy port
+  if (platform === 'linux') {
+    const busy = listeningPorts(`${readText('/proc/net/tcp')}\n${readText('/proc/net/tcp6')}`).filter((p) => ports.includes(p))
+    if (busy.length === 0) return []
+    ports = busy
+  }
+  const out = await run('lsof', ['-nP', ...ports.map((p) => `-iTCP:${p}`), '-sTCP:LISTEN', '-Fpcn'])
   return parseLsof(out, ports).sort((a, b) => a.port - b.port)
+}
+
+/** The listening TCP ports in the text of /proc/net/tcp (and tcp6): state 0A is LISTEN, the local address is HEXADDRESS:HEXPORT. */
+export function listeningPorts(text: string): number[] {
+  const out = new Set<number>()
+  for (const line of text.split(/\r?\n/)) {
+    const c = line.trim().split(/\s+/)
+    if (c.length < 4 || c[3] !== '0A') continue
+    const m = /:([0-9A-Fa-f]{4})$/.exec(c[1])
+    if (m) out.add(parseInt(m[1], 16))
+  }
+  return [...out]
+}
+
+const readFileText = (p: string): string => { try { return fs.readFileSync(p, 'utf8') } catch { return '' } }
+
+/** Gives up after `ms` (the answer is then `fallback`): the look-up must never hold up a launch. */
+export function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => { const t = setTimeout(() => resolve(fallback), ms); p.then((v) => { clearTimeout(t); resolve(v) }, () => { clearTimeout(t); resolve(fallback) }) })
 }
 
 export type Kill = (pid: number) => Promise<void>
