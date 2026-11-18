@@ -47,10 +47,10 @@ UI tests: `npm run e2e` (needs Electron, xvfb, Playwright; see `app/e2e/run.sh`)
 - [x] Compare sim with real logs (reference log overlay)
 
 ## Calibration and tuning
-- [ ] In-app calibration wizard
-- [ ] Live parameter sliders
-- [ ] Parameter presets
-- [ ] Guess badges
+- [x] In-app calibration wizard (Tune tab)
+- [x] Live parameter sliders (Tune tab)
+- [x] Parameter presets (floor friction)
+- [x] Guess badges (from robot.yaml tags)
 - [ ] Sensitivity report
 
 ## Robot testing

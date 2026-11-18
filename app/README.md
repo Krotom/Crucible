@@ -62,6 +62,12 @@ If Electron reports "Electron uninstall", its binary was not downloaded; run `no
 - **Seed sweep** (Analysis tab): the scripted match played with many seeds in a worker: mean ± spread of both scores, wins, every run. For robot code use `npm run batch` with `seeds`.
 - **Reference log** (Data card): a second .wpilog (for example a real match) whose topics are listed under their own heading in the Topics tab and drawn dashed on the plot; **Shift** moves it in time to line it up with the sim.
 
+## Tune tab
+
+- **Physics sliders:** tire friction, robot mass, shot efficiency, backspin and bumper friction, with the robot definition's value as the default (the per-row **default** button, or **Reset all**). Friction and the shot values act at once in a running sim; mass and bumper friction apply at the next Reset. Floor presets (slick, worn, carpet, new carpet) set the tire friction. Changed values are remembered, mark the tab with a dot, and every new sim (and the seed sweep) starts with them.
+- **Calibration:** pick Shots or Drive, paste or open the measured CSV (formats in `src/calibration/data.ts`; **Example** makes made-up data), **Fit** runs the same fits as `npm run calibrate` in a worker and shows the error before and after, the fitted values, which parameters the data does not pin down and the residuals. **Apply to the sim** moves the sliders, **Copy yaml** gives the lines for `robots/offseason/robot.yaml`, **Report…** saves an HTML report.
+- **What is measured:** the `GUESS` / `CODE` / `CAD` / `FIT` tags in `robot.yaml`'s comments as a list, so you can see which numbers are still placeholders.
+
 ## Simulation (M2)
 
 **Start sim** runs the engine in a Web Worker with the `game-test` module (a made-up 8 x 5 m field: walls, a block, a goal bin that

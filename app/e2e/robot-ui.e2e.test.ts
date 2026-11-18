@@ -219,10 +219,12 @@ it('robot code UI e2e', async () => {
 
   await check('R14b live tuning reaches the running robot sim: less tire friction, slower acceleration; a changed mass applies after Reset and the sim survives', async () => {
     const drive = [20, 23, 26, 29]
+    // the speed 0.25 s of sim time after full voltage starts: still accelerating, so grip decides it
     const speedAfter = async (): Promise<number> => {
-      await page.click('#sim-reset'); await sleep(400)
+      await page.click('#sim-reset'); await sleep(500)
+      const t0 = await page.evaluate(() => (window as any).crucible.sim.latest.time)
       for (const id of drive) live.volts[id] = 12
-      await sleep(900)
+      await page.waitForFunction((t: number) => (window as any).crucible.sim.latest.time >= t + 0.25, t0, { timeout: 10000 })
       const v = await page.evaluate(() => (window as any).crucible.sim.latest.robotSpeed)
       for (const id of drive) live.volts[id] = 0
       await sleep(1500)
@@ -233,13 +235,14 @@ it('robot code UI e2e', async () => {
     await page.$eval('#tune-mu', (r: any) => { r.value = '0.45'; r.dispatchEvent(new Event('input', { bubbles: true })) })
     await sleep(300)
     const slow = await speedAfter()
-    expect(base > 0.4, 'the robot should accelerate with 12 V on the drive motors: ' + base)
+    const diag = await page.evaluate(() => { const c = (window as any).crucible; return JSON.stringify({ running: c.sim.running, frames: c.sim.bridge?.frames, enabled: c.sim.bridge?.robotEnabled, connected: c.sim.bridge?.connected, t: c.sim.latest.time, pos: c.sim.latest.robot.slice(0, 2) }) })
+    expect(base > 0.3, 'the robot should accelerate with 12 V on the drive motors: ' + base + ' ' + diag + ' volts ' + JSON.stringify(live.volts))
     expect(slow < base * 0.85, `tire friction 0.45 should accelerate slower than 1.2: ${base.toFixed(2)} -> ${slow.toFixed(2)} m/s`)
     await page.$eval('#tune-mass-n', (n: any) => { n.value = '66'; n.dispatchEvent(new Event('change', { bubbles: true })) })
     await sleep(300); await page.click('#sim-reset'); await sleep(600)
     expect(await page.$eval('#start-sim', (b: any) => b.textContent) === 'Stop sim', 'the sim keeps running after a mass change and Reset')
-    await page.click('#tune-reset'); await page.click('[data-tab=session]'); await sleep(200)
   }, page)
+  await page.click('#tune-reset').catch(() => {}); await page.click('[data-tab=session]').catch(() => {})
 
   // ---------- stop
   await check('R15 Stop sim hides the panel and DS controls, then lockstep mode starts clean', async () => {
