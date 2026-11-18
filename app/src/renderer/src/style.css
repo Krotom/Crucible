@@ -499,3 +499,4 @@ input.mini { width: 48px; padding: 1px 5px; margin: 0 3px; }
 .board-form .row2, .board-form .btnrow { margin-top: 6px; }
 .api-info { margin: 4px 0 6px; } .api-info code { display: block; margin-top: 6px; padding: 6px 8px; border-radius: 6px; background: var(--field); font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--dim); }
 #share-note { width: 100%; box-sizing: border-box; margin: 2px 0 4px; }
+.sens-none td { color: var(--dim); }

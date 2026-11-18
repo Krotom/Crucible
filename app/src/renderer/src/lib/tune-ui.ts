@@ -5,9 +5,11 @@ import type { CalIn, CalOut, CalResult } from '../../../calibration/worker'
 import { applyTune, changedKeys, cleanTune, defaultTune, FLOOR_PRESETS, TUNE_DEFS, type TuneParams } from '../../../engine/tuning'
 import { OFFSEASON } from '../../../robots/offseason'
 import robotYaml from '../../../../robots/offseason/robot.yaml?raw'
+import { describe as describeSens, NO_EFFECT, type SensReport } from '../../../calibration/sensitivity'
 import { parseParamNotes, summarize, type ParamNote } from './guesses'
 
 const KEY = 'crucible-tune'
+const fmtVal = (v: number): string => (Math.abs(v - Math.round(v)) < 0.0005 ? String(Math.round(v)) : v.toFixed(2))
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -138,7 +140,16 @@ export class TuneUI {
 
   private send(m: CalIn): void { this.worker().postMessage(m) }
 
+  private buildSensitivity(): void {
+    $('sens-run').addEventListener('click', () => {
+      const b = $<HTMLButtonElement>('sens-run'); b.disabled = true; b.textContent = 'Running…'
+      $('sens-out').textContent = ''
+      this.send({ type: 'sensitivity', tune: this.params() })
+    })
+  }
+
   private buildCalibration(): void {
+    this.buildSensitivity()
     const kind = $<HTMLSelectElement>('cal-kind')
     const drive = (): void => { $('cal-drive-opts').hidden = kind.value !== 'drive' }
     kind.addEventListener('change', drive); drive()
@@ -161,6 +172,8 @@ export class TuneUI {
   private done(): void { $('cal-fit').textContent = 'Fit'; ;($('cal-fit') as HTMLButtonElement).disabled = false }
 
   private fail(message: string): void {
+    const sb = document.getElementById('sens-run') as HTMLButtonElement | null
+    if (sb && sb.disabled) { sb.disabled = false; sb.textContent = 'Run sensitivity' }
     this.done()
     const out = $('cal-out')
     out.textContent = ''
@@ -169,10 +182,28 @@ export class TuneUI {
 
   private onCal(m: CalOut): void {
     if (m.type === 'error') { this.fail(m.message); return }
+    if (m.type === 'sensitivity') { this.showSensitivity(m.report); return }
     if (m.type === 'example') { $<HTMLTextAreaElement>('cal-csv').value = m.csv; this.hooks.notify('Example data loaded: press Fit'); return }
     this.done()
     this.last = m.result
     this.showResult(m.result)
+  }
+
+  private showSensitivity(r: SensReport): void {
+    const btn = $<HTMLButtonElement>('sens-run'); btn.disabled = false; btn.textContent = 'Run sensitivity'
+    const out = $('sens-out')
+    out.textContent = ''
+    out.appendChild(el('div', 'dimtext', `Each value moved ${Math.round(r.rel * 100)}% down and up from what is set now. Baseline: ${r.base.speed.toFixed(2)} m/s a quarter second after a full-power start (gentle start ${r.base.gentle.toFixed(2)} m/s), shot range ${r.base.range === null ? '-' : r.base.range.toFixed(2) + ' m'}.`))
+    const table = el('table', 'an-table')
+    const head = el('tr'); for (const t of ['Value', 'tried', 'effect']) head.appendChild(el('th', undefined, t)); table.appendChild(head)
+    for (const row of r.rows) {
+      const tr = el('tr', row.strength < NO_EFFECT ? 'sens-none' : '')
+      tr.dataset.key = row.key
+      tr.append(el('td', undefined, row.label), el('td', 'dimtext', `${fmtVal(row.low)} – ${fmtVal(row.high)}${row.unit ? ' ' + row.unit : ''}`), el('td', undefined, describeSens(row)))
+      table.appendChild(tr)
+    }
+    out.appendChild(table)
+    out.appendChild(el('div', 'dimtext', 'Probes: speed 0.25 s after a start at 12 V (grip-limited) and at 3 V (motor-limited), and one shot at 55 rps and 40°. A value neither probe touches can still matter in a match.'))
   }
 
   private showResult(r: CalResult): void {

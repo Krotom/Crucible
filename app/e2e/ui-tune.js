@@ -98,6 +98,15 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
     for (const t of ['session', 'robot', 'topics', 'analysis', 'tune']) { await page.click(`[data-tab=${t}]`); expect(!(await page.$eval('#tab-' + t, (e) => e.hidden)), t + ' reachable') }
     await page.click('[data-tab=session]')
   })
+  await check('U12 sensitivity: the button runs the probes, the table ranks the values, bumper friction shows no effect, and a changed value changes the baseline', async () => {
+    await page.click('[data-tab=tune]'); await page.click('#sens-run'); expect(await page.$eval('#sens-run', (b) => b.disabled), 'disabled while it runs')
+    await page.waitForSelector('#sens-out table', { timeout: 60000 }); expect(!(await page.$eval('#sens-run', (b) => b.disabled)), 'usable again')
+    const rows = await page.$$eval('#sens-out tr[data-key]', (r) => r.map((x) => ({ key: x.dataset.key, effect: x.lastChild.textContent, none: x.classList.contains('sens-none') }))); eq(rows.length, 5)
+    expect(rows[0].key === 'efficiency' && /shot range \+\d+\.\d%/.test(rows[0].effect), 'efficiency first: ' + JSON.stringify(rows[0])); const eff = (k) => rows.find((r) => r.key === k).effect; expect(/full-power launch \+\d+\.\d%/.test(eff('mu')), 'tire friction changes the grip-limited launch: ' + eff('mu')); expect(/gentle launch −\d+\.\d%/.test(eff('mass')), 'mass changes the motor-limited launch: ' + eff('mass'));
+    const bf = rows.find((r) => r.key === 'bumperFriction'); expect(bf.none && bf.effect === 'no effect on these probes', JSON.stringify(bf))
+    const base0 = await page.textContent('#sens-out .dimtext'); await page.fill('#tune-mass-n', '60'); await page.press('#tune-mass-n', 'Tab'); await sleep(200); await page.click('#sens-run'); await page.waitForFunction((b) => document.querySelector('#sens-out .dimtext') && document.querySelector('#sens-out .dimtext').textContent !== b, base0, { timeout: 60000 })
+    expect((await page.textContent('#sens-out .dimtext')) !== base0, 'the baseline follows the mass you set'); await page.click('#tune-reset'); await sleep(200)
+  })
   await check('Z1 no unexpected page errors', async () => { const real = errors.filter((e) => !/ERR_CONNECTION_REFUSED/.test(e)); expect(real.length === 0, real.join(' | ')) })
   await app.close().catch(() => {})
   process.exit(summary() ? 1 : 0)

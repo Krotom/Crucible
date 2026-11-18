@@ -26,6 +26,11 @@ function floorGame(): GameModule {
   }
 }
 
+/** The engine configuration of the calibration floor (also used by the sensitivity probes). */
+export function floorEngineConfig(spec: DrivetrainSpec): Parameters<typeof Engine.create>[0] {
+  return { game: floorGame(), robot: { half: OFFSEASON.bumper, start: { x: -90, y: 0, yaw: 0 }, script: [], drivetrain: spec, chassis: OFFSEASON.contact }, seed: 1, dt: 0.002 }
+}
+
 let engine: Engine | null = null
 let engineSpec: DrivetrainSpec | null = null
 

@@ -51,7 +51,7 @@ UI tests: `npm run e2e` (needs Electron, xvfb, Playwright; see `app/e2e/run.sh`)
 - [x] Live parameter sliders (Tune tab)
 - [x] Parameter presets (floor friction)
 - [x] Guess badges (from robot.yaml tags)
-- [ ] Sensitivity report
+- [x] Sensitivity report (Tune tab: each value moved 10% down and up; three probes: grip-limited start, motor-limited start, one shot's range. Probes, not matches: a value no probe touches, like bumper friction, shows "no effect on these probes")
 
 ## Robot testing
 - [x] Built-in test scenarios (Robot tab: drive forward, strafe, spin, climb the BUMP)

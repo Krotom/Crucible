@@ -2,11 +2,14 @@
 import { driveHtml, driveMarkdown, driveYaml, shotHtml, shotMarkdown, shotYaml } from './calreport'
 import { parseAccel, parseShots } from './data'
 import { fitDrive } from './drive'
+import { sensitivity, type SensReport } from './sensitivity'
+import type { TuneParams } from '../engine/tuning'
 import { defaultShotModel, fitShots, predictRange } from './shots'
 
 export type CalIn =
   | { type: 'fit'; kind: 'shots' | 'drive'; csv: string; volts?: number; fitMass?: boolean }
   | { type: 'example'; kind: 'shots' | 'drive' }
+  | { type: 'sensitivity'; tune: TuneParams }
 
 export interface CalResult {
   kind: 'shots' | 'drive'
@@ -23,7 +26,7 @@ export interface CalResult {
   markdown: string
   html: string
 }
-export type CalOut = { type: 'result'; result: CalResult } | { type: 'example'; kind: 'shots' | 'drive'; csv: string } | { type: 'error'; message: string }
+export type CalOut = { type: 'result'; result: CalResult } | { type: 'example'; kind: 'shots' | 'drive'; csv: string } | { type: 'sensitivity'; report: SensReport } | { type: 'error'; message: string }
 
 const post = (m: CalOut): void => (self as unknown as Worker).postMessage(m)
 
@@ -48,6 +51,7 @@ function exampleDrive(): string {
 self.onmessage = async (ev: MessageEvent<CalIn>) => {
   const m = ev.data
   try {
+    if (m.type === 'sensitivity') { post({ type: 'sensitivity', report: await sensitivity(m.tune) }); return }
     if (m.type === 'example') { post({ type: 'example', kind: m.kind, csv: m.kind === 'shots' ? await exampleShots() : exampleDrive() }); return }
     if (m.kind === 'shots') {
       const fit = await fitShots(parseShots(m.csv))

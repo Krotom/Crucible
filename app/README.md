@@ -161,6 +161,10 @@ dropdown paces it (`max` is as fast as it goes). Vision is off in this mode (the
 Robot tab, **Test scenarios**: a scripted driver (forward, strafe, spin, climb the BUMP) plays sticks against your robot code and checks where the robot ends up; each run starts a fresh sim, takes the keyboard away from you and shows which checks passed.
 Robot tab, **Vision camera**: a simulated AprilTag camera on the robot. The 3D view shows every tag (green when seen), the view cone, rays to the seen tags and the reported pose (amber, joined to the true position so the error shows); the panel gets a Vision row. The robot code is sent the tags and a noisy pose over bridge message 9 (see `docs/NT_CONTRACT.md` section 15). The tag layout is assumed, and the robot library does not read the message yet.
 
+## Sensitivity (Tune tab)
+
+**Run sensitivity** moves each tunable value 10% down and up from what is set now and reports how three quick probes change: the speed 0.25 s after a full-power start (grip-limited: tire friction matters, mass cancels out), after a gentle 3 V start (motor-limited: mass matters), and the range of one fixed shot (efficiency and backspin). It measures these probes, not whole matches, so a value none of them touches (bumper friction) is reported as "no effect on these probes".
+
 ## Quality of life
 
 - **Ctrl+K** opens the command palette: type a few letters of anything the shortcut sheet lists (plus presets, language and colour switches) and press Enter. Accents are ignored ("turk" finds "Türkçe").
