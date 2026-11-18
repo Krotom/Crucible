@@ -143,12 +143,21 @@ const alive = (pid) => { const st = sh(`ps -o stat= -p ${pid}`); return st !== '
   await check('C11 very long line wraps without horizontal overflow', async () => {
     await page.click('#log-clear'); setMode('long')
     await page.click('#launch-robot')
-    await page.waitForFunction(() => document.getElementById('robot-log').textContent.includes('LLLL'), null, { timeout: 8000 })
-    const o = await page.$eval('#robot-log', (e) => ({ sw: e.scrollWidth, cw: e.clientWidth }))
-    await page.click('#launch-robot'); await page.waitForFunction(() => document.getElementById('launch-robot').textContent === 'Launch robot')
-    expect(o.sw <= o.cw + 2, JSON.stringify(o))
+    try {
+      // a busy runner starts the program late (a Java version check comes first): wait for the line, not for a fixed time
+      await page.waitForFunction(() => document.getElementById('robot-log').textContent.includes('LLLL'), null, { timeout: 40000 })
+        .catch(async (e) => { throw new Error('the long line never reached the log: ' + e.message.split('\n')[0] + ' | button "' + (await page.textContent('#launch-robot')) + '", status "' + (await page.textContent('#robot-state')) + '", log starts: ' + JSON.stringify((await page.textContent('#robot-log')).slice(0, 300))) })
+      const o = await page.$eval('#robot-log', (e) => ({ sw: e.scrollWidth, cw: e.clientWidth }))
+      expect(o.sw <= o.cw + 2, JSON.stringify(o))
+    } finally {
+      // this program sleeps for ten minutes: a failure above must not leave it running into the next check
+      if ((await page.textContent('#launch-robot')) === 'Stop robot') await page.click('#launch-robot')
+      await page.waitForFunction(() => document.getElementById('launch-robot').textContent === 'Launch robot', null, { timeout: 20000 })
+    }
   })
   await check('C12 double-click on Launch starts exactly one process', async () => {
+    // start from "not running", whatever the check before left behind
+    if ((await page.textContent('#launch-robot')) === 'Stop robot') { await page.click('#launch-robot'); await page.waitForFunction(() => document.getElementById('launch-robot').textContent === 'Launch robot', null, { timeout: 20000 }) }
     await page.click('#log-clear'); setMode('slow')
     await page.dblclick('#launch-robot'); await sleep(2500)
     const n = Number(sh('pgrep -fc "[b]ash ./gradlew simulateJava"') || 0)
