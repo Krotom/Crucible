@@ -18,6 +18,8 @@ fs.writeFileSync(OUT + '/ref.wpilog', makeLog(10))
     await page.selectOption('#game-select', game); await page.selectOption('#opponent', 'none'); await page.selectOption('#alliance', 'blue'); await page.fill('#seed', seed); await page.click('#start-sim')
     await page.waitForFunction(() => document.querySelector('.simhud .kv') && crucible.sim.ready, null, { timeout: 15000 }); await sleep(300)
   }
+  // press a button that changes the sim time (back 1 s, back 5 s ...) and wait for the new time to reach the page before reading it
+  const press = async (sel) => { const before = await ev(() => crucible.sim.latest.time); await page.click(sel); await page.waitForFunction((b) => crucible.sim.latest.time !== b, before, { timeout: 20000 }); for (let i = 0, last = null, same = 0; i < 150 && same < 3; i++) { const now = await ev(() => [crucible.sim.latest.time.toFixed(2), crucible.recorder.time.toFixed(2)]); same = now[0] === last && now[0] === now[1] ? same + 1 : 0; last = now[0]; await sleep(120) } }
   const runTo = async (t, speed = '8') => { await page.selectOption('#speed', speed); await page.click('#play'); await page.waitForFunction((t) => crucible.sim.latest && crucible.sim.latest.time >= t, t, { timeout: 90000 }); await page.click('#play'); await sleep(350); await page.selectOption('#speed', '1') }
   const steps = async (n) => { for (let i = 0; i < n; i++) await page.click('#sim-step'); await sleep(300) }
   const stubSave = (p) => app.evaluate(({ dialog }, p) => { dialog.showSaveDialog = async () => (p ? { canceled: false, filePath: p } : { canceled: true, filePath: undefined }) }, p)
@@ -27,9 +29,9 @@ fs.writeFileSync(OUT + '/ref.wpilog', makeLog(10))
     await startSim(); expect(await page.$eval('#sim-back1', (b) => b.disabled), 'disabled at t = 0')
     await runTo(8); const t0 = await simT(); expect(t0 >= 8, 't0 ' + t0)
     expect(!(await page.$eval('#sim-back1', (b) => b.disabled)), 'enabled with history')
-    await page.click('#sim-back1'); await sleep(500); const t1 = await simT(); expect(Math.abs(t1 - (t0 - 1)) < 0.011, `back 1 s: ${t0} -> ${t1}`)
-    await page.click('#sim-back5'); await sleep(500); const t2 = await simT(); expect(Math.abs(t2 - (t1 - 5)) < 0.011, `back 5 s: ${t1} -> ${t2}`)
-    await page.click('#sim-back5'); await sleep(500); expect((await simT()) >= 0 && (await simT()) < 0.011, 'clamped at the start: ' + (await simT()))
+    await press('#sim-back1'); const t1 = await simT(); expect(Math.abs(t1 - (t0 - 1)) < 0.011, `back 1 s: ${t0} -> ${t1}`)
+    await press('#sim-back5'); const t2 = await simT(); expect(Math.abs(t2 - (t1 - 5)) < 0.011, `back 5 s: ${t1} -> ${t2}`)
+    await press('#sim-back5'); expect((await simT()) >= 0 && (await simT()) < 0.011, 'clamped at the start: ' + (await simT()))
     expect(await page.$eval('#sim-back1', (b) => b.disabled), 'disabled again at 0')
   })
   await check('R2 rewind is exact: stepping on from a rewound moment reaches the same state hash as before', async () => {
@@ -42,8 +44,8 @@ fs.writeFileSync(OUT + '/ref.wpilog', makeLog(10))
   await check('R3 analysis follows a rewind: events after the moment disappear and come back once, not twice', async () => {
     await startSim(); await runTo(7)
     const feed = () => ev(() => crucible.recorder.feed.filter((f) => f.text === 'Phase: Teleop').length)
-    eq(await feed(), 1, 'teleop phase seen once'); await page.click('#sim-back5'); await sleep(500); await page.click('#sim-back1'); await sleep(400)
-    expect((await simT()) < 5, 'rewound before teleop'); eq(await feed(), 0, 'the later event is forgotten'); await runTo(7); eq(await feed(), 1, 'it comes back once')
+    eq(await feed(), 1, 'teleop phase seen once'); await press('#sim-back5'); await press('#sim-back1')
+    expect((await simT()) < 5, 'rewound before teleop: ' + (await simT())); eq(await feed(), 0, 'the later event is forgotten'); await runTo(7); eq(await feed(), 1, 'it comes back once')
   })
   await check('R4 clicking the timeline rewinds to that moment; clicking ahead of the sim is refused with a hint', async () => {
     await startSim(); await runTo(10)

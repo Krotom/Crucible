@@ -44,8 +44,8 @@ function drawToasts(): void {
 }
 
 /** Shows a toast. The older code only sets the status-bar text; `setupToasts` turns every such change into a toast too. */
-export function toast(text: string, kind = kindOf(text), onClick?: () => void): void {
-  const t = toasts.push(text, kind)
+export function toast(text: string, kind = kindOf(text), onClick?: () => void, ttl?: number): void {
+  const t = toasts.push(text, kind, Date.now(), ttl)
   if (t && onClick) toastActions.set(t.id, onClick)
   drawToasts()
 }
@@ -248,7 +248,7 @@ export function setupUpdates(version: string): void {
   try { last = store()?.getItem(KEY) ?? null } catch { /* first run */ }
   try { store()?.setItem(KEY, version) } catch { /* not remembered */ }
   // an updated app announces itself with a toast (not a dialog: it must never block the first click); a first run says nothing
-  if (last && last !== version && entriesSince(last, version).length > 0) toast(`Updated to v${version}: click to see what's new`, 'info', () => showWhatsNew(version, last))
+  if (last && last !== version && entriesSince(last, version).length > 0) toast(`Updated to v${version}: click to see what's new`, 'info', () => showWhatsNew(version, last), 30_000)
   $('whatsnew-btn').addEventListener('click', () => showWhatsNew(version, null))
   const status = $('update-status'), btn = $<HTMLButtonElement>('update-btn'), actions = $('update-actions'), install = $<HTMLButtonElement>('update-install'), bar = $<HTMLProgressElement>('update-progress')
   const showResult = (r: NonNullable<Awaited<ReturnType<NonNullable<Host['checkUpdate']>>>>): void => {
@@ -297,7 +297,7 @@ export function setupUpdates(version: string): void {
     try { store()?.setItem('crucible-lastcheck', String(Date.now())) } catch { /* not remembered */ }
     if (r && r.status === 'newer') {
       showResult(r)
-      toast(`Version ${r.latest} is available: click to install it`, 'info', () => { const d = $<HTMLDialogElement>('about'); if (!d.open) d.showModal() })
+      toast(`Version ${r.latest} is available: click to install it`, 'info', () => { const d = $<HTMLDialogElement>('about'); if (!d.open) d.showModal() }, 30_000)
     }
   })()
 }

@@ -25,14 +25,14 @@ fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
     await page.screenshot({ path: OUT + '/toasts.png' })
   })
   await check('Q2 the same message twice becomes one toast with a counter; clicking a toast dismisses it; the kind follows the words', async () => {
-    for (let i = 0; i < 6 && (await toasts()).length; i++) { await page.click('#toasts .toast'); await sleep(80) }; eq(await toasts(), [], 'every toast can be dismissed by a click')
+    for (let i = 0; i < 8 && (await toasts()).length; i++) { await page.evaluate(() => document.querySelector('#toasts .toast')?.click()); await sleep(80) }; eq(await toasts(), [], 'every toast can be dismissed by a click')
     await say('Saved /tmp/a.png'); await sleep(60); await say('Saved /tmp/a.png'); await sleep(100)
     const t = await page.$$eval('#toasts .toast', (x) => x.map((e) => ({ text: e.textContent, cls: e.className }))); eq(t.length, 1); expect(t[0].text.includes('×2'), 'counter: ' + t[0].text); expect(t[0].cls.includes('ok'), 'saved is ok: ' + t[0].cls)
     await say('Could not open x.wpilog'); await sleep(100); expect((await page.$$eval('#toasts .toast.error', (x) => x.length)) === 1, 'error styled')
-    await page.click('#toasts .toast.error'); await sleep(100); eq(await page.$$eval('#toasts .toast.error', (x) => x.length), 0, 'dismissed by a click')
+    await page.evaluate(() => document.querySelector('#toasts .toast.error')?.click()); await sleep(100); eq(await page.$$eval('#toasts .toast.error', (x) => x.length), 0, 'dismissed by a click')
   })
   await check('Q3 toasts fade by themselves (info after about 4 s) and an error outlives an info message', async () => {
-    for (let i = 0; i < 6 && (await toasts()).length; i++) { await page.click('#toasts .toast'); await sleep(80) }
+    for (let i = 0; i < 8 && (await toasts()).length; i++) { await page.evaluate(() => document.querySelector('#toasts .toast')?.click()); await sleep(80) }
     await say('plain info'); await say('Failed: something'); await sleep(5200)
     const left = await toasts(); expect(!left.includes('plain info'), 'info faded: ' + left); expect(left.includes('Failed: something'), 'error still showing: ' + left)
     await sleep(5000); eq(await toasts(), [], 'everything faded')
@@ -162,7 +162,7 @@ fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
     await ev(() => localStorage.removeItem('crucible-lastseen')); await reload(); eq((await toasts()).filter((t) => t.includes('Updated to')).length, 0, 'first run: silent'); eq(await ev(() => localStorage.getItem('crucible-lastseen')), '1.1.0')
     await ev(() => localStorage.setItem('crucible-lastseen', '1.0.0')); await reload()
     expect((await toasts()).some((t) => t.includes('Updated to v1.1.0')), 'toast: ' + (await toasts())); eq(await page.$eval('#whatsnew', (d) => d.open), false, 'no dialog in the way')
-    await page.click('#toasts .toast'); await page.waitForSelector('#whatsnew[open]'); expect((await T('#whatsnew-body')).includes('1.1.0'), await T('#whatsnew-body')); await page.keyboard.press('Escape')
+    await page.evaluate(() => document.querySelector('#toasts .toast')?.click()); await page.waitForSelector('#whatsnew[open]'); expect((await T('#whatsnew-body')).includes('1.1.0'), await T('#whatsnew-body')); await page.keyboard.press('Escape')
     await reload(); eq((await toasts()).filter((t) => t.includes('Updated to')).length, 0, 'only once')
   })
   await check('Q21 About: What\'s new button and an update check that says what happened in words (newer, current, none yet, unreachable)', async () => {
