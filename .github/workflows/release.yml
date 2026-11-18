@@ -147,7 +147,7 @@ jobs:
         include:
           - { name: windows, os: windows-latest }
           - { name: linux, os: ubuntu-latest }
-          - { name: mac-arm64, os: macos-latest }
+          - { name: mac-arm64, os: macos-15 } # Apple silicon; macos-latest now means the new macos-26 image, whose small pool left this job queued for 5 to 15 minutes
           - { name: mac-x64, os: macos-15-intel }
     defaults:
       run:

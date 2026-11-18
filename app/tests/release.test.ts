@@ -27,7 +27,7 @@ describe('release notes', () => {
 
 describe('release workflow', () => {
   it('builds Windows, Linux and both kinds of Mac, and every script and file it names exists', () => {
-    for (const os of ['windows-latest', 'ubuntu-latest', 'macos-latest', 'macos-15-intel']) expect(yml).toContain(`os: ${os}`)
+    for (const os of ['windows-latest', 'ubuntu-latest', 'macos-15', 'macos-15-intel']) expect(yml).toContain(`os: ${os}`)
     for (const m of yml.matchAll(/app\/(scripts\/[\w.-]+\.mjs)/g)) expect(() => read(`../${m[1]}`), m[1]).not.toThrow()
     for (const m of yml.matchAll(/node (scripts\/[\w.-]+\.mjs|e2e\/[\w.-]+\.mjs)/g)) expect(() => read(`../${m[1]}`), m[1]).not.toThrow()
     for (const m of yml.matchAll(/npm run ([\w:-]+)/g)) expect(pkg.scripts[m[1]], `npm run ${m[1]}`).toBeTruthy()
