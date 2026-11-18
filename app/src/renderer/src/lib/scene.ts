@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FieldDefinition, PieceSpec, RenderFrame } from '../../../engine/types'
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { mergeByMaterial } from './mergemodel'
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
 
@@ -85,7 +86,9 @@ export class SceneView {
   /** Loads model.glb (chassis) and model_N.glb (components) from /model, the AdvantageScope layout. Returns a status line. */
   async loadRobotModel(): Promise<string> {
     const loader = new GLTFLoader()
-    const load = (file: string): Promise<THREE.Group> => loader.loadAsync(`/model/${file}`).then((g) => g.scene)
+    let meshes = { before: 0, after: 0 }
+    // a CAD export is thousands of parts: merged by material it draws in a few dozen calls (lib/mergemodel.ts)
+    const load = (file: string): Promise<THREE.Group> => loader.loadAsync(`/model/${file}`).then((g) => { const r = mergeByMaterial(g.scene); meshes = { before: meshes.before + r.meshesBefore, after: meshes.after + r.meshesAfter }; return g.scene })
     let info: { components?: unknown[] } = {}
     try {
       const cfg = await fetch('/model/config.json')
@@ -101,7 +104,7 @@ export class SceneView {
       this.robot.add(holder)
       this.components.push(holder)
     }
-    return `Robot model loaded (${n} components).`
+    return `Robot model loaded (${n} components, ${meshes.before} parts drawn as ${meshes.after} meshes).`
   }
 
   /** Pose2d as [x, y, rotationRadians]. */

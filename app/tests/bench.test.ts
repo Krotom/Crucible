@@ -9,7 +9,7 @@ import type { EngineConfig } from '../src/engine/types'
 import { createRebuiltGame } from '../src/games/rebuilt'
 import { OFFSEASON } from '../src/robots/offseason'
 
-interface Case { fuel: number; dt: number; iters?: number; tuning?: EngineConfig['tuning']; label?: string }
+interface Case { fuel: number; dt: number; iters?: number; settle?: number; tuning?: EngineConfig['tuning']; label?: string }
 
 const DEFAULT: Case[] = [
   { fuel: 150, dt: 0.001, iters: 2 },
@@ -24,13 +24,24 @@ async function run(c: Case, simSeconds = 6): Promise<string> {
     robot: { half: OFFSEASON.bumper, start: { x: 5.6, y: 2.6, yaw: 0 }, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls, alliance: 'blue', chassis: OFFSEASON.contact },
     seed: 1, solverIterations: c.iters, dt: c.dt, tuning: c.tuning,
   })
-  for (const m of OFFSEASON.drivetrain.modules) { e.drivetrain!.setVolts(m.driveId, 6); e.drivetrain!.setVolts(m.steerId, 0) }
+  const drive = (v: number): void => { for (const m of OFFSEASON.drivetrain.modules) { e.drivetrain!.setVolts(m.driveId, v); e.drivetrain!.setVolts(m.steerId, 0) } }
+  drive(c.settle ? 0 : 6)
   const n = Math.round(simSeconds / c.dt)
-  // warm-up: the first steps include JIT and settling of the pile
-  for (let i = 0; i < Math.round(0.5 / c.dt); i++) e.step()
+  // warm-up: the first steps include JIT and settling of the pile (settle: let the pile come to rest first, robot still, then drive in)
+  for (let i = 0; i < Math.round((c.settle ?? 0.5) / c.dt); i++) e.step()
+  if (c.settle) drive(6)
   const t0 = performance.now()
   let awake = 0
-  for (let i = 0; i < n; i++) { e.step(); if (i % 200 === 0) awake += e.getFrame(false).awakeCount }
+  // timeline: wall cost per step in windows of 0.25 s of sim time, with the awake count, to find the worst moments (the average hides them)
+  const win = Math.max(1, Math.round(0.25 / c.dt)); let wt = performance.now(); const windows: { t: number; ms: number; awake: number }[] = []
+  for (let i = 0; i < n; i++) {
+    e.step(); if (i % 200 === 0) awake += e.getFrame(false).awakeCount
+    if ((i + 1) % win === 0) { const now = performance.now(); windows.push({ t: (i + 1) * c.dt, ms: (now - wt) / win, awake: e.getFrame(false).awakeCount }); wt = now }
+  }
+  if (process.env.CRUCIBLE_BENCH_TIMELINE) {
+    fs.mkdirSync(path.resolve('runs'), { recursive: true })
+    fs.appendFileSync(path.resolve('runs/bench-timeline.txt'), `fuel ${c.fuel} dt ${c.dt * 1000} ms\n` + windows.map((w) => `  t ${w.t.toFixed(2)}  ${w.ms.toFixed(3)} ms/step  awake ${w.awake}`).join('\n') + '\n')
+  }
   const ms = performance.now() - t0
   const f = e.getFrame(false)
   const perSim = ms / simSeconds
