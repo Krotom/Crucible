@@ -170,7 +170,7 @@ const alive = (pid) => { const st = sh(`ps -o stat= -p ${pid}`); return st !== '
   await check('H1 "?" opens the cheat sheet listing every shortcut; Escape and the button close it; help button opens it', async () => {
     await page.locator('body').click({ position: { x: 4, y: 4 } })
     await page.keyboard.press('?'); expect(await page.$eval('#shortcuts', (d) => d.open), 'opened by ?')
-    const n = await page.$$eval('#shortcut-list .sc', (e) => e.length); eq(n, 22, 'one row per shortcut')
+    const n = await page.$$eval('#shortcut-list .sc', (e) => e.length); eq(n, (fs.readFileSync(require('path').resolve(__dirname, '../src/renderer/src/lib/shortcuts.ts'), 'utf8').match(/run: '/g) || []).length, 'one row per shortcut in the table')
     expect((await page.$$eval('#shortcut-list kbd', (e) => e.map((k) => k.textContent))).includes('Ctrl+Enter'), 'key labels')
     await page.screenshot({ path: SP + '/e2e/out/shortcuts.png' })
     await page.keyboard.press('Escape'); await sleep(150); expect(!(await page.$eval('#shortcuts', (d) => d.open)), 'closed by Escape')

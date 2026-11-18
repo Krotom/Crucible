@@ -16,6 +16,8 @@ export interface LauncherOptions {
 
 export class RobotLauncher {
   private child: ChildProcess | null = null
+  /** settles once the exit has been reported (after the last output line), so stop() can wait for the report and not just the process */
+  private finished: Promise<void> = Promise.resolve()
   constructor(private opts: LauncherOptions) {}
 
   get running(): boolean { return this.child !== null }
@@ -29,6 +31,8 @@ export class RobotLauncher {
       detached: process.platform !== 'win32', // its own process group, so the whole tree can be signalled
     })
     this.child = child
+    let resolveFinished: () => void = () => {}
+    this.finished = new Promise<void>((r) => { resolveFinished = r })
     let tail = ''
     const feed = (b: Buffer): void => {
       tail += b.toString()
@@ -51,24 +55,25 @@ export class RobotLauncher {
         if (tail.trim()) this.opts.onLog(tail)
         tail = ''
         this.opts.onExit(code)
+        resolveFinished()
       }
       const timer = setTimeout(finish, 300)
       child.once('close', finish)
     })
   }
 
-  /** Stops the process and everything it started. Resolves once it has exited (or after a few seconds). */
+  /** Stops the process and everything it started. Resolves once its exit has been reported (or after a few seconds). */
   stop(): Promise<void> {
     const child = this.child
     const pid = child?.pid
-    if (!child || pid === undefined) return Promise.resolve()
-    return new Promise((resolve) => {
-      const done = (): void => { clearTimeout(timer); resolve() }
-      const timer = setTimeout(done, 5000)
-      child.once('exit', done)
-      if (process.platform === 'win32') spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true })
-      else try { process.kill(-pid, 'SIGTERM') } catch { child.kill('SIGTERM') }
+    const wait = (): Promise<void> => new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 5000)
+      void this.finished.then(() => { clearTimeout(timer); resolve() })
     })
+    if (!child || pid === undefined) return wait()
+    if (process.platform === 'win32') spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true })
+    else try { process.kill(-pid, 'SIGTERM') } catch { child.kill('SIGTERM') }
+    return wait()
   }
 }
 
