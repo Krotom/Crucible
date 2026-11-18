@@ -96,33 +96,42 @@ export class PileManager {
     return out.sort((a, b) => a - b)
   }
 
-  step(): void {
+  // a step is begin(), observe() for every awake piece, end(); step() does all three with the host's own walk
+  private toThaw: number[] = []
+  private toFreeze: number[] = []
+  private rob = { x: 0, y: 0, speed: 0 }
+  private robR = 0
+  private restSteps = 0
+
+  begin(): void {
     const o = this.o
-    const dt = this.host.dt
-    const toThaw: number[] = []
-    const toFreeze: number[] = []
-    const rob = this.host.robot()
-    const robR = o.robotRadius + rob.speed * 0.15
-    const restSteps = Math.round(o.restTime / dt)
-    const rest2 = o.restSpeed * o.restSpeed
-    const move2 = o.moveSpeed * o.moveSpeed
+    this.toThaw = []
+    this.toFreeze = []
+    this.rob = this.host.robot()
+    this.robR = o.robotRadius + this.rob.speed * 0.15
+    this.restSteps = Math.round(o.restTime / this.host.dt)
+  }
 
-    this.host.forEachActive((id, b) => {
-      const v = b.linvel()
-      const s2 = v.x * v.x + v.y * v.y + v.z * v.z
-      const t = b.translation()
-      if (s2 > move2) {
-        for (const n of this.near(t.x, t.y, o.thawRadius)) toThaw.push(n)
-      }
-      if (s2 < rest2) {
+  /** One awake piece: its position, velocity and body (the spin is read only when the piece is slow enough to maybe freeze). */
+  observe(id: number, t: { x: number; y: number }, v: { x: number; y: number; z: number }, b: RigidBody): void {
+    const o = this.o
+    const s2 = v.x * v.x + v.y * v.y + v.z * v.z
+    if (s2 > o.moveSpeed * o.moveSpeed) {
+      for (const n of this.near(t.x, t.y, o.thawRadius)) this.toThaw.push(n)
+    }
+    if (s2 < o.restSpeed * o.restSpeed) {
+      const n = (this.rest.get(id) ?? 0) + 1
+      this.rest.set(id, n)
+      // slow spin (a ball rolling in place) is not rest
+      if (n >= this.restSteps && Math.hypot(t.x - this.rob.x, t.y - this.rob.y) > this.robR + 0.1) {
         const w = b.angvel()
-        const n = (this.rest.get(id) ?? 0) + 1
-        this.rest.set(id, n)
-        // slow spin (a ball rolling in place) is not rest
-        if (n >= restSteps && w.x * w.x + w.y * w.y + w.z * w.z < 0.25 && Math.hypot(t.x - rob.x, t.y - rob.y) > robR + 0.1) toFreeze.push(id)
-      } else this.rest.set(id, 0)
-    })
+        if (w.x * w.x + w.y * w.y + w.z * w.z < 0.25) this.toFreeze.push(id)
+      }
+    } else this.rest.set(id, 0)
+  }
 
+  end(): void {
+    const { toThaw, toFreeze, rob, robR } = this
     // the robot wakes whatever it could touch before the next look
     for (const n of this.near(rob.x, rob.y, robR)) toThaw.push(n)
 
@@ -134,5 +143,11 @@ export class PileManager {
       this.rest.delete(id)
       if (p) this.addFrozen(id, p[0], p[1])
     }
+  }
+
+  step(): void {
+    this.begin()
+    this.host.forEachActive((id, b) => this.observe(id, b.translation(), b.linvel(), b))
+    this.end()
   }
 }
