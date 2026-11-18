@@ -26,6 +26,8 @@ export interface PileHost {
   freeze(id: number): void
   thaw(id: number): void
   robot(): { x: number; y: number; speed: number }
+  /** the other robots (opponents, partners, bots) in a fixed order: a frozen piece is a fixed body, so a robot that drives into the pile must thaw it too */
+  others?(): { x: number; y: number; speed: number }[]
 }
 
 const CELL = 0.3
@@ -99,16 +101,15 @@ export class PileManager {
   // a step is begin(), observe() for every awake piece, end(); step() does all three with the host's own walk
   private toThaw: number[] = []
   private toFreeze: number[] = []
-  private rob = { x: 0, y: 0, speed: 0 }
-  private robR = 0
+  /** every robot this step (the main one first, then the others in their fixed order) and how far from each a frozen piece is thawed */
+  private robots: { x: number; y: number; speed: number; r: number }[] = []
   private restSteps = 0
 
   begin(): void {
     const o = this.o
     this.toThaw = []
     this.toFreeze = []
-    this.rob = this.host.robot()
-    this.robR = o.robotRadius + this.rob.speed * 0.15
+    this.robots = [this.host.robot(), ...(this.host.others?.() ?? [])].map((r) => ({ ...r, r: o.robotRadius + r.speed * 0.15 }))
     this.restSteps = Math.round(o.restTime / this.host.dt)
   }
 
@@ -123,7 +124,7 @@ export class PileManager {
       const n = (this.rest.get(id) ?? 0) + 1
       this.rest.set(id, n)
       // slow spin (a ball rolling in place) is not rest
-      if (n >= this.restSteps && Math.hypot(t.x - this.rob.x, t.y - this.rob.y) > this.robR + 0.1) {
+      if (n >= this.restSteps && this.robots.every((r) => Math.hypot(t.x - r.x, t.y - r.y) > r.r + 0.1)) {
         const w = b.angvel()
         if (w.x * w.x + w.y * w.y + w.z * w.z < 0.25) this.toFreeze.push(id)
       }
@@ -131,9 +132,9 @@ export class PileManager {
   }
 
   end(): void {
-    const { toThaw, toFreeze, rob, robR } = this
-    // the robot wakes whatever it could touch before the next look
-    for (const n of this.near(rob.x, rob.y, robR)) toThaw.push(n)
+    const { toThaw, toFreeze } = this
+    // every robot wakes whatever it could touch before the next look
+    for (const r of this.robots) for (const n of this.near(r.x, r.y, r.r)) toThaw.push(n)
 
     for (const id of toThaw) this.thawId(id)
     for (const id of toFreeze.sort((a, b) => a - b)) {

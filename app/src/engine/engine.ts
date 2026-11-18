@@ -687,6 +687,7 @@ export class Engine {
         if (p) this.world.getRigidBody(p.handle).setBodyType(RAPIER.RigidBodyType.Dynamic, true)
       },
       robot: () => { const t = this.robot.translation(); const v = this.robot.linvel(); return { x: t.x, y: t.y, speed: Math.hypot(v.x, v.y) } },
+      others: () => this.others.map((o) => { const t = o.body.translation(); const v = o.body.linvel(); return { x: t.x, y: t.y, speed: Math.hypot(v.x, v.y) } }),
     }
   }
 
