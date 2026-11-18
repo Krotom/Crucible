@@ -292,7 +292,7 @@ it('robot code UI e2e', async () => {
   await check('R18 rebound driving keys drive the robot, the old key stops; the dialog and the robot agree', async () => {
     await page.click('[data-tab=robot]'); await page.click('#controls-btn'); await page.click('#kb-btn-forward'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('Escape'); await sleep(200)
     await page.locator('body').click({ position: { x: 4, y: 4 } }); live.joystick.length = 0
-    await page.keyboard.down('ArrowUp'); await sleep(600); const up = live.joystick[live.joystick.length - 1]; await page.keyboard.up('ArrowUp'); await sleep(300)
+    await page.keyboard.down('ArrowUp'); for (let i = 0; i < 40 && !live.joystick.some((j) => j.axes[1] === -1); i++) await sleep(150); const up = live.joystick.find((j) => j.axes[1] === -1) ?? live.joystick[live.joystick.length - 1]; await page.keyboard.up('ArrowUp'); await sleep(300)
     live.joystick.length = 0; await page.keyboard.down('w'); await sleep(500); const w = live.joystick.some((j) => j.axes.some((a) => a !== 0)); await page.keyboard.up('w')
     await page.keyboard.press('g'); await page.click('#keys-reset'); await page.keyboard.press('Escape'); await sleep(200)
     expect(up && up.axes[1] === -1, 'ArrowUp pushes the left stick forward: ' + JSON.stringify(up?.axes)); expect(!w, 'W no longer drives after the rebind')

@@ -9,7 +9,8 @@ export NODE_PATH="${NODE_PATH:-$(npm root -g)}"
 [ -x node_modules/electron/dist/electron ] || { echo "Electron binary missing: run  node node_modules/electron/install.js  first" >&2; exit 1; }
 mkdir -p "$SP/e2e/out"
 rm -rf "$SP/fakerobot"; cp -r e2e/fakerobot "$SP/fakerobot"; chmod +x "$SP/fakerobot/gradlew"; echo normal > "$SP/fakerobot/mode.txt"
-npm run build >/dev/null || exit 1
+# E2E_NO_BUILD=1: use the build that is there (suites run side by side must not rebuild underneath each other)
+[ -n "${E2E_NO_BUILD:-}" ] || npm run build >/dev/null || exit 1
 suites=("$@"); if [ ${#suites[@]} -eq 0 ]; then suites=($(ls e2e/ui-*.js | xargs -n1 basename | sed 's/\.js$//') robot-ui); fi
 fail=0
 for s in "${suites[@]}"; do

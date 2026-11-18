@@ -23,7 +23,9 @@ exports.check = async (name, fn) => {
 exports.expect = (cond, msg) => { if (!cond) throw new Error(msg || 'expectation failed') }
 exports.eq = (a, b, msg) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg || 'not equal'}: got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`) }
 // E2E_SLOW multiplies every fixed wait: a CI runner has fewer CPUs than a desk machine and the page (software WebGL) answers later
-exports.sleep = (ms) => new Promise((r) => setTimeout(r, ms * (Number(process.env.E2E_SLOW) || 1)))
+// Only short waits are stretched: a long sleep is usually a duration ("play for 3 s") that a test's numbers depend on.
+exports.slow = Number(process.env.E2E_SLOW) || 1
+exports.sleep = (ms) => new Promise((r) => setTimeout(r, ms <= 800 ? ms * exports.slow : ms))
 exports.summary = () => {
   const c = { PASS: 0, NOTE: 0, FAIL: 0 }
   for (const r of results) c[r.status]++
@@ -49,6 +51,7 @@ exports.launch = async (extraEnv = {}, opts = {}) => {
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message))
   page.on('console', (m) => { if (m.type() === 'error' && !/404/.test(m.text())) errors.push('console: ' + m.text()) })
   await page.waitForSelector('#start-sim', { timeout: 30000 })
+  await page.waitForFunction(() => !!window.crucible, null, { timeout: 60000 }) // the page's script sets this last; a slow runner shows the controls long before
   exports.setPage(page)
   return { app, page, errors, userData }
 }

@@ -119,11 +119,12 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
   await check('A11 Reset clears the analysis; Load state rewinds it to the saved moment; a new sim starts clean', async () => {
     await startSim('test'); await runTo(6)
     const n1 = await rec(() => crucible.recorder.feed.length); expect(n1 > 0, 'events recorded')
-    await page.click('#sim-save'); await sleep(300); const tSaved = await simTime(); const s0 = await rec(() => crucible.recorder.scores.length); await runTo(9)
-    await feedIn(9.5, [{ t: 9.5, kind: 'score', alliance: 'red', points: 4, reason: 'after save' }], 'teleop')
-    eq(await rec(() => crucible.recorder.scores.length), (await rec(() => crucible.recorder.scores.filter((x) => x.t <= 9.5).length)), 'sanity'); expect((await rec(() => crucible.recorder.scores.length)) > s0, 'a score after the save exists')
+    await page.click('#sim-save'); await sleep(300); const tSaved = await simTime(); const s0 = await rec(() => crucible.recorder.scores.length); await runTo(tSaved + 3) // the pause may land late on a busy machine, so everything below is relative to the real saved moment
+    const tAfter = (await rec(() => crucible.sim.latest.time)) + 0.5
+    await feedIn(tAfter, [{ t: tAfter, kind: 'score', alliance: 'red', points: 4, reason: 'after save' }], 'teleop')
+    eq(await rec(() => crucible.recorder.scores.length), (await rec((tAfter) => crucible.recorder.scores.filter((x) => x.t <= tAfter).length, tAfter)), 'sanity'); expect((await rec(() => crucible.recorder.scores.length)) > s0, 'a score after the save exists')
     await page.click('#sim-load'); await page.waitForFunction((s0) => crucible.recorder.scores.length === s0, s0, { timeout: 15000 }).catch(() => {}) // the loaded frame reaches the page when the page has time for it (slow on a busy runner)
-    eq(await rec(() => crucible.recorder.scores.length), s0, 'scores after the save are forgotten'); expect(Math.abs((await rec(() => crucible.recorder.time)) - tSaved) < 0.05, 'recorder time back at the saved moment')
+    eq(await rec(() => crucible.recorder.scores.length), s0, 'scores after the save are forgotten (saved at ' + tSaved + ', now ' + JSON.stringify(await rec(() => ({ time: crucible.recorder.time, sim: crucible.sim.latest.time, scores: crucible.recorder.scores.map((x) => [x.t, x.alliance, x.points, x.reason]) }))) + ')'); expect(Math.abs((await rec(() => crucible.recorder.time)) - tSaved) < 0.05, 'recorder time back at the saved moment')
     await page.click('#sim-reset'); await sleep(600); eq(await rec(() => crucible.recorder.feed.length), 0, 'reset empties the feed')
     await feedIn(1, [{ t: 1, kind: 'score', alliance: 'blue', points: 1, reason: 'x' }], 'auto'); await startSim('test'); eq(await rec(() => crucible.recorder.scores.length), 0, 'new sim starts clean')
   })
