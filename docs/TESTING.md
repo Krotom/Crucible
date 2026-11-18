@@ -37,6 +37,10 @@ Needs: Electron's binary (`node node_modules/electron/install.js`), `xvfb-run`, 
 
 Things learned while writing them: native dialogs cannot be driven, so the tests stub `dialog.showSaveDialog` in the main process and check the written file; the match-summary popup is modal and blocks clicks (tests untick it for long runs); a new sim waits for Play; a control on another tab is not clickable.
 
+## Writing tests that do not fail on a gust of wind
+
+The UI suites run on a loaded shared runner with software rendering, so a test must say what it waits for, never how long. Wait for a state (`waitForFunction`, the `until` helpers, polling a value) instead of sleeping and then reading it; give a margin that a slow machine can meet (a busy runner simulates slower than real time, never faster); do not assume what a toggle button was doing before the click. The Play/Pause button is the usual trap: it acts on what the page last heard from the worker, so use `setPlaying(true|false)` from `e2e/lib.js` (robot-ui has its own copy) and never click `#play` blindly. A check that can fail half way must not leave state behind that fails the next ones (a collapsed panel, a paused sim): restore it in a `finally`. Unit tests must pass on Windows too: read text files with line ends normalised and compare paths with forward slashes; tests that run a shell script or tar are skipped there.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push and pull request: typecheck, unit tests and build, then (after those pass) the UI suites under `xvfb` on an Ubuntu runner with Playwright 1.63. `.github/workflows/release.yml` re-runs typecheck and unit tests before building release packages ([RELEASING.md](RELEASING.md)). A unit test (`tests/batch9.test.ts`, `tests/release.test.ts`) keeps both workflows consistent with the repository: only npm scripts that exist, the scripts and files they name exist, the Electron binary is fetched before the UI tests, the release job order and permissions.

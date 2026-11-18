@@ -1,6 +1,6 @@
 // Replay and export: rewind and slots, plot CSV/PNG, .wpilog export, run compare, seed sweep, reference log overlay
 const fs = require('fs')
-const { check, expect, eq, sleep, summary, launch } = require('./lib')
+const { check, expect, eq, sleep, summary, launch, setPlaying } = require('./lib')
 const { makeLog } = require('./wpilog')
 const SP = process.env.SP
 const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
@@ -105,7 +105,7 @@ fs.writeFileSync(OUT + '/ref.wpilog', makeLog(10))
     expect(new RegExp(`sim\\.wpilog: ${topics} topics`).test(await T('#status')), await T('#status') + ' vs ' + topics + ' topics')
     expect(Math.abs((await ev(() => crucible.store.tMax - crucible.store.tMin)) - tMax) < 0.2, 'same length')
     eq(await page.inputValue('#pose-select'), '/Sim/Robot/Pose', 'the pose is found in the reopened log')
-    await page.click('#play'); await sleep(700); await page.click('#play'); expect(parseFloat((await T('#time')).split('/')[0]) > 0.3, 'it plays')
+    await setPlaying(true); await sleep(700); await setPlaying(false); expect(parseFloat((await T('#time')).split('/')[0]) > 0.3, 'it plays')
   })
   await check('R10 Save run (.json) and compare: A = this run, B = a rerun with another seed; table, winners, charts; a loaded file; a bad file is refused', async () => {
     await startSim('test', '42'); await runTo(6); await page.click('[data-tab=analysis]')

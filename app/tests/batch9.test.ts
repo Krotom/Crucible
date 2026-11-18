@@ -172,7 +172,7 @@ describe('game plugins', () => {
 })
 
 describe('CI workflow', () => {
-  const yml = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')
+  const yml = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n') // a Windows checkout has CRLF line ends
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> }
   it('only calls npm scripts that exist, in the app folder', () => {
     for (const m of yml.matchAll(/npm run ([\w:-]+)/g)) expect(pkg.scripts[m[1]], `npm run ${m[1]}`).toBeTruthy()
@@ -193,7 +193,7 @@ describe('CI workflow', () => {
     expect(listed).toEqual(suites)
     expect(yml).toMatch(/cancel-in-progress: true/); expect(yml).toMatch(/E2E_VERBOSE: '1'/); expect(yml).toMatch(/fail-fast: false/)
     expect((yml.match(/timeout-minutes:/g) ?? []).length).toBe(2) // checks and the UI jobs
-    const rel = readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8')
+    const rel = readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
     expect((rel.match(/runs-on:/g) ?? []).length).toBe((rel.match(/timeout-minutes:/g) ?? []).length) // no job without a timeout
   })
   it('does not run twice for one push (pushes to branches run as the pull request)', () => {

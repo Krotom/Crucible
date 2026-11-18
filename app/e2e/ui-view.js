@@ -1,6 +1,6 @@
 // 3D view features: camera presets, view menu overlays, rules zones, trail, shot arcs, ruler, scoreboard, robot camera, draggable panel, alliance and start position
 const fs = require('fs')
-const { check, expect, eq, sleep, summary, launch } = require('./lib')
+const { check, expect, eq, sleep, summary, launch, setPlaying } = require('./lib')
 const SP = process.env.SP
 const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
 ;(async () => {
@@ -17,7 +17,7 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
     await page.fill('#seed', '42'); await page.click('#start-sim')
     await page.waitForFunction(() => document.querySelector('.simhud .kv') && crucible.sim.ready, null, { timeout: 15000 }); await sleep(300)
   }
-  const play = async (ms, speed = '1') => { await page.selectOption('#speed', speed); await page.click('#play'); await sleep(ms); await page.click('#play'); await sleep(200); await page.selectOption('#speed', '1') }
+  const play = async (ms, speed = '1') => { await page.selectOption('#speed', speed); await setPlaying(true); await sleep(ms); await setPlaying(false); await sleep(200); await page.selectOption('#speed', '1') }
   const camPos = () => ev(() => { const p = crucible.view.camera.position; return [p.x, p.y, p.z] })
   const robotPos = () => ev(() => { const p = crucible.view.robotObject.position; return [p.x, p.y] })
   const colors = async (clip) => { const f = SP + '/e2e/out/clip.png'; await page.screenshot({ path: f, clip }); return Number(require('child_process').execSync(`python3 -W ignore -c "from PIL import Image; im=Image.open('${f}').convert('RGB').resize((120,80)); print(len(set(im.getdata())))"`, { encoding: 'utf-8' }).trim()) }

@@ -57,4 +57,17 @@ exports.launch = async (extraEnv = {}, opts = {}) => {
   exports.setPage(page)
   return { app, page, errors, userData }
 }
+// The Play button toggles: its action depends on what the page thinks the sim is doing, which a worker frame updates a moment later. A test that clicks it
+// blindly (or twice in quick succession) can end up with the opposite of what it wanted on a busy machine. This says what the test wants and makes it so:
+// it reads the label ("Pause" = playing), clicks only when it differs, waits for the label to follow, and tries again if the click was lost.
+exports.setPlaying = async (want, timeoutMs = 20000) => {
+  const state = () => page.evaluate(() => /^(Pause|Duraklat)$/.test(document.getElementById('play').textContent.trim()))
+  const t0 = Date.now()
+  for (;;) {
+    if ((await state()) === want) return
+    await page.click('#play')
+    try { await page.waitForFunction((w) => /^(Pause|Duraklat)$/.test(document.getElementById('play').textContent.trim()) === w, want, { timeout: 2500 }); return } catch { /* the click was lost: look again */ }
+    if (Date.now() - t0 > timeoutMs) throw new Error(`the Play button did not turn to "${want ? 'Pause' : 'Play'}"`)
+  }
+}
 exports.sh = (cmd) => { try { return execSync(cmd, { encoding: 'utf8' }).trim() } catch (e) { return '' } }

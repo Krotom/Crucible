@@ -1,5 +1,5 @@
 // Robot testing tools without robot code: breakpoints, the testing card, the Controls dialog (fake gamepad)
-const { check, expect, eq, sleep, summary, launch } = require('./lib')
+const { check, expect, eq, sleep, summary, launch, setPlaying } = require('./lib')
 ;(async () => {
   const { app, page, errors } = await launch()
   void app
@@ -15,7 +15,7 @@ const { check, expect, eq, sleep, summary, launch } = require('./lib')
     await startSim(); await page.click('[data-tab=analysis]'); await page.check('#bp-time-on'); await set('#bp-time', 3)
     await playUntilPaused(); const t = await simT(); expect(Math.abs(t - 3) < 0.0105, 'paused at ' + t)
     expect((await T('#notice')).startsWith('Paused: sim time 3 s reached at 3.00 s'), await T('#notice')); expect((await T('#bp-last')).includes('sim time 3 s reached'), await T('#bp-last')); eq(await T('#play'), 'Play')
-    await page.click('#play'); await sleep(1500); await page.click('#play'); expect((await simT()) > 4, 'it runs on past the breakpoint: ' + (await simT()))
+    await setPlaying(true); await sleep(1500); await setPlaying(false); expect((await simT()) > 4, 'it runs on past the breakpoint: ' + (await simT()))
     await page.click('#sim-reset'); await sleep(400); await playUntilPaused(); const t3 = await simT(); expect(Math.abs(t3 - 3) < 0.0105, 'Reset re-armed it: ' + t3)
   })
   await check('B2 phase breakpoint stops at the phase change (test game: teleop at 5 s)', async () => {
@@ -25,14 +25,14 @@ const { check, expect, eq, sleep, summary, launch } = require('./lib')
   })
   await check('B3 breakpoints set before a start apply to the new sim; with none set the run goes on; the settings survive a reload', async () => {
     await page.check('#bp-time-on'); await set('#bp-time', 2); await startSim(); await playUntilPaused(); const t2 = await simT(); expect(Math.abs(t2 - 2) < 0.0105, 'init carried the breakpoint: ' + t2)
-    await page.click('[data-tab=analysis]'); await page.uncheck('#bp-time-on'); await page.click('#play'); await sleep(1500); await page.click('#play'); expect((await simT()) > 3, 'no breakpoint: runs on')
+    await page.click('[data-tab=analysis]'); await page.uncheck('#bp-time-on'); await setPlaying(true); await sleep(1500); await setPlaying(false); expect((await simT()) > 3, 'no breakpoint: runs on')
     await page.check('#bp-launch'); await page.check('#bp-impact-on'); await set('#bp-impact', 3.5); await page.reload(); await page.waitForSelector('#start-sim'); await page.click('[data-tab=analysis]')
     eq(await ev(() => ({ l: document.getElementById('bp-launch').checked, i: document.getElementById('bp-impact-on').checked, v: document.getElementById('bp-impact').value, t: document.getElementById('bp-time-on').checked })), { l: true, i: true, v: '3.5', t: false })
     await page.uncheck('#bp-launch'); await page.uncheck('#bp-impact-on')
   })
   await check('B4 junk in the breakpoint boxes does not break anything', async () => {
     await startSim(); await page.click('[data-tab=analysis]'); await page.check('#bp-time-on'); await set('#bp-time', 'abc'); await page.check('#bp-impact-on'); await set('#bp-impact', '-4'); await sleep(300)
-    await page.selectOption('#speed', '4'); await page.click('#play'); await sleep(1500); await page.click('#play'); await page.selectOption('#speed', '1')
+    await page.selectOption('#speed', '4'); await setPlaying(true); await sleep(1500); await setPlaying(false); await page.selectOption('#speed', '1')
     expect(errors.length === 0, errors.join('|')); await page.uncheck('#bp-time-on'); await page.uncheck('#bp-impact-on')
   })
 

@@ -20,7 +20,7 @@ function markdownFiles(dir: string, out: string[] = []): string[] {
 }
 const docs = markdownFiles(root)
 const text = (p: string): string => readFileSync(p, 'utf8')
-const rel = (p: string): string => p.slice(root.length + 1)
+const rel = (p: string): string => p.slice(root.length + 1).replace(/\\/g, '/') // forward slashes on every system
 
 describe('the documents', () => {
   it('finds them (the root README, the app README and the docs folder)', () => {

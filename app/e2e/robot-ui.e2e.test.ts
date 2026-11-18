@@ -93,6 +93,16 @@ it('robot code UI e2e', async () => {
   const head = (): Promise<any> => page.$eval('.simhud-head', (e: any) => ({ phase: e.querySelector('.sh-phase').textContent, clock: e.querySelector('.sh-clock').textContent }))
   const titles = (): Promise<string[]> => page.$$eval('.simhud-body h4', (e: any[]) => e.map((x) => x.textContent))
   const until = async (f: () => Promise<boolean> | boolean, ms = 8000, what: string | (() => string) = 'condition'): Promise<void> => { const t0 = Date.now(); for (;;) { if (await f()) return; if (Date.now() - t0 > ms) throw new Error('timed out waiting for ' + (typeof what === 'function' ? what() : what)); await sleep(100) } }
+  // the Play button toggles on what the page last heard from the worker: say what is wanted and make it so (read the label, click only when it differs, wait for it to follow)
+  const setPlaying = async (want: boolean): Promise<void> => {
+    const t0 = Date.now()
+    for (;;) {
+      if ((await page.evaluate(() => /^(Pause|Duraklat)$/.test(document.getElementById('play')!.textContent!.trim()))) === want) return
+      await page.click('#play')
+      try { await page.waitForFunction((w) => /^(Pause|Duraklat)$/.test(document.getElementById('play')!.textContent!.trim()) === w, want, { timeout: 2500 }); return } catch { /* the click was lost: look again */ }
+      if (Date.now() - t0 > 20000) throw new Error(`the Play button did not turn to "${want ? 'Pause' : 'Play'}"`)
+    }
+  }
   const startRobotSim = async (mode: 'robot' | 'lockstep', game = 'rebuilt'): Promise<void> => {
     if ((await page.textContent('#start-sim')) === 'Stop sim') { await page.click('#start-sim'); await sleep(300) }
     await page.click('[data-tab=robot]'); await page.selectOption('#sim-mode', mode); await page.click('[data-tab=session]')
@@ -310,7 +320,7 @@ it('robot code UI e2e', async () => {
     const t0 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(Math.abs(t0 - (Math.ceil(now) + 6)) < 0.3, `paused near the breakpoint: ${t0} (wanted ${Math.ceil(now) + 6})`)
     const f0 = live.fromApp; await sleep(800); const t1 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(Math.abs(t1 - t0) < 0.03, 'sim clock frozen: ' + t0 + ' -> ' + t1); expect(live.fromApp > f0 + 10, 'the robot is still being answered')
     expect((await page.textContent('#bp-last'))!.includes('sim time'), await page.textContent('#bp-last')); await page.uncheck('#bp-time-on')
-    await page.click('#play'); await sleep(1200); const t2 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(t2 > t1 + 0.5, 'Play continues: ' + t1 + ' -> ' + t2)
+    await setPlaying(true); await sleep(1200); const t2 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(t2 > t1 + 0.5, 'Play continues: ' + t1 + ' -> ' + t2)
     await page.click('[data-tab=session]')
   }, page)
 
@@ -394,11 +404,11 @@ it('robot code UI e2e', async () => {
     eq(await page.textContent('#play'), 'Pause')
   }, page)
   await check('L2 lockstep Pause stops the exchange, Play resumes; max speed runs faster than real time', async () => {
-    await page.click('#play'); await sleep(500); const s = lock.steps; await sleep(800); eq(lock.steps, s, 'steps while paused')
+    await setPlaying(false); await sleep(500); const s = lock.steps; await sleep(800); eq(lock.steps, s, 'steps while paused')
     eq(await page.textContent('#play'), 'Play')
-    await page.selectOption('#speed', '0'); await page.click('#play'); await sleep(300); const t0 = lock.t; await sleep(2000)
+    await page.selectOption('#speed', '0'); await setPlaying(true); await sleep(300); const t0 = lock.t; await sleep(2000)
     const rate = (lock.t - t0) / 2
-    await page.click('#play'); await page.selectOption('#speed', '1'); await page.click('#play')
+    await setPlaying(false); await page.selectOption('#speed', '1'); await setPlaying(true)
     expect(rate > 1.2, 'max speed ran at ' + rate.toFixed(2) + 'x'); return `max speed ran ${rate.toFixed(1)}x real time against a fake robot`
   }, page)
   await check('L3 lockstep DS Enable reaches the robot', async () => {

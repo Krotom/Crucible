@@ -6,7 +6,7 @@ import { CHANGELOG } from '../src/renderer/src/lib/versions'
 import { pickAsset } from '../src/main/updater'
 import { UPDATE_PUBLIC_KEY } from '../src/main/update-key'
 
-const read = (p: string): string => readFileSync(new URL(p, import.meta.url), 'utf8')
+const read = (p: string): string => readFileSync(new URL(p, import.meta.url), 'utf8').replace(/\r\n/g, '\n') // a Windows checkout has CRLF line ends
 const pkg = JSON.parse(read('../package.json')) as { version: string; scripts: Record<string, string> }
 const yml = read('../../.github/workflows/release.yml')
 

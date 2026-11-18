@@ -1,7 +1,7 @@
 // Team and developer features: attempts, shared runs, report into the project, strategy board, score and timer in captures, game plugins, local API
 const fs = require('fs')
 const path = require('path')
-const { check, expect, eq, sleep, summary, launch, APP } = require('./lib')
+const { check, expect, eq, sleep, summary, launch, APP, setPlaying } = require('./lib')
 const SP = process.env.SP
 const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
 ;(async () => {
@@ -116,7 +116,7 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
   // ---------------------------------------------------------------- score and timer in captures
   await page.keyboard.press('Escape').catch(() => {})
   await check('T11 with "Score and timer in screenshots and video" on, the screenshot has a banner at the top and is otherwise the same picture; off, it has none', async () => {
-    await startSim('test', '42'); await page.click('#play'); await sleep(300); await page.click('#play'); await sleep(400)
+    await startSim('test', '42'); await setPlaying(true); await sleep(300); await setPlaying(false); await sleep(400)
     const shot = async (name) => { const p = OUT + '/' + name; fs.rmSync(p, { force: true }); await stub(p); await page.click('#shot-btn'); await page.waitForFunction(() => !!document.getElementById('notice').textContent.includes('Screenshot saved') || true); await sleep(900); return fs.readFileSync(p).toString('base64') }
     await page.click('#view-btn'); await page.uncheck('#vm-burn'); await page.click('#view-btn'); const plain = await shot('shot-plain.png')
     await page.click('#view-btn'); await page.check('#vm-burn'); await page.click('#view-btn'); const burned = await shot('shot-burned.png')
@@ -131,8 +131,8 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
     expect(r.same, 'same size'); expect(r.banner > 0.1, `the banner region differs: ${r.banner.toFixed(3)}`); expect(r.rest < 0.02, `the rest of the picture is the same: ${r.rest.toFixed(4)}`)
   })
   await check('T12 a video recorded with the banner on is saved, and the screenshot button still works when no sim is running (no banner then)', async () => {
-    const webm = OUT + '/burn.webm'; fs.rmSync(webm, { force: true }); await stub(webm); await page.click('#play'); await page.click('#rec-btn'); await sleep(1600); await page.click('#rec-btn'); await sleep(2000)
-    expect(fs.existsSync(webm) && fs.statSync(webm).size > 2000, 'video saved: ' + (fs.existsSync(webm) ? fs.statSync(webm).size : 'missing')); await page.click('#play')
+    const webm = OUT + '/burn.webm'; fs.rmSync(webm, { force: true }); await stub(webm); await setPlaying(true); await page.click('#rec-btn'); await sleep(1600); await page.click('#rec-btn'); await sleep(2000)
+    expect(fs.existsSync(webm) && fs.statSync(webm).size > 2000, 'video saved: ' + (fs.existsSync(webm) ? fs.statSync(webm).size : 'missing')); await setPlaying(false)
     await page.click('#start-sim'); await sleep(500); const png = OUT + '/shot-nosim.png'; fs.rmSync(png, { force: true }); await stub(png); await page.click('#shot-btn'); await sleep(900); expect(fs.existsSync(png) && fs.statSync(png).size > 1000, 'screenshot without a sim')
   })
 

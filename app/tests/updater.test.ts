@@ -107,7 +107,9 @@ describe('where an update goes', () => {
   })
 })
 
-describe('the swap script (run for real in a temporary folder)', () => {
+// the swap script is a shell script for Linux and macOS (Windows updates through its installer), and tar unpacks the Linux archive: nothing to run for real on Windows
+const posixOnly = process.platform === 'win32'
+describe.skipIf(posixOnly)('the swap script (run for real in a temporary folder)', () => {
   const sh = (script: string, args: string[]) => spawnSync('/bin/sh', [script, ...args], { encoding: 'utf8', timeout: 30000 })
   const setup = (): { script: string; cur: string; fresh: string; old: string; launch: string } => {
     const cur = join(dir, 'app'), fresh = join(dir, 'stage', 'app'), old = join(dir, 'app.old'), script = join(dir, 'swap.sh')
@@ -136,7 +138,7 @@ describe('the swap script (run for real in a temporary folder)', () => {
   })
 })
 
-describe('unpacking and cleaning up', () => {
+describe.skipIf(posixOnly)('unpacking and cleaning up', () => {
   it('unpacks a Linux archive to its app folder, and refuses an archive without the app', () => {
     const src = join(dir, 'src', 'BALTA-Crucible-2.0.0-linux-x64'); mkdirSync(src, { recursive: true }); writeFileSync(join(src, 'balta-crucible'), 'bin'); writeFileSync(join(src, 'BALTA-Crucible'), 'sh')
     const tgz = join(dir, 'a.tar.gz'); expect(spawnSync('tar', ['-czf', tgz, '-C', join(dir, 'src'), 'BALTA-Crucible-2.0.0-linux-x64']).status).toBe(0)

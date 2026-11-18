@@ -1,5 +1,5 @@
 const fs = require('fs')
-const { check, expect, eq, sleep, summary, launch } = require('./lib')
+const { check, expect, eq, sleep, summary, launch, setPlaying } = require('./lib')
 const { makeLog } = require('./wpilog')
 const SP = process.env.SP
 const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
@@ -40,12 +40,12 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
     const r = await rows(); expect(r['Speed'] === 'Paused' && r['Sim time'] === '0.00 s', JSON.stringify(r))
   })
   await check('S2 Play advances time, speed reads ~1x; Pause stops it', async () => {
-    await page.click('#play'); await sleep(2000)
+    await setPlaying(true); await sleep(2000)
     const t1 = await simT(); const r = await rows()
     expect(t1 > 0.5, 'sim time barely moved: ' + t1)
     expect(/real time/.test(r['Speed']), r['Speed'])
     eq(await page.textContent('#play'), 'Pause')
-    await page.click('#play'); await settle(); const t2 = await simT(); await sleep(600)
+    await setPlaying(false); await settle(); const t2 = await simT(); await sleep(600)
     eq(await simT(), t2, 'time moved while paused')
     eq((await rows())['Speed'], 'Paused'); eq(await page.textContent('#play'), 'Play')
     return `1x run: ${t1.toFixed(2)} s simulated in 2 s wall`
@@ -91,11 +91,11 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
   })
   await check('S8 Speed dropdown changes the sim rate (0.25x vs 4x)', async () => {
     await startSim({ game: 'test', seed: 42 })
-    await page.selectOption('#speed', '0.25'); await page.click('#play'); await sleep(2500)
+    await page.selectOption('#speed', '0.25'); await setPlaying(true); await sleep(2500)
     const slow = parseFloat((await rows())['Speed'])
     await page.selectOption('#speed', '4'); await sleep(2500)
     const fast = parseFloat((await rows())['Speed'])
-    await page.click('#play'); await page.selectOption('#speed', '1')
+    await setPlaying(false); await page.selectOption('#speed', '1')
     expect(slow > 0.1 && slow < 0.5, '0.25x measured ' + slow)
     expect(fast > 2 && fast < 5, '4x measured ' + fast + ' (this machine may be too slow)')
     return `0.25x -> ${slow}x, 4x -> ${fast}x`
@@ -127,20 +127,28 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
   })
   await check('P2 panel: header always updates, collapse hides body, stays collapsed after reload', async () => {
     await startSim({ game: 'rebuilt', seed: 42 })
+    try {
     expect(await page.$eval('.simhud-body', (e) => getComputedStyle(e).display !== 'none'))
     await page.click('.simhud-head'); await settle()
     eq(await page.$eval('.simhud-body', (e) => getComputedStyle(e).display), 'none')
     eq(await page.getAttribute('.simhud-head', 'aria-expanded'), 'false')
     const h = await page.$eval('#simhud', (e) => Math.round(e.getBoundingClientRect().height)); expect(h < 60, 'collapsed height ' + h)
-    await page.click('#play'); await sleep(1500)
-    const c = (await head()).clock; expect(parseFloat(c) > 0.3, 'header clock should keep running while collapsed: ' + c)
-    await page.click('#play')
+    await setPlaying(true)
+    // wait for the clock to pass 0.3 s instead of reading it after a fixed pause: a busy runner simulates slower, not never
+    let c = ''; for (let i = 0; i < 100 && !(parseFloat(c) > 0.3); i++) { await sleep(150); c = (await head()).clock }
+    expect(parseFloat(c) > 0.3, 'header clock should keep running while collapsed: ' + c)
+    await setPlaying(false)
     await page.reload(); await page.waitForSelector('#start-sim')
     await page.selectOption('#game-select', 'rebuilt'); await page.click('#start-sim'); await sleep(800)
     eq(await page.getAttribute('.simhud-head', 'aria-expanded'), 'false', 'collapsed state after reload')
     await page.click('.simhud-head'); await settle()
     expect((await rows())['Sim time'] !== undefined, 'rows come back when reopened')
     expect(await page.$eval('.simhud-body', (e) => getComputedStyle(e).display !== 'none'))
+    } finally {
+      // the collapsed state is remembered across reloads and a paused or running sim carries over: a failure above must not leave the next checks with either
+      try { if ((await page.getAttribute('.simhud-head', 'aria-expanded')) === 'false') { await page.click('.simhud-head'); await settle() } } catch { /* no panel */ }
+      try { await setPlaying(false) } catch { /* no sim */ }
+    }
   })
   await check('P3 panel in light theme: readable contrast, screenshot', async () => {
     await page.click('#theme-btn'); await settle()
@@ -171,7 +179,7 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
   })
 
   await check('K1 Topics tab: sim topics appear, filter works, click plots and unplots', async () => {
-    await startSim({ game: 'test', seed: 42 }); await page.click('#play'); await sleep(1500)
+    await startSim({ game: 'test', seed: 42 }); await setPlaying(true); await sleep(1500)
     await page.click('[data-tab=topics]')
     const n = await page.$$eval('#topics .topic', (e) => e.length); expect(n > 3, 'topics: ' + n)
     await page.fill('#filter', 'score'); await settle()
@@ -182,7 +190,7 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
     await page.click('#topics .topic.plottable'); await settle()
     expect(!(await page.$eval('#topics .topic.plottable', (e) => e.classList.contains('on'))), 'row should switch off')
     await page.fill('#filter', '')
-    await page.click('#play')
+    await setPlaying(false)
   })
   await check('K2 Clear plot button empties the plot', async () => {
     await page.fill('#filter', 'speed'); await settle(); await page.click('#topics .topic.plottable'); await settle()
@@ -198,7 +206,7 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
     eq(await page.inputValue('#pose-select'), '/Swerve/Pose')
     expect(await page.$eval('#seek', (e) => !e.disabled), 'seek enabled')
     eq(await page.textContent('#time'), '0.00 / 10.00 s')
-    const w0 = Date.now(); await page.click('#play'); await sleep(1500); await page.click('#play'); const wall = (Date.now() - w0) / 1000
+    const w0 = Date.now(); await setPlaying(true); await sleep(1500); await setPlaying(false); const wall = (Date.now() - w0) / 1000
     const t = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t > Math.min(0.8, wall * 0.3) && t < wall + 1, `played ${t} s in ${wall.toFixed(1)} s of wall time (a busy runner may play less, never more)`)
     await page.$eval('#seek', (e) => { e.value = '0.5'; e.dispatchEvent(new Event('input', { bubbles: true })) }); await sleep(300)
     const t2 = parseFloat((await page.textContent('#time')).split('/')[0]); expect(Math.abs(t2 - 5) < 0.3, 'seek to half gave ' + t2)
@@ -209,8 +217,8 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
     await page.selectOption('#speed', '8'); await page.click('#play'); await page.waitForFunction(() => document.getElementById('play').textContent === 'Play', null, { timeout: 8000 })
     const t = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t >= 9.9, 'ended at ' + t)
     await page.selectOption('#speed', '1') // at 8x a busy page could already be seconds in
-    await page.click('#play'); await sleep(300); const t2 = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t2 < 5, 'restart from start, got ' + t2)
-    await page.click('#play'); await page.selectOption('#speed', '1')
+    await setPlaying(true); await sleep(300); const t2 = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t2 < 5, 'restart from start, got ' + t2)
+    await setPlaying(false); await page.selectOption('#speed', '1')
   })
   await check('L3 Truncated log opens with a note; garbage and empty files give an error and the app survives', async () => {
     await page.setInputFiles('#file', OUT + '/trunc.wpilog'); await sleep(700)
@@ -256,14 +264,14 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
   })
   await check('V3 Record: indicator + timer, stop writes a playable-looking WebM', async () => {
     const out = OUT + '/rec.webm'; try { fs.unlinkSync(out) } catch {}
-    await stub(out); await page.click('#play'); await page.click('#rec-btn'); await sleep(2500)
+    await stub(out); await setPlaying(true); await page.click('#rec-btn'); await sleep(2500)
     expect(await page.$eval('#rec-btn', (e) => e.classList.contains('on')), 'rec button should show recording')
     expect(!(await page.$eval('#rec-time', (e) => e.hidden)), 'timer visible'); const tm = await page.textContent('#rec-time'); expect(/0:0[1-9]/.test(tm), 'timer ' + tm)
     await page.click('#rec-btn'); await sleep(2500)
     expect(!(await page.$eval('#rec-btn', (e) => e.classList.contains('on'))), 'indicator off after stop')
     expect(fs.existsSync(out), 'no file; notice: ' + (await page.textContent('#notice')))
     const b = fs.readFileSync(out); expect(b.subarray(0, 4).toString('hex') === '1a45dfa3', 'not WebM'); expect(b.length > 3000, 'tiny video ' + b.length)
-    await page.click('#play')
+    await setPlaying(false)
   })
 
   await check('Z1 no unexpected errors in the page the whole run', async () => { const real = errors.filter((e) => !/ERR_CONNECTION_REFUSED/.test(e)); expect(real.length === 0, real.join(' | ')) })

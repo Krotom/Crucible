@@ -1,5 +1,5 @@
 const fs = require('fs')
-const { check, expect, eq, sleep, summary, launch } = require('./lib')
+const { check, expect, eq, sleep, summary, launch, setPlaying } = require('./lib')
 const SP = process.env.SP
 const FAKE = SP + '/fakerobot'; const CFG = require('path').resolve(__dirname, '..', 'crucible.config.json')
 ;(async () => {
@@ -19,15 +19,15 @@ const FAKE = SP + '/fakerobot'; const CFG = require('path').resolve(__dirname, '
   }
   await check('W1 3D view renders real content before and during a sim (not a blank canvas)', async () => {
     const before = Number(await canvasColors())
-    await start({ game: 'rebuilt' }); await page.click('#play'); await sleep(1500)
-    const during = Number(await canvasColors()); await page.click('#play')
+    await start({ game: 'rebuilt' }); await setPlaying(true); await sleep(1500)
+    const during = Number(await canvasColors()); await setPlaying(false)
     expect(before > 5 && during > 50, `distinct colors before ${before}, during ${during}`)
   })
   for (const opp of ['blocker', 'cycler']) {
     await check(`W2 opponent "${opp}" starts, runs 4 s in REBUILT, changes the scene, no errors`, async () => {
       await start({ game: 'rebuilt', opp }); const c0 = await canvasColors()
-      await page.click('#play'); await sleep(4000)
-      const r = await rows(); await page.click('#play')
+      await setPlaying(true); await sleep(4000)
+      const r = await rows(); await setPlaying(false)
       expect(parseFloat(r['Speed']) > 0.3, 'sim should run: ' + r['Speed'])
       expect(errors.length === 0, errors.join('|'))
       await page.screenshot({ path: `${SP}/e2e/out/opp-${opp}.png` })
