@@ -61,13 +61,24 @@
           <button class="tab on" role="tab" data-tab="session" aria-selected="true">Session</button>
           <button class="tab" role="tab" data-tab="robot" aria-selected="false">Robot</button>
           <button class="tab" role="tab" data-tab="topics" aria-selected="false">Topics</button>
+          <button class="tab" role="tab" data-tab="analysis" aria-selected="false">Analysis</button>
+          <button class="tab" role="tab" data-tab="tune" aria-selected="false">Tune</button>
         </div>
 
         <section id="tab-session" class="tabpanel">
           <div class="card">
             <h3>Simulation</h3>
             <label class="field"><span>Game</span><select id="game-select"><option value="test">Test game</option><option value="rebuilt">REBUILT</option></select></label>
-            <label class="field"><span>Opponent</span><select id="opponent" title="Another robot on the field: a blocker holds still (push it, get blocked by it); a cycler picks up FUEL and fires it at its own HUB"><option value="none">None</option><option value="blocker">Blocker</option><option value="cycler">Red cycler</option></select></label>
+            <label class="field"><span>Opponent</span><select id="opponent" title="Another robot on the field: a blocker holds still (push it, get blocked by it); a cycler picks up FUEL and fires it at its own HUB"><option value="none">None</option><option value="blocker">Blocker</option><option value="cycler">Red cycler</option><option value="ally">Blue ally (cycler)</option><option value="both">Ally + red cycler</option></select></label>
+            <label class="field"><span>Alliance</span><select id="alliance" title="The alliance the simulated robot plays for. Red starts on the other side of the field"><option value="blue">Blue</option><option value="red">Red</option></select></label>
+            <details class="startpos"><summary>Start position</summary>
+              <div class="row3">
+                <label class="field"><span>X</span><input id="start-x" placeholder="auto" inputmode="decimal" title="empty = default" /></label>
+                <label class="field"><span>Y</span><input id="start-y" placeholder="auto" inputmode="decimal" title="empty = default" /></label>
+                <label class="field"><span>Yaw°</span><input id="start-yaw" placeholder="auto" inputmode="decimal" title="empty = default" /></label>
+              </div>
+              <p class="hint">Metres and degrees from the field corner; empty = the default for the game and alliance.</p>
+            </details>
             <div class="row2">
               <label class="field"><span>Step</span><select id="step-dt" title="Physics step (in lockstep also the time of one exchange): larger is faster and coarser"><option value="0.001">1 ms</option><option value="0.002" selected>2 ms</option><option value="0.005">5 ms</option></select></label>
               <label class="field"><span>Seed</span><input id="seed" value="42" inputmode="numeric" /></label>
@@ -83,6 +94,12 @@
             <p class="hint">or drop a .wpilog anywhere in the window</p>
             <label class="field"><span>NT host</span><input id="host" value="127.0.0.1" spellcheck="false" /></label>
             <button id="connect" class="wide">Connect</button>
+            <button id="ref-open" class="wide" title="A second log drawn dashed on the same plot (for example a real match to compare the sim with)">Reference log…</button>
+            <input id="ref-file" type="file" accept=".wpilog" hidden />
+            <div id="ref-info" class="refinfo" hidden>
+              <div class="refline"><span id="ref-name"></span><button id="ref-clear" title="Close the reference log" aria-label="Close the reference log">×</button></div>
+              <label class="field"><span>Shift</span><input id="ref-offset" value="0" inputmode="decimal" title="seconds: moves the reference log later (+) or earlier (−) against the main data" /></label>
+            </div>
           </div>
         </section>
 
@@ -91,6 +108,19 @@
             <h3>Robot code</h3>
             <label class="field"><span>Mode</span><select id="sim-mode" title="What drives the simulated robot. Start sim (Session tab) uses this choice"><option value="script">Scripted robot</option><option value="robot">Robot code (real time)</option><option value="lockstep">Robot code (lockstep, Mode B)</option></select></label>
             <label class="field"><span>NT host</span><input id="robot-host" value="127.0.0.1" spellcheck="false" title="Where the robot program runs (the same host the Data card connects to)" /></label>
+            <div id="robot-desktop">
+              <div class="projrow" title="The robot project that Launch robot runs">
+                <span id="robot-dir" class="dirpath">not set</span>
+                <button id="pick-dir" title="Choose the robot project folder (the one with build.gradle)">Choose…</button>
+              </div>
+              <select id="recent-dirs" hidden title="Recently used robot projects"></select>
+              <div class="btnrow"><button id="check-project" class="wide" title="Is the project ready: gradlew, Java, the bridge library and its hook">Check project</button></div>
+              <details id="checks-box" class="checkbox" hidden><summary id="checks-sum"></summary><ul id="checks" class="checks"></ul></details>
+              <details class="envbox"><summary>Extra environment</summary>
+                <textarea id="robot-env" rows="3" spellcheck="false" placeholder="JAVA_HOME=C:\Program Files\JDK&#10;MY_FLAG=1"></textarea>
+                <p class="hint">KEY=VALUE, one per line, passed to Gradle and the robot. CRUCIBLE_BRIDGE and CRUCIBLE_MODE are always set by the app.</p>
+              </details>
+            </div>
             <div class="btnrow">
               <button id="launch-robot" class="wide" hidden title="Run the robot project's simulateJava with the Crucible bridge on">Launch robot</button>
               <button id="relaunch-robot" hidden title="Stop the robot and launch it again (after a code change)">Relaunch</button>
@@ -106,6 +136,11 @@
           <div class="card logcard">
             <div class="logbar">
               <h3>Gradle output</h3>
+              <div id="log-src" class="seg" role="group" aria-label="Show output from">
+                <button data-src="all" class="on" aria-pressed="true" title="Everything">All</button>
+                <button data-src="build" aria-pressed="false" title="What Gradle printed while building">Build</button>
+                <button data-src="robot" aria-pressed="false" title="What the robot program printed">Robot</button>
+              </div>
               <span class="grow"></span>
               <span id="log-count" class="log-count">0 lines</span>
             </div>
@@ -118,6 +153,9 @@
               <span id="err-count" class="err-count">0 errors</span>
               <button id="err-next" title="Next error (N)" disabled>▼</button>
             </div>
+            <div id="history-row" class="logbar" hidden>
+              <select id="log-history" title="Put the output of an earlier run into the log"><option value="">Past runs…</option></select>
+            </div>
             <div class="logbar">
               <input id="log-filter" placeholder="Filter lines" spellcheck="false" />
               <label class="check" title="Keep the newest line in view"><input id="log-follow" type="checkbox" checked />Follow</label>
@@ -126,6 +164,84 @@
               <button id="log-clear" title="Clear the log">Clear</button>
             </div>
             <div id="robot-log" class="log" role="log" aria-live="off" tabindex="0"></div>
+          </div>
+        </section>
+
+        <section id="tab-analysis" class="tabpanel" hidden>
+          <div class="card">
+            <h3>Match summary</h3>
+            <div id="an-sum-body" class="an-body"></div>
+            <div class="btnrow">
+              <button id="an-report" class="wide" title="Save a standalone HTML report of this run">Save report…</button>
+              <button id="an-csv" title="Save the event list as a CSV table">Events CSV…</button>
+            </div>
+            <div class="btnrow">
+              <button id="an-run" class="wide" title="Save this run as a report.json (the same shape npm run batch writes) to compare later">Save run (.json)…</button>
+              <button id="an-log" title="Save everything plotted so far as a .wpilog: open it here, in AdvantageScope or any WPILOG tool">Save .wpilog…</button>
+            </div>
+            <label class="check wrapcheck" title="Open the summary when the match reaches its end"><input id="an-popup" type="checkbox" checked />Show the summary when a match ends</label>
+          </div>
+          <div class="card">
+            <h3>Compare runs</h3>
+            <div class="btnrow"><button id="cmp-a" class="wide" title="Load a report.json as run A">A: load…</button><button id="cmp-a-cur" title="Use the current run as A">A = this run</button></div>
+            <div class="btnrow"><button id="cmp-b" class="wide" title="Load a report.json as run B">B: load…</button><button id="cmp-b-cur" title="Use the current run as B">B = this run</button></div>
+            <input id="cmp-file" type="file" accept=".json,application/json" hidden />
+            <div id="cmp-body" class="an-body"></div>
+          </div>
+          <div class="card">
+            <h3>Seed sweep</h3>
+            <p class="hint">The scripted match with many seeds: how much does the result depend on the random layout? Uses the game, alliance, opponent and start from the Session tab; the seed box is the first seed.</p>
+            <div class="row2">
+              <label class="field"><span>Runs</span><input id="sw-n" value="10" inputmode="numeric" /></label>
+              <label class="field"><span>Secs</span><input id="sw-t" value="30" inputmode="numeric" title="simulated seconds per run" /></label>
+            </div>
+            <button id="sw-run" class="wide">Run sweep</button>
+            <div id="sw-prog" class="dimtext"></div>
+            <div id="sw-out" class="an-body"></div>
+          </div>
+          <div class="card"><h3>Pickup to launch</h3><div id="an-hist"></div></div>
+          <div class="card"><h3>Shots and path</h3><div id="an-map"></div></div>
+          <div class="card">
+            <div class="logbar"><h3>Events</h3><span class="grow"></span><span id="an-feed-count" class="log-count"></span></div>
+            <div class="chips">
+              <label class="check"><input id="an-k-score" type="checkbox" checked />Scores</label>
+              <label class="check"><input id="an-k-foul" type="checkbox" checked />Fouls</label>
+              <label class="check"><input id="an-k-shot" type="checkbox" checked />Shots</label>
+              <label class="check"><input id="an-k-pickup" type="checkbox" />Pickups</label>
+              <label class="check"><input id="an-k-impact" type="checkbox" />Impacts</label>
+              <label class="check"><input id="an-k-phase" type="checkbox" checked />Phases</label>
+            </div>
+            <div id="an-feed" class="an-feed" tabindex="0"></div>
+          </div>
+        </section>
+
+        <section id="tab-tune" class="tabpanel" hidden>
+          <div class="card">
+            <h3>Physics</h3>
+            <label class="field"><span>Floor</span><select id="tune-floor" title="Presets for the tire friction"></select></label>
+            <div id="tune-sliders"></div>
+            <div class="btnrow"><button id="tune-reset" class="wide">Reset all to the robot definition</button></div>
+            <p id="tune-note" class="hint"></p>
+          </div>
+          <div class="card">
+            <h3>Calibration</h3>
+            <p class="hint">Fit the sim to measured data from the real robot.</p>
+            <label class="field"><span>Data</span><select id="cal-kind"><option value="shots">Shots: flywheel rps, hood °, range m</option><option value="drive">Drive: time s, speed m/s</option></select></label>
+            <textarea id="cal-csv" rows="6" spellcheck="false" placeholder="Paste the CSV here (with its header row)"></textarea>
+            <div class="btnrow"><button id="cal-open" class="wide">Open CSV…</button><button id="cal-example" title="Made-up data to try the fit with">Example</button></div>
+            <input id="cal-file" type="file" accept=".csv,.txt,text/csv" hidden />
+            <div id="cal-drive-opts" class="row2">
+              <label class="field"><span>Volts</span><input id="cal-volts" value="12" inputmode="decimal" title="the voltage held during the measured drive" /></label>
+              <label class="check"><input id="cal-mass" type="checkbox" />also fit mass</label>
+            </div>
+            <button id="cal-fit" class="primary wide">Fit</button>
+            <div id="cal-out" class="an-body"></div>
+          </div>
+          <div class="card">
+            <h3>What is measured</h3>
+            <p id="guess-sum" class="hint"></p>
+            <label class="field"><span>Show</span><select id="guess-filter"><option value="guess">Guesses only</option><option value="all">Everything annotated</option></select></label>
+            <div id="guess-list" class="guess-list"></div>
           </div>
         </section>
 
@@ -141,7 +257,28 @@
             <label>Robot pose <select id="pose-select"></select></label>
             <label>Components <select id="comp-select"></select></label>
             <button id="focus">Focus robot</button>
+            <label>Camera <select id="camera-select" title="Camera presets (C cycles)"></select></label>
+            <button id="ruler-btn" title="Measure on the floor: click two points (M)" disabled>Ruler</button>
+            <button id="view-btn" title="Choose what is drawn over the field" aria-expanded="false">View ▾</button>
+            <div id="view-menu" class="viewmenu" hidden>
+              <label class="check"><input id="vm-boxes" type="checkbox" checked />Robot collision box</label>
+              <label class="check"><input id="vm-capture" type="checkbox" checked />Intake volume</label>
+              <label class="check"><input id="vm-sensors" type="checkbox" checked />Scoring volumes</label>
+              <label class="check"><input id="vm-rules" type="checkbox" />Rules zones and center line</label>
+              <label class="check"><input id="vm-trail" type="checkbox" />Robot trail</label>
+              <label class="check"><input id="vm-arcs" type="checkbox" checked />Shot arcs and landing spots</label>
+              <label class="check"><input id="vm-score" type="checkbox" />Scoreboard (B)</label>
+              <label class="check"><input id="vm-cam" type="checkbox" />Robot camera
+                <select id="vm-cammode" title="What the robot camera looks at"><option value="front">front (intake)</option><option value="top">top-down</option></select></label>
+            </div>
           </div>
+          <div id="scoreboard" class="scoreboard" hidden>
+            <div class="sb-side blue"><b id="sb-blue">0</b><span>BLUE</span></div>
+            <div class="sb-mid"><b id="sb-clock">0:00</b><span id="sb-phase"></span><div id="sb-hubs" class="sb-hubs"></div></div>
+            <div class="sb-side red"><b id="sb-red">0</b><span>RED</span></div>
+          </div>
+          <div id="ruler-label" class="ruler-label" hidden></div>
+          <div id="cam-label" class="cam-label" hidden>robot camera</div>
           <div id="simhud" class="simhud" hidden>
             <button class="simhud-head" aria-expanded="true">
               <span class="sh-phase"></span>
@@ -153,6 +290,7 @@
           </div>
           <div id="drop" class="drop"><div><strong>Drop a .wpilog</strong><span>to open it in BALTA Crucible</span></div></div>
         </div>
+        <div id="timeline" class="timeline" hidden aria-label="Match timeline"></div>
         <div id="transport">
           <button id="play" class="primary">Play</button>
           <input id="seek" type="range" min="0" max="1" step="0.001" value="0" />
@@ -169,10 +307,15 @@
           </span>
           <span id="sim-buttons" class="group" hidden>
             <button id="sim-step" title="Advance 10 ms">Step</button>
+            <button id="sim-back1" title="Go back 1 s of simulated time (←). Scripted robot only" disabled>⟲ 1 s</button>
+            <button id="sim-back5" title="Go back 5 s (Shift+←). Scripted robot only" disabled>⟲ 5 s</button>
             <button id="sim-reset">Reset</button>
+            <select id="slot" title="Which saved state Save and Load use"><option value="0">Slot 1</option><option value="1">Slot 2</option><option value="2">Slot 3</option></select>
             <button id="sim-save">Save state</button>
             <button id="sim-load" disabled>Load state</button>
           </span>
+          <button id="plot-csv" title="Save every sample of the plotted topics as a CSV table" disabled>CSV</button>
+          <button id="plot-png" title="Save the plot as a PNG image" disabled>PNG</button>
           <button id="clear-plot">Clear plot</button>
         </div>
         <div id="plot"></div>
@@ -184,6 +327,14 @@
       <span class="grow"></span>
       <span class="legal">BALTA Crucible <span id="app-version"></span> · BALTA Robotics</span>
     </footer>
+
+    <dialog id="match-summary">
+      <form method="dialog">
+        <h2 class="dlg-title">Match over</h2>
+        <div id="ms-body" class="an-body"></div>
+        <div class="about-actions"><button id="ms-save" type="button">Save report…</button><button class="primary">Close</button></div>
+      </form>
+    </dialog>
 
     <dialog id="shortcuts">
       <form method="dialog">

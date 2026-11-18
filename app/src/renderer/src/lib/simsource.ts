@@ -1,8 +1,9 @@
 // Runs the physics engine in a worker and exposes it like the other data sources: frames for the 3D view, and a few
 // topics pushed into the DataStore so the topic list and plots work for the simulation too.
 import SimWorker from '../../../engine/worker?worker'
-import type { BridgeInfo, FromWorker, ToWorker, WorkerReady } from '../../../engine/protocol'
+import type { BridgeInfo, FromWorker, ToWorker, UiEvent, WorkerReady } from '../../../engine/protocol'
 import type { RenderFrame } from '../../../engine/types'
+import type { TuneParams } from '../../../engine/tuning'
 import type { DataStore } from './store'
 
 const TOPIC_PERIOD = 0.05 // simulated seconds between samples pushed to the store
@@ -14,8 +15,13 @@ export class SimSource {
   running = false
   speed = 1
   hasSnapshot = false
+  slots: boolean[] = [false, false, false]
+  /** how many simulated seconds the sim can be taken back (0 with robot code) */
+  canRewind = 0
   simRate = 0
   bridge: BridgeInfo | null = null
+  /** Called for every frame the worker sends (not just the latest one per screen refresh), with the events since the previous frame. */
+  onFrame: ((f: RenderFrame, events: UiEvent[]) => void) | null = null
   private lastPushed = -1
   private lastTime = 0
 
@@ -23,7 +29,7 @@ export class SimSource {
 
   get active(): boolean { return this.worker !== null }
 
-  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent: 'none' | 'blocker' | 'cycler' = 'none', stepDt = 0.002): void {
+  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent: 'none' | 'blocker' | 'cycler' | 'ally' | 'both' = 'none', stepDt = 0.002, extra: { alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams } = {}): void {
     this.stop()
     this.store.startLive('Sim')
     this.lastPushed = -1
@@ -32,7 +38,7 @@ export class SimSource {
     this.worker = new SimWorker()
     this.worker.onmessage = (ev: MessageEvent<FromWorker>) => this.onMessage(ev.data)
     this.worker.onerror = (e) => this.onError(e.message)
-    this.send({ type: 'init', seed, mode, host, game, opponent, stepDt })
+    this.send({ type: 'init', seed, mode, host, game, opponent, stepDt, ...extra })
   }
 
   stop(): void {
@@ -53,10 +59,13 @@ export class SimSource {
     this.running = m.running
     this.speed = m.speed
     this.hasSnapshot = m.hasSnapshot
+    this.slots = m.slots
+    this.canRewind = m.canRewind
     this.simRate = m.simRate
     this.bridge = m.bridge ?? null
     if (f.time < this.lastTime - 1e-9) { this.store.startLive('Sim'); this.lastPushed = -1 } // reset or state load: time went backwards
     this.lastTime = f.time
+    this.onFrame?.(f, m.events)
     if (f.time - this.lastPushed >= TOPIC_PERIOD - 1e-9) {
       this.lastPushed = f.time
       this.push(f)

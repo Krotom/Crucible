@@ -4,6 +4,7 @@
 import type { PanelModel, Row } from './simmodel'
 
 const KEY = 'crucible-simpanel-collapsed'
+const POS_KEY = 'crucible-simpanel-pos'
 
 interface RowEl { el: HTMLElement; label: HTMLElement; value: HTMLElement }
 interface SectionEl { el: HTMLElement; title: HTMLElement; rows: Map<string, RowEl> }
@@ -40,7 +41,73 @@ export class SimPanel {
     let collapsed = false
     try { collapsed = storage()?.getItem(KEY) === '1' } catch { /* not remembered */ }
     this.setCollapsed(collapsed)
-    this.head.addEventListener('click', () => this.toggle())
+    this.head.addEventListener('click', () => { if (!this.dragged) this.toggle() })
+    this.head.addEventListener('dblclick', () => this.resetPosition())
+    this.head.addEventListener('pointerdown', (e) => this.startDrag(e))
+    window.addEventListener('resize', () => this.keepInside())
+    try {
+      const saved = JSON.parse(storage()?.getItem(POS_KEY) ?? 'null') as { x: number; y: number } | null
+      if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) { this.moveTo(saved.x, saved.y); this.keepInside() }
+    } catch { /* default corner */ }
+  }
+
+  private dragged = false
+
+  /** Dragging the header moves the panel inside the view (remembered); a plain click still folds it, a double click puts it back in its corner. */
+  private startDrag(e: PointerEvent): void {
+    if (e.button !== 0) return
+    const parent = this.root.offsetParent as HTMLElement | null
+    if (!parent) return
+    const start = { x: e.clientX, y: e.clientY }
+    const rect = this.root.getBoundingClientRect()
+    const pr = parent.getBoundingClientRect()
+    let moved = false
+    const move = (ev: PointerEvent): void => {
+      const dx = ev.clientX - start.x, dy = ev.clientY - start.y
+      if (!moved && Math.hypot(dx, dy) < 4) return
+      moved = true
+      this.dragged = true
+      this.moveTo(rect.left - pr.left + dx, rect.top - pr.top + dy)
+      this.keepInside()
+    }
+    const up = (): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      if (moved) {
+        try { storage()?.setItem(POS_KEY, JSON.stringify(this.position())) } catch { /* not remembered */ }
+        setTimeout(() => { this.dragged = false }, 0)
+      }
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  private moveTo(x: number, y: number): void {
+    this.root.style.left = `${x}px`
+    this.root.style.top = `${y}px`
+    this.root.style.right = 'auto'
+  }
+
+  /** The panel's place inside its view, or null when it sits in its default corner. */
+  position(): { x: number; y: number } | null {
+    if (this.root.style.left === '') return null
+    return { x: parseFloat(this.root.style.left), y: parseFloat(this.root.style.top) }
+  }
+
+  private keepInside(): void {
+    const parent = this.root.offsetParent as HTMLElement | null
+    if (!parent || this.root.style.left === '' || this.root.hidden) return
+    const pr = parent.getBoundingClientRect(), r = this.root.getBoundingClientRect()
+    const x = Math.min(Math.max(0, parseFloat(this.root.style.left)), Math.max(0, pr.width - r.width))
+    const y = Math.min(Math.max(0, parseFloat(this.root.style.top)), Math.max(0, pr.height - Math.min(r.height, 44)))
+    this.moveTo(x, y)
+  }
+
+  resetPosition(): void {
+    this.root.style.left = ''
+    this.root.style.top = ''
+    this.root.style.right = ''
+    try { storage()?.removeItem(POS_KEY) } catch { /* nothing to forget */ }
   }
 
   /** Folds or unfolds the details and remembers the choice. */

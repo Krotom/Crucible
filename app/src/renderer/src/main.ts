@@ -2,23 +2,36 @@ import './style.css'
 import { Nt4Live, type NtStatus } from './lib/nt4'
 import { PlotPanel } from './lib/plot'
 import { installKeyboard, readInput, sameReading, type JoystickReading } from './lib/input'
+import type { RenderFrame } from '../../engine/types'
 import { SceneView } from './lib/scene'
 import { SimSource } from './lib/simsource'
 import { DataStore } from './lib/store'
 import { isNumericType, type Value } from './lib/structs'
 import { parseWpilog } from './lib/wpilog'
-import { LogView } from './lib/robotlog'
+import { LogView, SourceTracker } from './lib/robotlog'
 import { SimPanel } from './lib/simpanel'
-import { buildSimModel } from './lib/simmodel'
-import { dismissSplash, setupAbout, setupCapture, setupShortcutsDialog, setupTabs, setupTheme, showTab } from './lib/chrome'
+import { buildSimModel, scoreboardModel } from './lib/simmodel'
+import { CAMERA_PRESETS, ViewFx, type CameraPreset } from './lib/viewfx'
+import { appVersion, dismissSplash, setupAbout, setupCapture, setupShortcutsDialog, setupTabs, setupTheme, showTab } from './lib/chrome'
 import { RobotRun, formatElapsed } from './lib/robotrun'
+import { MatchRecorder, eventsCsv, reportHtml } from './lib/analysis'
+import { AnalysisView, TimelineBar, renderSummary } from './lib/analysis-view'
+import { renderCompare } from './lib/compare-view'
+import { renderSweep, SweepRunner } from './lib/sweep-ui'
+import { TuneUI } from './lib/tune-ui'
+import { parseRunReport } from './lib/compare'
+import { storeToWpilog } from './lib/wpilogwriter'
+import type { RunReport } from '../../analysis/recorder'
+import { saveBlob, timestampName, type Saver } from './lib/capture'
 import { bindSettings } from './lib/settings'
 import { findShortcut, keyName } from './lib/shortcuts'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
 const store = new DataStore()
+const refStore = new DataStore() // the reference log, drawn dashed on the plot
 const view = new SceneView($('view'))
+const fx = new ViewFx(view, $('ruler-label'))
 let live: Nt4Live | null = null
 let robotHalfZ = 0.12
 let robotMode = false
@@ -27,7 +40,7 @@ let lastInput: JoystickReading | null = null
 let lastInputSent = 0
 const sim = new SimSource(
   store,
-  (r) => { robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf, r.othersHalf); sim.send({ type: 'speed', value: speed }); sendDs() },
+  (r) => { analysisView.setField(r.field); robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf, r.othersHalf); fx.start(r.field, r.gameId); applyViewMenu(); sim.send({ type: 'speed', value: speed }); sendDs() },
   (m) => setStatus(`Sim error: ${m}`),
 )
 
@@ -40,7 +53,7 @@ let lastFrame = performance.now()
 let seeking = false
 
 // ---- plot
-const plot = new PlotPanel($('plot'), (t) => seekTo(t), () => renderTopicList())
+const plot = new PlotPanel($('plot'), (t) => seekTo(t), () => { renderTopicList(); const none = plot.topics.length === 0; $<HTMLButtonElement>('plot-csv').disabled = none; $<HTMLButtonElement>('plot-png').disabled = none })
 plot.build(store, true)
 
 function seekTo(t: number): void {
@@ -87,6 +100,26 @@ function renderTopicList(): void {
     topicsEl.appendChild(row)
     rowByName.set(name, { row, val })
   }
+  if (refStore.mode === 'log') {
+    const head = document.createElement('div')
+    head.className = 'topic-head'
+    head.textContent = `Reference: ${refStore.label}`
+    topicsEl.appendChild(head)
+    for (const name of refStore.topicNames()) {
+      if (name.includes('/.schema/') || name.startsWith('/.schema') || (q && !name.toLowerCase().includes(q))) continue
+      const s = refStore.series.get(name)!
+      const key = `ref:${name}`
+      const plottable = isNumericType(s.type)
+      const row = document.createElement('div')
+      row.className = `topic ref${plottable ? ' plottable' : ''}${plot.has(key) ? ' on' : ''}`
+      row.title = `${name} (reference log)`
+      const nm = document.createElement('span'); nm.className = 'name'; nm.textContent = `‎${name}`
+      const ty = document.createElement('span'); ty.className = 'type'; ty.textContent = s.type
+      row.append(nm, ty)
+      if (plottable) row.addEventListener('click', () => plot.toggle(key, store))
+      topicsEl.appendChild(row)
+    }
+  }
   refreshPoseSelects()
 }
 filterEl.addEventListener('input', renderTopicList)
@@ -106,7 +139,7 @@ function fillSelect(sel: HTMLSelectElement, names: string[], prefer: RegExp): vo
 
 function refreshPoseSelects(): void {
   const all = store.topicNames().map((n) => store.series.get(n)!)
-  fillSelect(poseSel, all.filter((s) => s.type === 'struct:Pose2d' || s.type === 'struct:Pose3d').map((s) => s.name), /\/RealOutputs\/Swerve\/Pose$|\/Swerve\/Pose$/)
+  fillSelect(poseSel, all.filter((s) => s.type === 'struct:Pose2d' || s.type === 'struct:Pose3d').map((s) => s.name), /\/RealOutputs\/Swerve\/Pose$|\/Swerve\/Pose$|^\/Sim\/Robot\/Pose$/)
   fillSelect(compSel, all.filter((s) => s.type === 'struct:Pose3d[]').map((s) => s.name), /Mechanism3d\/Components$/)
 }
 
@@ -125,6 +158,9 @@ function updateTransportEnabled(): void {
   $('sim-buttons').hidden = !isSim
   $('ds-controls').hidden = !(isSim && robotMode)
   $<HTMLButtonElement>('sim-step').disabled = robotMode
+  $<HTMLButtonElement>('ruler-btn').disabled = !isSim
+  if (!isSim && fx.rulerActive) { fx.setRuler(false); $('ruler-btn').classList.remove('on'); $('ruler-btn').textContent = 'Ruler' }
+  applyViewMenu()
   $('simhud').hidden = !(isSim && sim.latest) // shown from the first frame on: nothing stale before it
   if (!isSim) simPanel.clear()
 }
@@ -133,6 +169,7 @@ function stopSim(): void {
   if (!sim.active) return
   sim.stop()
   view.clearSim()
+  fx.stop()
   $('start-sim').textContent = 'Start sim'
   updateTransportEnabled()
 }
@@ -157,6 +194,29 @@ async function openLogFile(file: File): Promise<void> {
   }
   updateTransportEnabled()
 }
+
+// ---- reference log
+const refOffset = (): number => { const v = Number($<HTMLInputElement>('ref-offset').value.trim().replace(',', '.')); return Number.isFinite(v) ? v : 0 }
+plot.setReference(refStore, refOffset)
+$('ref-open').addEventListener('click', () => { $<HTMLInputElement>('ref-file').value = ''; $<HTMLInputElement>('ref-file').click() })
+$<HTMLInputElement>('ref-file').addEventListener('change', async (e) => {
+  const f = (e.target as HTMLInputElement).files?.[0]
+  if (!f) return
+  try {
+    const log = parseWpilog(new Uint8Array(await f.arrayBuffer()))
+    if (log.entries.length === 0) throw new Error('no data in the file')
+    refStore.loadLog(log, f.name)
+    $('ref-name').textContent = f.name
+    $('ref-info').hidden = false
+    $('notice').textContent = `Reference log ${f.name}: ${refStore.series.size} topics (pick them in the Topics tab)`
+    renderTopicList()
+  } catch (err) { $('notice').textContent = `Could not open ${f.name} as a reference: ${(err as Error).message}` }
+})
+$('ref-clear').addEventListener('click', () => {
+  refStore.clear(); plot.dropReference(); $('ref-info').hidden = true
+  plot.build(store, true); renderTopicList()
+})
+$('ref-offset').addEventListener('input', () => plot.build(store, true))
 
 $('open-log').addEventListener('click', () => $<HTMLInputElement>('file').click())
 $<HTMLInputElement>('file').addEventListener('change', (e) => {
@@ -212,6 +272,13 @@ seekEl.addEventListener('pointerdown', () => { seeking = true })
 seekEl.addEventListener('pointerup', () => { seeking = false })
 seekEl.addEventListener('input', () => seekTo(store.tMin + Number(seekEl.value) * (store.tMax - store.tMin)))
 $('clear-plot').addEventListener('click', () => plot.clear(store))
+$('plot-csv').addEventListener('click', () => { void saveText(timestampName('balta-crucible-plot', 'csv'), plot.csv(store), 'text/csv') })
+$('plot-png').addEventListener('click', async () => {
+  const blob = await plot.png()
+  if (!blob) { $('notice').textContent = 'Nothing is plotted yet'; return }
+  const where = await saveBlob(timestampName('balta-crucible-plot', 'png'), blob, saver)
+  $('notice').textContent = where ? `Saved ${where}` : 'Save cancelled'
+})
 $('focus').addEventListener('click', () => view.focusRobot())
 
 // ---- simulation
@@ -227,7 +294,10 @@ $('start-sim').addEventListener('click', () => {
   $('ds-enable').textContent = 'Enable'
   lastInput = null
   simPanel.clear()
-  sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLSelectElement>('opponent').value as 'none' | 'blocker' | 'cycler', Number($<HTMLSelectElement>('step-dt').value))
+  recorder.reset(); endShown = false
+  lastStart = { seed: seedValue(), game: $<HTMLSelectElement>('game-select').selectedOptions[0].textContent ?? '', mode: $<HTMLSelectElement>('sim-mode').selectedOptions[0].textContent ?? '' }
+  ownAlliance = $<HTMLSelectElement>('alliance').value === 'red' ? 'red' : 'blue'
+  sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLSelectElement>('opponent').value as 'none' | 'blocker' | 'cycler' | 'ally' | 'both', Number($<HTMLSelectElement>('step-dt').value), { alliance: ownAlliance, start: startOverrides(), tune: tune.params() })
   $('start-sim').textContent = 'Stop sim'
   setStatus(lockstepMode ? 'Sim: robot code, lockstep (Mode B)' : robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
   playEl.textContent = 'Play'
@@ -249,8 +319,20 @@ $('match-end').addEventListener('click', () => sim.send({ type: 'match', run: fa
 installKeyboard()
 $('sim-step').addEventListener('click', () => sim.send({ type: 'step', steps: Math.max(1, Math.round(0.01 / (sim.ready?.dt ?? 0.002))) })) // always 10 ms of simulated time, as the button says (the running sim's own step, not the dropdown)
 $('sim-reset').addEventListener('click', () => sim.send({ type: 'reset', seed: seedValue() }))
-$('sim-save').addEventListener('click', () => sim.send({ type: 'save' }))
-$('sim-load').addEventListener('click', () => sim.send({ type: 'load' }))
+const slotEl = $<HTMLSelectElement>('slot')
+$('sim-save').addEventListener('click', () => sim.send({ type: 'save', slot: Number(slotEl.value) }))
+$('sim-load').addEventListener('click', () => sim.send({ type: 'load', slot: Number(slotEl.value) }))
+$('sim-back1').addEventListener('click', () => sim.send({ type: 'rewind', seconds: 1 }))
+$('sim-back5').addEventListener('click', () => sim.send({ type: 'rewind', seconds: 5 }))
+// click on the timeline: go back to that moment (the sim cannot skip ahead of what it has simulated)
+$('timeline').addEventListener('click', (e) => {
+  if (!sim.active || !sim.latest) return
+  if (robotMode) { $('notice').textContent = 'Rewinding needs the scripted robot: the robot program cannot be taken back'; return }
+  const t = timeline.timeAt(e.clientX)
+  if (t === null) return
+  if (t > sim.latest.time + 0.05) { $('notice').textContent = 'The sim cannot skip ahead: click a moment that has already been simulated'; return }
+  sim.send({ type: 'seek', time: t })
+})
 
 /** Sends the gamepad or keyboard state to the robot when it changes (and at least every 250 ms while held). */
 function pumpInput(): void {
@@ -264,21 +346,112 @@ function pumpInput(): void {
 }
 
 const simPanel = new SimPanel($('simhud'))
+
+// ---- match analysis: the recorder sees every frame; the Analysis tab, the timeline and the match summary are drawn from it
+const recorder = new MatchRecorder()
+const analysisView = new AnalysisView(recorder)
+const timeline = new TimelineBar($('timeline'))
+let endShown = false
+let lastStart = { seed: 42, game: '', mode: '' }
+let ownAlliance: 'blue' | 'red' = 'blue'
+sim.onFrame = (f, events) => {
+  recorder.ingest(f, events)
+  fx.sampleTrail(f)
+  if (recorder.phase === 'ended') {
+    if (!endShown) { endShown = true; showMatchSummary() }
+  } else endShown = false
+}
+function showMatchSummary(): void {
+  if (!$<HTMLInputElement>('an-popup').checked) return
+  renderSummary($('ms-body'), recorder.summary())
+  const dlg = $<HTMLDialogElement>('match-summary')
+  if (!dlg.open) dlg.showModal()
+}
+const saver = (window as unknown as { crucibleHost?: Saver }).crucibleHost
+async function saveText(name: string, text: string, mime: string): Promise<void> {
+  const where = await saveBlob(name, new Blob([text], { type: mime }), saver)
+  $('notice').textContent = where ? `Saved ${where}` : 'Save cancelled'
+}
+const tune = new TuneUI({ live: (p) => { if (sim.active) sim.send({ type: 'tune', params: p }) }, notify: (t) => { $('notice').textContent = t }, saveText })
+async function saveReport(): Promise<void> {
+  const f = sim.ready?.field
+  const html = reportHtml(recorder, { title: 'BALTA Crucible match report', game: lastStart.game, mode: lastStart.mode, seed: lastStart.seed, version: appVersion(), date: new Date().toISOString().slice(0, 16).replace('T', ' ') }, f?.length ?? 16.541, f?.width ?? 8.069)
+  await saveText(timestampName('balta-crucible-report', 'html'), html, 'text/html')
+}
+$('an-report').addEventListener('click', () => { void saveReport() })
+$('ms-save').addEventListener('click', () => { void saveReport() })
+// save the run / the recorded topics, and compare runs
+function currentRun(): RunReport {
+  return recorder.toRunReport({ name: `${lastStart.game || 'run'} seed ${lastStart.seed}`, game: lastStart.game, seed: lastStart.seed, step: Number($<HTMLSelectElement>('step-dt').value) || 0.002 })
+}
+$('an-run').addEventListener('click', () => { void saveText(timestampName('balta-crucible-run', 'json'), JSON.stringify(currentRun(), null, 1), 'application/json') })
+$('an-log').addEventListener('click', async () => {
+  if (store.series.size === 0) { $('notice').textContent = 'Nothing recorded yet: start a sim first'; return }
+  const where = await saveBlob(timestampName('balta-crucible-sim', 'wpilog'), new Blob([storeToWpilog(store).slice().buffer as ArrayBuffer], { type: 'application/octet-stream' }), saver)
+  $('notice').textContent = where ? `Saved ${where}` : 'Save cancelled'
+})
+// seed sweep
+const sweep = new SweepRunner()
+$('sw-run').addEventListener('click', () => {
+  if (sweep.running) { sweep.cancel(); $('sw-prog').textContent = 'Stopping after the current run…'; return }
+  const n = Math.min(100, Math.max(1, Math.round(Number($<HTMLInputElement>('sw-n').value) || 10)))
+  const secs = Math.min(300, Math.max(1, Number($<HTMLInputElement>('sw-t').value) || 30))
+  const first = seedValue()
+  const t0 = performance.now()
+  $('sw-out').textContent = ''
+  $('sw-run').textContent = 'Stop sweep'
+  sweep.start({
+    game: $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', alliance: $<HTMLSelectElement>('alliance').value === 'red' ? 'red' : 'blue',
+    opponent: $<HTMLSelectElement>('opponent').value as 'none' | 'blocker' | 'cycler' | 'ally' | 'both', start: startOverrides(), stepDt: Number($<HTMLSelectElement>('step-dt').value) || 0.002,
+    seeds: Array.from({ length: n }, (_, i) => (first + i) >>> 0), duration: secs, tune: tune.params(),
+  }, (st) => {
+    renderSweep($('sw-out'), st.runs)
+    const eta = st.runs.length > 0 && !st.done ? ` · about ${Math.ceil(((performance.now() - t0) / st.runs.length) * (st.total - st.runs.length) / 1000)} s left` : ''
+    $('sw-prog').textContent = st.error ? `Sweep failed: ${st.error}` : st.done ? `${st.cancelled ? 'Stopped' : 'Done'}: ${st.runs.length} of ${st.total} runs in ${((performance.now() - t0) / 1000).toFixed(1)} s` : `Run ${st.runs.length} of ${st.total}…${eta}`
+    if (st.done) $('sw-run').textContent = 'Run sweep'
+  })
+  $('sw-prog').textContent = `Run 0 of ${n}…`
+})
+
+let cmpA: RunReport | null = null
+let cmpB: RunReport | null = null
+let cmpTarget: 'a' | 'b' = 'a'
+const cmpFile = $<HTMLInputElement>('cmp-file')
+function paintCompare(): void { renderCompare($('cmp-body'), cmpA, cmpB, sim.ready?.field) }
+for (const side of ['a', 'b'] as const) {
+  $(`cmp-${side}`).addEventListener('click', () => { cmpTarget = side; cmpFile.value = ''; cmpFile.click() })
+  $(`cmp-${side}-cur`).addEventListener('click', () => { if (side === 'a') cmpA = currentRun(); else cmpB = currentRun(); paintCompare() })
+}
+cmpFile.addEventListener('change', async () => {
+  const f = cmpFile.files?.[0]
+  if (!f) return
+  const r = parseRunReport(await f.text())
+  if (!r.ok) { $('notice').textContent = `${f.name}: ${r.error}`; return }
+  if (r.report.name === 'run' || r.report.name === '') r.report.name = f.name
+  if (cmpTarget === 'a') cmpA = r.report; else cmpB = r.report
+  paintCompare()
+})
+paintCompare()
+$('an-csv').addEventListener('click', () => { void saveText(timestampName('balta-crucible-events', 'csv'), eventsCsv(recorder.feed), 'text/csv') })
+for (const id of ['an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase']) $(id).addEventListener('change', () => analysisView.render())
 function simFrame(): void {
   if (robotMode) pumpInput()
   playEl.textContent = sim.running ? 'Pause' : 'Play'
-  $<HTMLButtonElement>('sim-load').disabled = !sim.hasSnapshot
+  $<HTMLButtonElement>('sim-load').disabled = !sim.slots[Number(slotEl.value)]
+  for (const [id, sec] of [['sim-back1', 1], ['sim-back5', 5]] as const) $<HTMLButtonElement>(id).disabled = robotMode || sim.canRewind < Math.min(sec, 0.25)
+  $('timeline').classList.toggle('seekable', !robotMode)
   const f = sim.latest
   if (!f) return
   time = f.time
   $('time').textContent = `sim ${f.time.toFixed(2)} s`
-  simPanel.update(buildSimModel(f, { running: sim.running, simRate: sim.simRate, bridge: sim.bridge }))
+  simPanel.update(buildSimModel(f, { running: sim.running, simRate: sim.simRate, bridge: sim.bridge, hubs: sim.ready?.field.sensors.map((x) => ({ x: x.center[0], y: x.center[1], alliance: x.alliance })), alliance: ownAlliance }))
   if ($('simhud').hidden) $('simhud').hidden = false
   plot.build(store)
 }
 
 // ---- frame loop
 let lastList = 0
+let lastAnalysis = 0
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
@@ -302,7 +475,7 @@ function frame(now: number): void {
 
   // scene
   if (sim.active) {
-    if (sim.latest) view.setSimFrame(sim.latest, robotHalfZ)
+    if (sim.latest) { view.setSimFrame(sim.latest, robotHalfZ); fx.update(sim.latest, recorder); paintScoreboard(sim.latest) }
     view.setComponentPoses(sim.bridge?.components ?? undefined)
   } else {
     const pose = poseSel.value ? store.valueAt(poseSel.value, time) : undefined
@@ -315,6 +488,13 @@ function frame(now: number): void {
   }
   view.render()
   plot.setCursor(time)
+
+  // timeline bar while a sim runs; the Analysis tab redraws a few times a second while it is open
+  const tl = $('timeline')
+  const showTl = sim.active && !!sim.ready && !!sim.latest
+  if (tl.hidden === showTl) tl.hidden = !showTl
+  if (showTl) timeline.update(sim.ready!.phases, recorder, sim.latest!.time)
+  if (now - lastAnalysis > 250 && !$('tab-analysis').hidden) { lastAnalysis = now; analysisView.render() }
 
   // topic values at 5 Hz
   if (now - lastList > 200) {
@@ -334,19 +514,64 @@ function scheduleListRefresh(): void {
   listTimer = setTimeout(() => { listTimer = null; renderTopicList() }, 250)
 }
 
+// ---- start position / alliance, view menu, camera, ruler, scoreboard
+function startOverrides(): { x?: number; y?: number; yawDeg?: number } | undefined {
+  const num = (id: string): number | undefined => { const v = $<HTMLInputElement>(id).value.trim().replace(',', '.'); const n = v === '' ? NaN : Number(v); return Number.isFinite(n) ? n : undefined }
+  const o = { x: num('start-x'), y: num('start-y'), yawDeg: num('start-yaw') }
+  return o.x === undefined && o.y === undefined && o.yawDeg === undefined ? undefined : o
+}
+
+const camSel = $<HTMLSelectElement>('camera-select')
+for (const c of CAMERA_PRESETS) camSel.append(new Option(c.label, c.id))
+camSel.addEventListener('change', () => { fx.setPreset(camSel.value as CameraPreset); camSel.blur() })
+const viewMenu = $('view-menu')
+$('view-btn').addEventListener('click', () => { viewMenu.hidden = !viewMenu.hidden; $('view-btn').setAttribute('aria-expanded', String(!viewMenu.hidden)) })
+document.addEventListener('pointerdown', (e) => {
+  if (!viewMenu.hidden && !(e.target as HTMLElement).closest('#view-menu, #view-btn')) { viewMenu.hidden = true; $('view-btn').setAttribute('aria-expanded', 'false') }
+})
+const vm = (id: string): boolean => $<HTMLInputElement>(id).checked
+function applyViewMenu(): void {
+  view.setOverlays({ boxes: vm('vm-boxes'), capture: vm('vm-capture'), sensors: vm('vm-sensors') })
+  fx.show.rules = vm('vm-rules'); fx.show.trail = vm('vm-trail'); fx.show.arcs = vm('vm-arcs'); fx.apply()
+  view.setRobotCam(vm('vm-cam') && sim.active ? ($<HTMLSelectElement>('vm-cammode').value as 'front' | 'top') : null)
+  $('cam-label').hidden = !(vm('vm-cam') && sim.active)
+  $('cam-label').textContent = $<HTMLSelectElement>('vm-cammode').value === 'top' ? 'robot camera: top-down' : 'robot camera: front'
+  $('scoreboard').hidden = !(vm('vm-score') && sim.active)
+}
+for (const id of ['vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score']) $(id).addEventListener('change', applyViewMenu)
+$('ruler-btn').addEventListener('click', () => { fx.setRuler(!fx.rulerActive); $('ruler-btn').classList.toggle('on', fx.rulerActive); $('ruler-btn').textContent = fx.rulerActive ? 'Ruler on' : 'Ruler' })
+function paintScoreboard(f: RenderFrame): void {
+  if ($('scoreboard').hidden || !sim.ready) return
+  const m = scoreboardModel(f, sim.ready.phases)
+  setIfChanged($('sb-blue'), String(m.blue)); setIfChanged($('sb-red'), String(m.red)); setIfChanged($('sb-clock'), m.clock); setIfChanged($('sb-phase'), m.phase)
+  const hubs = $('sb-hubs')
+  const html = m.hubs ? `<span class="sb-hub blue ${m.hubs.blue}">HUB</span><span class="sb-hub red ${m.hubs.red}">HUB</span>` : ''
+  if (hubs.dataset.k !== html) { hubs.dataset.k = html; hubs.innerHTML = html }
+}
+
 // ---- Robot tab: mode, NT host, the robot launcher and its log (the launcher is Electron only: the main process owns the robot process)
+interface PreflightCheck { id: string; label: string; status: 'ok' | 'warn' | 'fail'; detail: string }
+interface StartResult { ok: boolean; message: string; checks?: PreflightCheck[]; envProblems?: string[]; logName?: string }
 interface CrucibleHost {
-  startRobot(lockstep?: boolean): Promise<{ ok: boolean; message: string }>
+  startRobot(lockstep?: boolean, envText?: string): Promise<StartResult>
   stopRobot(): Promise<{ ok: boolean }>
   robotStatus(): Promise<{ running: boolean }>
   onRobotLog(cb: (line: string) => void): void
   onRobotExit(cb: (code: number | null) => void): void
+  checkRobot(lockstep?: boolean): Promise<PreflightCheck[]>
+  getRobotDir(): Promise<{ dir: string | null; recent: string[] }>
+  setRobotDir(dir: string): Promise<{ ok: boolean; dir?: string; error?: string }>
+  pickRobotDir(): Promise<{ ok: boolean; dir?: string; error?: string; canceled?: boolean }>
+  openSource(file: string, line: number): Promise<{ ok: boolean; message: string }>
+  listLogs(): Promise<{ name: string; size: number; mtime: number }[]>
+  readLog(name: string): Promise<string | null>
 }
 const robotLog = new LogView($('robot-log'), {
   count: $('log-count'), filter: $<HTMLInputElement>('log-filter'), follow: $<HTMLInputElement>('log-follow'),
   copy: $<HTMLButtonElement>('log-copy'), save: $<HTMLButtonElement>('log-save'), clear: $<HTMLButtonElement>('log-clear'),
   levels: { error: $<HTMLInputElement>('lv-error'), warn: $<HTMLInputElement>('lv-warn'), info: $<HTMLInputElement>('lv-info') },
   errCount: $('err-count'), errPrev: $<HTMLButtonElement>('err-prev'), errNext: $<HTMLButtonElement>('err-next'),
+  sources: $('log-src'),
 }, (t) => { $('notice').textContent = t })
 
 // one NT host: the Data card (Connect) and the Robot tab edit the same value
@@ -366,6 +591,8 @@ const run = new RobotRun()
 let robotUp = false
 let launchedLockstep = false
 const exitWaiters: (() => void)[] = []
+const tracker = new SourceTracker()
+let historyHost: CrucibleHost | null = null // set when the desktop tools start
 const host = (window as unknown as { crucibleHost?: CrucibleHost }).crucibleHost
 
 /** The status line under the buttons: what the robot process is doing, how long, and a moving bar while it builds. */
@@ -393,14 +620,24 @@ const refreshRobot = (): void => {
 }
 modeEl.addEventListener('change', refreshRobot)
 
+let launching = false
 async function launchRobot(): Promise<void> {
-  if (!host) return
+  if (!host || launching) return
+  launching = true
+  try { await launchRobotNow(host) } finally { launching = false }
+}
+
+async function launchRobotNow(host: CrucibleHost): Promise<void> {
   launchedLockstep = modeEl.value === 'lockstep'
   run.start(Date.now())
   paintRun()
   robotLog.system(`[launching robot sim, ${launchedLockstep ? 'lockstep (Mode B)' : 'real time'}: gradlew simulateJava --no-daemon]`)
-  const r = await host.startRobot(launchedLockstep)
+  tracker.reset()
+  const r = await host.startRobot(launchedLockstep, $<HTMLTextAreaElement>('robot-env').value)
+  for (const c of r.checks ?? []) if (c.status !== 'ok') robotLog.system(`[check] ${c.status === 'warn' ? '! ' : '✗ '}${c.label}: ${c.detail}`)
+  for (const p of r.envProblems ?? []) robotLog.system(`[env] ${p}`)
   robotLog.system(`[${r.message}]`)
+  void refreshHistory()
   $('notice').textContent = r.message
   robotUp = r.ok
   if (!r.ok) run.launchFailed(Date.now())
@@ -420,12 +657,13 @@ async function stopRobot(): Promise<void> {
 
 if (host) {
   $('launch-robot').hidden = false
-  host.onRobotLog((line) => { robotLog.add(line); run.feed(line) })
+  host.onRobotLog((line) => { robotLog.add(line, undefined, tracker.next(line)); run.feed(line) })
   host.onRobotExit((code) => {
     robotUp = false
     run.exit(code, Date.now())
     robotLog.system(`[robot sim exited with code ${code}]`)
     $('notice').textContent = `robot sim exited (${code})`
+    void refreshHistory()
     refreshRobot()
     for (const w of exitWaiters.splice(0)) w()
   })
@@ -440,12 +678,101 @@ if (host) {
     await launchRobot()
   })
   void host.robotStatus().then((st) => { robotUp = st.running; if (st.running) { run.start(Date.now()); run.feed('> Task :simulateJava') } refreshRobot() })
-} else robotLog.system('[desktop app only: the robot sim is not started from here in a browser]')
+  setupDesktopRobotTools(host)
+} else {
+  robotLog.system('[desktop app only: the robot sim is not started from here in a browser]')
+  $('robot-desktop').hidden = true
+}
+
+/** The last three folders of a path, with … in front when something was cut (the full path is in the tooltip). */
+function shortPath(p: string): string {
+  const parts = p.split(/[\\/]+/).filter(Boolean)
+  return parts.length > 3 ? `…/${parts.slice(-3).join('/')}` : p
+}
+
+/** Project folder, project check, extra environment, clickable source references and the past-runs list: all need the desktop app. */
+function setupDesktopRobotTools(h: CrucibleHost): void {
+  const dirEl = $('robot-dir')
+  const recent = $<HTMLSelectElement>('recent-dirs')
+  async function refreshDir(): Promise<void> {
+    const { dir, recent: rec } = await h.getRobotDir()
+    dirEl.textContent = dir ? shortPath(dir) : 'not set: choose the robot project folder'
+    dirEl.title = dir ?? ''
+    dirEl.classList.toggle('set', dir !== null)
+    recent.textContent = ''
+    recent.append(new Option('Recent projects…', ''))
+    for (const d of rec) recent.append(new Option(d, d))
+    recent.hidden = rec.length < 2
+  }
+  $('pick-dir').addEventListener('click', async () => {
+    const r = await h.pickRobotDir()
+    if (r.canceled) return
+    $('notice').textContent = r.ok ? `Robot project: ${r.dir}` : (r.error ?? 'could not use that folder')
+    if (!r.ok) robotLog.system(`[project] ${r.error}`)
+    await refreshDir()
+  })
+  recent.addEventListener('change', async () => {
+    if (recent.value === '') return
+    const r = await h.setRobotDir(recent.value)
+    $('notice').textContent = r.ok ? `Robot project: ${r.dir}` : (r.error ?? 'could not use that folder')
+    await refreshDir()
+  })
+  const checksEl = $('checks')
+  $('check-project').addEventListener('click', async () => {
+    const list = await h.checkRobot(modeEl.value === 'lockstep')
+    checksEl.textContent = ''
+    for (const c of list) {
+      const li = document.createElement('li')
+      li.className = c.status
+      const mk = document.createElement('span'); mk.className = 'mk'; mk.textContent = c.status === 'ok' ? '✓' : c.status === 'warn' ? '!' : '✗'
+      const body = document.createElement('span'); body.textContent = c.label
+      const dt = document.createElement('span'); dt.className = 'dt'; dt.textContent = c.detail
+      body.append(dt)
+      li.append(mk, body)
+      checksEl.append(li)
+    }
+    const bad = list.filter((c) => c.status !== 'ok').length
+    const sum = $('checks-sum')
+    sum.textContent = bad === 0 ? `✓ ${list.length} of ${list.length} checks passed` : `${list.length - bad} of ${list.length} checks passed · ${bad} to look at`
+    sum.className = bad === 0 ? 'ok' : list.some((c) => c.status === 'fail') ? 'fail' : 'warn'
+    const box = $<HTMLDetailsElement>('checks-box')
+    box.hidden = false
+    box.open = bad > 0 // everything fine: one line; something to fix: the list is open
+  })
+  robotLog.setSourceOpener((file, line) => { void h.openSource(file, line).then((r) => { $('notice').textContent = r.message }) })
+  void refreshDir()
+  historyHost = h
+  void refreshHistory()
+}
+
+async function refreshHistory(): Promise<void> {
+  const h = historyHost
+  if (!h) return
+  const list = await h.listLogs()
+  const sel = $<HTMLSelectElement>('log-history')
+  sel.textContent = ''
+  sel.append(new Option('Past runs…', ''))
+  for (const l of list) {
+    const when = l.name.replace(/^robot-/, '').replace(/\.log$/, '').replace('T', ' ').replace(/-(\d\d)-(\d\d)$/, ':$1:$2')
+    sel.append(new Option(`${when} · ${(l.size / 1024).toFixed(l.size < 10240 ? 1 : 0)} KB`, l.name))
+  }
+  $('history-row').hidden = list.length === 0
+}
+$<HTMLSelectElement>('log-history').addEventListener('change', async (e) => {
+  const sel = e.target as HTMLSelectElement
+  const name = sel.value
+  sel.value = ''
+  if (!name || !historyHost) return
+  const text = await historyHost.readLog(name)
+  if (text === null) { $('notice').textContent = `Could not read ${name}`; return }
+  robotLog.addHistory(name, text)
+})
 
 // remembered between runs: the choices in the side panels and the log's severity toggles
-bindSettings(['game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
+bindSettings(['robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
 for (const el of hostEls) el.value = hostEls[0].value // restored values may differ if only one was saved
 robotLog.syncLevels()
+applyViewMenu()
 refreshRobot()
 
 // ---- keyboard shortcuts (the table in lib/shortcuts.ts also fills the cheat sheet)
@@ -458,8 +785,16 @@ const actions: Record<string, () => void> = {
   'tab-session': () => showTab('session'),
   'tab-robot': () => showTab('robot'),
   'tab-topics': () => showTab('topics'),
+  'tab-analysis': () => { showTab('analysis'); analysisView.render() },
+  'tab-tune': () => showTab('tune'),
   panel: () => simPanel.toggle(),
   focus: () => view.focusRobot(),
+  back1: () => { if (sim.active && !robotMode) $('sim-back1').click() },
+  back5: () => { if (sim.active && !robotMode) $('sim-back5').click() },
+  camera: () => { camSel.value = fx.cyclePreset(1) },
+  'camera-prev': () => { camSel.value = fx.cyclePreset(-1) },
+  ruler: () => { if (!$<HTMLButtonElement>('ruler-btn').disabled) $('ruler-btn').click() },
+  scoreboard: () => { const c = $<HTMLInputElement>('vm-score'); c.checked = !c.checked; c.dispatchEvent(new Event('change')) },
   theme: () => $('theme-btn').click(),
   'log-clear': () => robotLog.clear(),
   'log-filter': () => { showTab('robot'); $('log-filter').focus() },
@@ -490,4 +825,4 @@ view.loadRobotModel().then((msg) => { $('notice').textContent = msg }).catch((e)
 requestAnimationFrame(frame)
 
 // exposed for debugging in the browser console and for automated checks
-;(window as unknown as Record<string, unknown>).crucible = { store, view, plot, sim, openLogFile, seekTo, get time() { return time } }
+;(window as unknown as Record<string, unknown>).crucible = { store, view, plot, sim, openLogFile, seekTo, recorder, analysisView, fx, sweep, refStore, tune, get time() { return time } }

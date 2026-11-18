@@ -19,6 +19,9 @@ export interface SimInfo {
   running: boolean
   simRate: number
   bridge: BridgeInfo | null
+  /** the scoring volumes of the field and the robot's alliance, for the distance to its HUB */
+  hubs?: { x: number; y: number; alliance: string }[]
+  alliance?: 'blue' | 'red'
 }
 
 const PHASE_NAMES: Record<string, string> = {
@@ -53,6 +56,11 @@ export function buildSimModel(f: RenderFrame, info: SimInfo): PanelModel {
     { id: 'pieces', label: 'FUEL on field', value: `${f.pieceCount} (${f.awakeCount} moving)`, hint: 'Game pieces in the world. Resting ones are frozen to keep the sim fast.' },
     { id: 'hits', label: 'Impacts', value: f.impacts.count > 0 ? `${f.impacts.count}, hardest ${f.impacts.peak.toFixed(2)} m/s` : 'none', tone: f.impacts.count > 0 ? 'warn' : 'dim', hint: 'Contacts the drive did not cause (walls, other robots) and the speed change of the hardest one' },
   ]
+  const own = (info.hubs ?? []).filter((h) => h.alliance === (info.alliance ?? 'blue'))
+  if (own.length > 0) {
+    const d = Math.min(...own.map((h) => Math.hypot(f.robot[0] - h.x, f.robot[1] - h.y)))
+    field.push({ id: 'hubdist', label: 'To your HUB', value: `${d.toFixed(2)} m`, hint: 'Straight-line distance from the robot to the nearest scoring volume of its alliance' })
+  }
   sections.push({ id: 'field', title: 'Field', rows: field })
 
   const game = Object.entries(f.status).map(([k, v]): Row => {
@@ -105,4 +113,27 @@ export function buildSimModel(f: RenderFrame, info: SimInfo): PanelModel {
   })
 
   return { phase: phaseLabel(f.phase), clock: `${f.time.toFixed(1)} s`, blue: f.scores.blue, red: f.scores.red, sections }
+}
+
+export interface ScoreboardModel {
+  blue: number
+  red: number
+  /** time left in the match, m:ss */
+  clock: string
+  phase: string
+  /** which HUBs score right now, when the game reports it */
+  hubs: { blue: 'active' | 'inactive'; red: 'active' | 'inactive' } | null
+}
+
+/** The big scoreboard overlay: scores, the match clock counting down, the phase and the HUB status. */
+export function scoreboardModel(f: RenderFrame, phases: { name: string; duration: number }[]): ScoreboardModel {
+  const total = phases.filter((p) => Number.isFinite(p.duration)).reduce((a, p) => a + p.duration, 0)
+  const left = Math.max(0, total - f.time)
+  const m = /blue (\w+).*?red (\w+)/i.exec(f.status.hubs ?? '')
+  const st = (w: string): 'active' | 'inactive' => (/inactive/i.test(w) ? 'inactive' : 'active')
+  return {
+    blue: f.scores.blue, red: f.scores.red, phase: phaseLabel(f.phase),
+    clock: `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`,
+    hubs: m ? { blue: st(m[1]), red: st(m[2]) } : null,
+  }
 }

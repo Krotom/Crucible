@@ -30,3 +30,11 @@ export function redCycler(): BotScript {
     cycle: { pickup: { x: 8.4, y: 3.2 }, at: { x: 10.0, y: 4.0 }, intakeSeconds: 4, count: 6, rate: 2 },
   }
 }
+
+/** A blue partner that cycles like the red one, mirrored: picks up FUEL in the neutral zone and fires at the blue HUB. */
+export function blueAlly(): BotScript {
+  return {
+    name: 'blue ally', alliance: 'blue', start: { x: 3.0, y: 1.6, yaw: 0 }, speed: 2.5,
+    cycle: { pickup: { x: 8.1, y: 4.9 }, at: { x: 6.5, y: 4.0 }, intakeSeconds: 4, count: 6, rate: 2 },
+  }
+}

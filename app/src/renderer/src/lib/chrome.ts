@@ -30,7 +30,7 @@ export function setupTabs(): void {
       t.setAttribute('aria-selected', String(on))
       $(`tab-${t.dataset.tab}`).hidden = !on
     }
-    document.querySelector('.shell')?.classList.toggle('wide', name === 'robot') // wider sidebar for the log
+    document.querySelector('.shell')?.classList.toggle('wide', name === 'robot' || name === 'analysis' || name === 'tune') // wider sidebar for the log and the charts
   }
   showTabImpl = show
   for (const t of tabs) t.addEventListener('click', () => show(t.dataset.tab!))
@@ -76,6 +76,8 @@ export function setupTheme(): void {
   })
   paint()
 }
+
+export function appVersion(): string { return typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev' }
 
 export function setupAbout(): void {
   const version = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev'

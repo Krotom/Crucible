@@ -39,8 +39,28 @@ If Electron reports "Electron uninstall", its binary was not downloaded; run `no
 
 - **Run status.** Under Launch robot a line says what the robot process is doing, read from its output: Starting, Building (with a moving bar and the Gradle task count), Running (waiting for / connected to the sim), Stopped, Exited, or Failed (exit code or "Build failed"), with the elapsed time. **Relaunch** (while running) stops the robot, waits for it to exit, and launches it again. **Also start the sim when launching** presses Start sim for you (robot-code modes only); the sim waits for the robot program to connect.
 - **Log.** Errors / Warnings / Info toggles hide a severity (the app's own lines and BUILD SUCCESSFUL always show); the ▲ ▼ buttons (or **N** / **Shift+N**) jump between errors, counting a message and its stack trace once.
+- **Project.** The row at the top of the Robot code card shows the robot project that Launch robot runs; **Choose…** picks another folder (it needs a gradlew), the last five are offered under **Recent projects…**. The choice is kept in the settings folder and wins over `app/crucible.config.json`. **Check project** lists what is ready and what is missing (gradlew, Java, the bridge library and its hook, the simulation GUI guard, and for lockstep the emulation layer); Launch robot runs the same checks and only refuses when there is no project or no Java.
+- **Extra environment.** `KEY=VALUE` lines are passed to Gradle and the robot (`JAVA_HOME`, flags ...); the variables the bridge needs are always set by the app.
+- **Log tabs and links.** All / Build / Robot split Gradle's output from the robot program's own prints. File references in stack traces and compiler messages are links: a click opens the file at that line (the `editor` command in the settings `crucible.config.json`, for example `code --goto {file}:{line}`; VS Code if it is installed, else the default app).
+- **Past runs.** Every run is also saved in the settings folder (the last 20); **Past runs…** puts one back into the log.
 - **Shortcuts.** Press **?** (or the keyboard button in the title bar) for the list: Space play/pause, **.** step 10 ms, Ctrl+Enter start/stop the sim, Shift+R reset, 1/2/3 tabs, P fold the sim panel, F focus the robot, T theme, Ctrl+L clear the log, Ctrl+F filter the log. Plain-key shortcuts are off while typing in a box, and the driving keys (W A S D Q E J K L H) are never shortcuts.
 - **Remembered.** Game, robot mode, opponent, step, seed, NT host, the auto-start option and the log toggles are kept between runs.
+
+## Analysis tab, timeline and 3D view tools
+
+- **Analysis tab** (key 4): match summary (score, breakdown by Auto / Teleop / Endgame / Fouls, shots and accuracy, pickups, pickup-to-launch times, distance, top speed, impacts, fouls with the rule that was broken), a pickup-to-launch histogram, a shot map (scored / missed, aim lines, the robot's path) and the event feed with filters. **Save report…** writes a standalone HTML report, **Events CSV…** the event list. When a match ends a summary opens (switch it off with the box in the tab).
+- **Timeline** above the transport: the match phases to scale, score (blue above, red below), foul, impact and shot markers with tooltips, and the current time.
+- **Camera** (HUD select, **C** / **Shift+C**): Overview, Top-down, Driver (chase), Follow robot, Blue HUB, Red HUB. **View ▾** switches the collision box, intake volume, scoring volumes, rules zones and center line, robot trail, shot arcs and landing spots, scoreboard (**B**) and a robot-camera inset (front or top-down). **Ruler** (**M**): click two points on the floor for the distance. The sim panel shows the distance to your HUB; drag its header to move it, double-click to put it back.
+- **Alliance and start position** (Session tab): red starts on the far side facing the other way; X / Y / Yaw override the default. The opponent list also has a blue ally cycler and ally + red cycler for practice matches.
+
+## Replay and export
+
+- **Rewind.** The scripted sim keeps a snapshot every half second for the last minute. **⟲ 1 s** / **⟲ 5 s** (or **←** / **Shift+←**) take it back exactly that much simulated time; a click on the timeline goes back to that moment (it cannot skip ahead of what was simulated). Stepping on from a rewound moment gives the same state hashes again. With robot code the program cannot be rewound: the buttons stay off.
+- **Slots.** Save state / Load state use one of three slots (the **Slot** box).
+- **Export.** **CSV** and **PNG** (next to Clear plot) save the plotted topics (every sample) or the chart with its legend. **Save .wpilog…** (Analysis tab) writes everything recorded in the sim as a WPILOG that opens here, in AdvantageScope or any WPILOG tool (the pose picker finds the sim's robot pose by itself). **Save run (.json)…** writes the run in the same report.json shape `npm run batch` writes.
+- **Compare runs** (Analysis tab): load two report.json files (or use the current run) for a table with who did better (score, accuracy, cycle times, impacts ...) and score and path charts.
+- **Seed sweep** (Analysis tab): the scripted match played with many seeds in a worker: mean ± spread of both scores, wins, every run. For robot code use `npm run batch` with `seeds`.
+- **Reference log** (Data card): a second .wpilog (for example a real match) whose topics are listed under their own heading in the Topics tab and drawn dashed on the plot; **Shift** moves it in time to line it up with the sim.
 
 ## Simulation (M2)
 

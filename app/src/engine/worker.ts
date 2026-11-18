@@ -1,21 +1,26 @@
 // Physics worker: owns the engine and runs it against the wall clock at a chosen speed, posting frames at about 60 Hz.
 // The engine itself never reads the clock; only this loop decides how many steps to run per tick.
 import { Engine } from './engine'
-import { botsToOthers, redCycler } from '../analysis/bots'
-import type { FromWorker, ToWorker } from './protocol'
+import type { FromWorker, ToWorker, UiEvent } from './protocol'
 import type { EngineSnapshot } from './types'
-import { createRebuiltGame } from '../games/rebuilt'
-import { createTestGame, TEST_ROBOT } from '../games/test'
 import { BridgeSession } from './bridge/session'
 import { OFFSEASON } from '../robots/offseason'
+import { buildSetup } from './setup'
+import { cleanTune } from './tuning'
 
 let frameCount = 0
 let lastHash = ''
+let pendingEvents: UiEvent[] = [] // what happened since the last frame
 let hashedAt = -1 // sim time the cached hash belongs to
 let forceHash = false // the next frame must carry a fresh hash (after a step, reset or load)
 let engine: Engine | null = null
 let bridge: BridgeSession | null = null
-let snapshot: EngineSnapshot | null = null
+const SLOTS = 3
+let slots: (EngineSnapshot | null)[] = [null, null, null]
+// a ring of snapshots every half second of sim time (the last minute): rewinding restores one and steps forward to the exact moment
+const RING_EVERY = 0.5
+const RING_MAX = 120
+let ring: { time: number; snap: EngineSnapshot }[] = []
 let running = false
 let speed = 1
 let budget = 0 // simulated seconds owed
@@ -26,6 +31,53 @@ let simRate = 0
 let lastSimTime = 0
 
 const post = (m: FromWorker): void => (self as unknown as Worker).postMessage(m)
+
+/** Turns the engine's game events and score entries into the small records the page shows. */
+function watchEngine(e: Engine): void {
+  e.observe((ev, t) => {
+    switch (ev.type) {
+      case 'phase-changed': pendingEvents.push({ t, kind: 'phase', from: ev.from, to: ev.to }); break
+      case 'piece-launched': pendingEvents.push({ t, kind: 'launch', id: ev.pieceId, x: ev.position[0], y: ev.position[1], z: ev.position[2], vx: ev.velocity[0], vy: ev.velocity[1], vz: ev.velocity[2], speed: ev.speed }); break
+      case 'piece-captured': pendingEvents.push({ t, kind: 'capture', id: ev.pieceId }); break
+      case 'robot-impact': pendingEvents.push({ t, kind: 'impact', against: ev.against, speed: ev.speed }); break
+      case 'piece-entered-sensor': case 'piece-left-sensor':
+        pendingEvents.push({ t, kind: 'sensor', sensor: ev.sensor.id, alliance: ev.sensor.alliance, x: ev.sensor.center[0], y: ev.sensor.center[1], id: ev.pieceId, enter: ev.type === 'piece-entered-sensor' }); break
+    }
+    if (pendingEvents.length > 5000) pendingEvents.splice(0, pendingEvents.length - 5000)
+  })
+  e.observeScores((s) => pendingEvents.push({ t: s.time, kind: 'score', alliance: s.alliance, points: s.points, reason: s.reason }))
+}
+
+const engineTime = (): number => engine?.time ?? 0
+
+/** Keeps a snapshot when half a second of sim time has passed since the last one (not while the robot program drives the clock: it cannot be rewound). */
+function remember(): void {
+  if (!engine || bridge) return
+  const last = ring[ring.length - 1]
+  if (last && engine.time < last.time) ring = ring.filter((r) => r.time <= engine!.time)
+  const keep = ring[ring.length - 1]
+  if (!keep || engine.time - keep.time >= RING_EVERY - 1e-9) {
+    ring.push({ time: engine.time, snap: engine.snapshot() })
+    if (ring.length > RING_MAX) ring.shift()
+  }
+}
+
+/** Goes back to simulated time `t` (not before the oldest snapshot): restores the latest snapshot at or before it and steps forward to the moment. */
+function rewindTo(t: number): void {
+  if (!engine || bridge || ring.length === 0) return
+  let i = ring.length - 1
+  while (i > 0 && ring[i].time > t + 1e-9) i--
+  const entry = ring[i]
+  engine.restore(entry.snap)
+  ring = ring.slice(0, i + 1)
+  const dt = engine.dt
+  let n = 0
+  while (engine.time + dt / 2 < t && n++ < Math.ceil(RING_EVERY / dt) + 2) engine.step()
+  pendingEvents = []
+  budget = 0
+  forceHash = true
+  postFrame()
+}
 
 function postFrame(): void {
   if (!engine) return
@@ -39,7 +91,7 @@ function postFrame(): void {
   else frame.hash = lastHash
   const st = bridge?.status
   post({
-    type: 'frame', frame, running, speed, hasSnapshot: snapshot !== null, simRate,
+    type: 'frame', frame, running, speed, hasSnapshot: slots.some((x) => x !== null), slots: slots.map((x) => x !== null), canRewind: bridge ? 0 : Math.max(0, engineTime() - (ring[0]?.time ?? engineTime())), simRate, events: pendingEvents.splice(0),
     bridge: st && {
       connected: st.connected, frames: st.frames, robotTime: st.robotTime, skipped: st.skipped, robotEnabled: st.robotEnabled, hello: st.helloDevices,
       helloIssues: st.helloIssues, components: st.components, fms: bridge?.fms ?? false, rttMs: (bridge?.rtt ?? 0) * 1000, leadMs: (bridge?.lead ?? 0) * 1000,
@@ -61,6 +113,7 @@ function tick(): void {
     while (budget >= dt && performance.now() - t0 < 12) { engine.step(); budget -= dt; n++ }
     if (budget > 0.25) budget = 0 // fell behind: drop the backlog instead of spiraling
     rateWindow.sim += n * dt
+    if (n > 0) remember()
   }
   if (engine && bridge) { rateWindow.sim += Math.max(0, engine.time - lastSimTime); lastSimTime = engine.time } // the robot drives the clock: measure how fast it runs
   if (now - rateWindow.wall > 500) {
@@ -76,26 +129,20 @@ async function handle(m: ToWorker): Promise<void> {
       case 'init': {
         bridge?.stop()
         bridge = null
-        const rebuilt = m.game === 'rebuilt'
-        // REBUILT: the manual's 408 FUEL in the neutral zone. A pile of that size stays real time because resting FUEL is frozen (src/engine/pile.ts),
-        // CCD runs only on fast pieces, 2 solver iterations, and a 2 ms step by default; see rules/REBUILT_RULES_EXTRACT.md section 7
-        const game = rebuilt ? createRebuiltGame({ preload: OFFSEASON.balls?.preload ?? 0, neutralFuel: 408 }) : createTestGame()
-        const start = rebuilt ? { x: 1.6, y: 4.0, yaw: 0 } : OFFSEASON.start
-        // an opponent robot that holds still at the center line: something to push against and to be blocked by
-        const others = m.opponent === 'cycler' ? botsToOthers([redCycler()]) : m.opponent === 'blocker' ? [{ name: 'opponent', alliance: 'red' as const, half: [0.43, 0.43, 0.12] as [number, number, number], mass: 55, start: { x: rebuilt ? 6.5 : 3, y: rebuilt ? 4.0 : 0, yaw: Math.PI } }] : []
-        const robot = m.mode !== 'script'
-          ? { half: OFFSEASON.bumper, start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, balls: OFFSEASON.balls, alliance: 'blue' as const, chassis: OFFSEASON.contact, others }
-          : rebuilt ? { ...TEST_ROBOT, start, alliance: 'blue' as const, others } : { ...TEST_ROBOT, others }
+        const setup = buildSetup(m)
         const lockstep = m.mode === 'lockstep'
-        // the physics step: larger is faster and coarser (REBUILT with 408 FUEL: 1 ms about 0.9x, 2 ms 1.6x, 5 ms 4x real time while plowing the whole pile); in lockstep one exchange is one step
-        engine = await Engine.create({ game, robot, seed: m.seed, solverIterations: rebuilt ? 2 : undefined, dt: m.stepDt ?? 0.002, tuning: rebuilt ? { pile: true, ccd: 'fast' } : undefined })
-        snapshot = null
+        engine = await Engine.create({ ...setup.config, seed: m.seed })
+        slots = [null, null, null]
+        ring = []
+        pendingEvents = []
+        watchEngine(engine)
+        remember()
         if (m.mode !== 'script') {
           bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: lockstep ? null : 5810 }, () => {}, OFFSEASON, lockstep ? { dt: engine.dt, speed: speed } : null)
           bridge.start()
           running = true
         }
-        post({ type: 'ready', gameId: game.id, field: game.field(), pieces: engine.pieceSpecs, robotHalf: robot.half, othersHalf: others.map((o) => o.half), dt: engine.dt })
+        post({ type: 'ready', gameId: setup.config.game.id, field: setup.config.game.field(), pieces: engine.pieceSpecs, robotHalf: setup.robotHalf, othersHalf: setup.othersHalf, dt: engine.dt, phases: setup.config.game.matchFlow().phases })
         postFrame()
         break
       }
@@ -110,10 +157,17 @@ async function handle(m: ToWorker): Promise<void> {
       case 'ds': bridge?.setDs({ enabled: m.enabled, autonomous: m.autonomous, test: m.test }); break
       case 'joystick': bridge?.setJoystick(m.axes, BigInt(m.buttons), m.pov); break
       case 'speed': speed = m.value; if (bridge?.isLockstep) bridge.speed = m.value; postFrame(); break
-      case 'step': if (engine && !bridge) { for (let i = 0; i < m.steps; i++) engine.step(); forceHash = true; postFrame() } break
-      case 'reset': if (engine) { engine.reset(m.seed); budget = 0; bridge?.seedPose(); forceHash = true; postFrame() } break
-      case 'save': if (engine) { snapshot = engine.snapshot(); postFrame() } break
-      case 'load': if (engine && snapshot) { engine.restore(snapshot); budget = 0; bridge?.seedPose(); forceHash = true; postFrame() } break
+      case 'step': if (engine && !bridge) { for (let i = 0; i < m.steps; i++) engine.step(); remember(); forceHash = true; postFrame() } break
+      case 'reset': if (engine) { engine.reset(m.seed); ring = []; remember(); pendingEvents = []; budget = 0; bridge?.seedPose(); forceHash = true; postFrame() } break
+      case 'save': if (engine) { slots[Math.min(SLOTS - 1, Math.max(0, m.slot ?? 0))] = engine.snapshot(); postFrame() } break
+      case 'load': {
+        const snap = slots[Math.min(SLOTS - 1, Math.max(0, m.slot ?? 0))]
+        if (engine && snap) { engine.restore(snap); ring = ring.filter((r) => r.time <= engine!.time); remember(); pendingEvents = []; budget = 0; bridge?.seedPose(); forceHash = true; postFrame() }
+        break
+      }
+      case 'tune': if (engine) engine.tune(cleanTune(m.params)); break
+      case 'rewind': if (engine && !bridge) rewindTo(Math.max(0, engine.time - Math.max(0, m.seconds))); break
+      case 'seek': if (engine && !bridge && m.time < engine.time - 1e-9) rewindTo(Math.max(0, m.time)); break
     }
   } catch (e) {
     post({ type: 'error', message: (e as Error).message })

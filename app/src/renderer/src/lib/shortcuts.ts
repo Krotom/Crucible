@@ -16,11 +16,19 @@ export const SHORTCUTS: Shortcut[] = [
   { key: '.', label: 'Step 10 ms (sim paused)', group: 'Simulation', run: 'step' },
   { key: 'ctrl+enter', label: 'Start / stop the sim', group: 'Simulation', run: 'toggle-sim' },
   { key: 'shift+r', label: 'Reset the sim', group: 'Simulation', run: 'reset' },
+  { key: 'arrowleft', label: 'Back 1 s (scripted robot)', group: 'Simulation', run: 'back1' },
+  { key: 'shift+arrowleft', label: 'Back 5 s (scripted robot)', group: 'Simulation', run: 'back5' },
   { key: '1', label: 'Session tab', group: 'View', run: 'tab-session' },
   { key: '2', label: 'Robot tab', group: 'View', run: 'tab-robot' },
   { key: '3', label: 'Topics tab', group: 'View', run: 'tab-topics' },
+  { key: '4', label: 'Analysis tab', group: 'View', run: 'tab-analysis' },
+  { key: '5', label: 'Tune tab', group: 'View', run: 'tab-tune' },
   { key: 'p', label: 'Fold / unfold the sim panel', group: 'View', run: 'panel' },
   { key: 'f', label: 'Focus the robot', group: 'View', run: 'focus' },
+  { key: 'c', label: 'Next camera', group: 'View', run: 'camera' },
+  { key: 'shift+c', label: 'Previous camera', group: 'View', run: 'camera-prev' },
+  { key: 'm', label: 'Ruler: measure on the floor', group: 'View', run: 'ruler' },
+  { key: 'b', label: 'Scoreboard overlay', group: 'View', run: 'scoreboard' },
   { key: 't', label: 'Switch dark / light theme', group: 'View', run: 'theme' },
   { key: 'ctrl+l', label: 'Clear the robot log', group: 'Log', run: 'log-clear' },
   { key: 'ctrl+f', label: 'Filter the robot log', group: 'Log', run: 'log-filter' },
@@ -36,7 +44,7 @@ export function keyName(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | '
   if (k === 'control' || k === 'shift' || k === 'meta' || k === 'alt') return null
   const ctrl = e.ctrlKey || e.metaKey
   if (ctrl) return `ctrl+${e.shiftKey ? 'shift+' : ''}${k}`
-  if (e.shiftKey && k.length === 1 && /[a-z]/.test(k)) return `shift+${k}`
+  if (e.shiftKey && ((k.length === 1 && /[a-z]/.test(k)) || k.startsWith('arrow'))) return `shift+${k}`
   return k
 }
 
@@ -46,5 +54,5 @@ export function findShortcut(name: string | null): Shortcut | undefined {
 
 /** Display form: "Ctrl+Shift+R", "Space", "?". */
 export function keyLabel(key: string): string {
-  return key.split('+').map((p) => (p === ' ' ? 'Space' : p === 'enter' ? 'Enter' : p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1))).join('+')
+  return key.split('+').map((p) => (p === ' ' ? 'Space' : p === 'enter' ? 'Enter' : p === 'arrowleft' ? '←' : p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1))).join('+')
 }

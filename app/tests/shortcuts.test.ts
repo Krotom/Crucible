@@ -22,6 +22,7 @@ describe('keyboard shortcuts', () => {
     expect(keyName(ev('n'))).toBe('n')
     expect(keyName(ev('?', { shiftKey: true }))).toBe('?')
     expect(keyName(ev('F', { ctrlKey: true }))).toBe('ctrl+f')
+    expect(keyName(ev('ArrowLeft'))).toBe('arrowleft'); expect(keyName(ev('ArrowLeft', { shiftKey: true }))).toBe('shift+arrowleft')
     expect(keyName(ev('Shift', { shiftKey: true }))).toBeNull()
     expect(keyName(ev('a', { altKey: true }))).toBeNull()
   })
@@ -30,6 +31,6 @@ describe('keyboard shortcuts', () => {
     for (const k of DRIVING_KEYS) expect(findShortcut(keyName(ev(k)))).toBeUndefined()
   })
   it('prints readable key names', () => {
-    expect(keyLabel(' ')).toBe('Space'); expect(keyLabel('ctrl+enter')).toBe('Ctrl+Enter'); expect(keyLabel('shift+r')).toBe('Shift+R'); expect(keyLabel('?')).toBe('?')
+    expect(keyLabel(' ')).toBe('Space'); expect(keyLabel('ctrl+enter')).toBe('Ctrl+Enter'); expect(keyLabel('shift+r')).toBe('Shift+R'); expect(keyLabel('?')).toBe('?'); expect(keyLabel('shift+arrowleft')).toBe('Shift+←')
   })
 })

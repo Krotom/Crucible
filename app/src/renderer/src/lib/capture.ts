@@ -1,7 +1,13 @@
 // Screenshots and video of the 3D view. The screenshot renders and reads the canvas in the same tick (a WebGL canvas is blank to toBlob otherwise);
 // the video is the canvas's own stream through a MediaRecorder (WebM). Files go through the main process's save dialog in the app and a plain
 // download in a browser.
-export interface Saver { saveFile?(name: string, data: ArrayBuffer, kind: 'png' | 'webm'): Promise<{ ok: boolean; path?: string }> }
+export type FileKind = 'png' | 'webm' | 'html' | 'csv' | 'json' | 'txt' | 'wpilog'
+export interface Saver { saveFile?(name: string, data: ArrayBuffer, kind: FileKind): Promise<{ ok: boolean; path?: string }> }
+
+export function kindOf(name: string): FileKind {
+  const ext = name.split('.').pop()!.toLowerCase()
+  return (['png', 'webm', 'html', 'csv', 'json', 'txt', 'wpilog'] as const).find((k) => k === ext) ?? 'txt'
+}
 
 export function timestampName(prefix: string, ext: string, d = new Date()): string {
   const p = (n: number): string => String(n).padStart(2, '0')
@@ -50,7 +56,7 @@ export class VideoRecorder {
 
 /** Saves a blob: through the app's save dialog when there is one, else as a download. Returns where it went (a path, or the file name for a download). */
 export async function saveBlob(name: string, blob: Blob, host: Saver | undefined): Promise<string | null> {
-  const kind = name.endsWith('.png') ? 'png' : 'webm'
+  const kind = kindOf(name)
   if (host?.saveFile) {
     const r = await host.saveFile(name, await blob.arrayBuffer(), kind)
     return r.ok ? r.path ?? name : null

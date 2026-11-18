@@ -18,7 +18,7 @@ function write(s: Saved): void {
 export function bindSettings(ids: string[]): void {
   const saved = read()
   for (const id of ids) {
-    const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null
+    const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null
     if (!el) continue
     const isCheck = el instanceof HTMLInputElement && el.type === 'checkbox'
     const v = saved[id]

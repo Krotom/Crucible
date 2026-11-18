@@ -16,7 +16,8 @@
     "batch": "node scripts/batch.mjs",
     "calibrate": "node scripts/calibrate.mjs",
     "installer": "node scripts/build-installer.mjs",
-    "integrate-robot": "node scripts/integrate-robot.mjs"
+    "integrate-robot": "node scripts/integrate-robot.mjs",
+    "e2e": "bash e2e/run.sh"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

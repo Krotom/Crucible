@@ -92,6 +92,7 @@ export class BridgeSession {
 
   constructor(private engine: Engine, host: string, ports: BridgePorts = {}, private onStatus: () => void = () => {}, private def: RobotDefinition | null = null, lockstep: LockstepOptions | null = null) {
     this.lockstep = lockstep
+    this.ds.alliance = engine.robotAlliance === 'red' ? 0 : 1 // 0 red, 1 blue
     this.ws = new WsTransport(host, ports.ws ?? DEFAULT_WS_PORT)
     this.ws.onMessage = (type, body) => this.onMessage(type, body)
     this.ws.onConnection = (c) => {

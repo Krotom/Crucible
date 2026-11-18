@@ -19,7 +19,33 @@ export function classifyLine(line: string): LogLevel {
   return 'info'
 }
 
-interface Entry { text: string; level: LogLevel; el: HTMLElement | null }
+export type LogSource = 'build' | 'robot' | 'app'
+
+/** Splits output into what the build printed and what the robot program printed: the robot starts at `> Task :simulateJava` / its startup banner. */
+export class SourceTracker {
+  private running = false
+  reset(): void { this.running = false }
+  next(line: string): 'build' | 'robot' {
+    if (this.running) return 'robot'
+    if (/^> Task :simulateJava\b/.test(line) || /Robot program starting/i.test(line)) this.running = true
+    return 'build'
+  }
+}
+
+export interface SourceRef { start: number; end: number; file: string; line: number }
+
+/** `(Robot.java:42)` in a stack frame, or `src/.../Robot.java:42` in a compiler message: where in the text, which file name, which line. */
+export function findSourceRefs(text: string): SourceRef[] {
+  const out: SourceRef[] = []
+  const frame = /\(([\w$]+\.(?:java|kt)):(\d+)\)/g
+  for (let m = frame.exec(text); m; m = frame.exec(text)) out.push({ start: m.index + 1, end: m.index + m[0].length - 1, file: m[1], line: Number(m[2]) })
+  if (out.length > 0) return out
+  const path = /(?:[A-Za-z]:)?[\w.$\\/-]*?([\w$]+\.(?:java|kt)):(\d+)/g
+  for (let m = path.exec(text); m; m = path.exec(text)) out.push({ start: m.index, end: m.index + m[0].length, file: m[1], line: Number(m[2]) })
+  return out
+}
+
+interface Entry { text: string; level: LogLevel; src: LogSource; el: HTMLElement | null }
 
 export class LogView {
   private entries: Entry[] = []
@@ -29,6 +55,10 @@ export class LogView {
   /** Which severities are shown. OK lines (BUILD SUCCESSFUL) and the app's own lines always are. */
   private levelOn: Record<LogLevel, boolean> = { error: true, warn: true, info: true, ok: true, sys: true }
   private cursor: Entry | null = null
+  private flashTimer: ReturnType<typeof setTimeout> | null = null
+  private srcFilter: 'all' | 'build' | 'robot' = 'all'
+  private opener: ((file: string, line: number) => void) | null = null
+  private flashEl: HTMLElement | null = null
 
   constructor(
     private box: HTMLElement,
@@ -36,10 +66,18 @@ export class LogView {
       count: HTMLElement; filter: HTMLInputElement; follow: HTMLInputElement; copy: HTMLButtonElement; save: HTMLButtonElement; clear: HTMLButtonElement
       levels: { error: HTMLInputElement; warn: HTMLInputElement; info: HTMLInputElement }
       errCount: HTMLElement; errPrev: HTMLButtonElement; errNext: HTMLButtonElement
+      sources: HTMLElement
     },
     private notify: (text: string) => void,
   ) {
     for (const k of ['error', 'warn', 'info'] as const) ui.levels[k].addEventListener('change', () => this.syncLevels())
+    for (const b of ui.sources.querySelectorAll<HTMLButtonElement>('button[data-src]')) b.addEventListener('click', () => this.setSource(b.dataset.src as 'all' | 'build' | 'robot'))
+    box.addEventListener('click', (e) => {
+      const a = (e.target as HTMLElement).closest('a.src-link') as HTMLAnchorElement | null
+      if (!a || !this.opener) return
+      e.preventDefault()
+      this.opener(a.dataset.file!, Number(a.dataset.line))
+    })
     ui.errPrev.addEventListener('click', () => this.jumpError(-1))
     ui.errNext.addEventListener('click', () => this.jumpError(1))
     ui.filter.addEventListener('input', () => { this.filter = ui.filter.value.trim().toLowerCase(); this.rebuild() })
@@ -56,9 +94,9 @@ export class LogView {
   }
 
   /** Adds one line (output of the robot process). */
-  add(raw: string, level?: LogLevel): void {
+  add(raw: string, level?: LogLevel, src: LogSource = 'build'): void {
     const text = stripAnsi(raw)
-    this.entries.push({ text, level: level ?? classifyLine(text), el: null })
+    this.entries.push({ text, level: level ?? classifyLine(text), src, el: null })
     if (this.entries.length > MAX_LINES) {
       const drop = this.entries.splice(0, this.entries.length - MAX_LINES)
       for (const d of drop) d.el?.remove()
@@ -67,7 +105,32 @@ export class LogView {
   }
 
   /** A line the app itself writes (the command it runs, how the process ended). */
-  system(text: string): void { this.add(text, 'sys') }
+  system(text: string): void { this.add(text, 'sys', 'app') }
+
+  /** Lets stack-trace and compiler-message file references be clicked (desktop app: opens the file in the editor). */
+  setSourceOpener(fn: ((file: string, line: number) => void) | null): void { this.opener = fn; this.rebuild() }
+
+  setSource(src: 'all' | 'build' | 'robot'): void {
+    this.srcFilter = src
+    for (const b of this.ui.sources.querySelectorAll<HTMLButtonElement>('button[data-src]')) {
+      const on = b.dataset.src === src
+      b.classList.toggle('on', on)
+      b.setAttribute('aria-pressed', String(on))
+    }
+    this.rebuild()
+  }
+
+  /** Puts the text of a past run into the log, under a heading, split into build and robot output like live output. */
+  addHistory(name: string, text: string): void {
+    this.add(`[— past run ${name} —]`, 'sys', 'app')
+    const t = new SourceTracker()
+    for (const line of text.split(/\r?\n/)) {
+      if (line.trim() === '') continue
+      if (line.startsWith('# ')) this.add(line, 'sys', 'app')
+      else this.add(line, undefined, t.next(line))
+    }
+    this.add('[— end of past run —]', 'sys', 'app')
+  }
 
   /** Reads the severity checkboxes again (after the page restored them) and redraws. */
   syncLevels(): void {
@@ -86,8 +149,12 @@ export class LogView {
     this.follow = false
     this.ui.follow.checked = false
     e.el!.scrollIntoView({ block: 'center' })
+    // one highlight at a time: an older jump's timer must not cut the new one short
+    if (this.flashTimer !== null) clearTimeout(this.flashTimer)
+    this.flashEl?.classList.remove('flash')
+    this.flashEl = e.el
     e.el!.classList.add('flash')
-    setTimeout(() => e.el?.classList.remove('flash'), 1200)
+    this.flashTimer = setTimeout(() => { this.flashEl?.classList.remove('flash'); this.flashEl = null; this.flashTimer = null }, 1200)
     this.notify(`Error ${next + 1} of ${blocks.length}`)
   }
 
@@ -111,7 +178,7 @@ export class LogView {
   shownText(): string { return this.shown().map((e) => e.text).join('\n') }
 
   private matches(e: Entry): boolean {
-    return this.levelOn[e.level] && (!this.filter || e.text.toLowerCase().includes(this.filter))
+    return this.levelOn[e.level] && (this.srcFilter === 'all' || e.src === 'app' || e.src === this.srcFilter) && (!this.filter || e.text.toLowerCase().includes(this.filter))
   }
 
   private shown(): Entry[] { return this.entries.filter((e) => this.matches(e)) }
@@ -144,14 +211,29 @@ export class LogView {
   private row(e: Entry): HTMLElement {
     const el = document.createElement('div')
     el.className = `ln ${e.level}`
-    el.textContent = e.text
+    const refs = this.opener ? findSourceRefs(e.text) : []
+    if (refs.length === 0) { el.textContent = e.text; return el }
+    let at = 0
+    for (const r of refs) {
+      if (r.start > at) el.append(document.createTextNode(e.text.slice(at, r.start)))
+      const a = document.createElement('a')
+      a.className = 'src-link'
+      a.href = '#'
+      a.dataset.file = r.file
+      a.dataset.line = String(r.line)
+      a.title = `Open ${r.file} at line ${r.line}`
+      a.textContent = e.text.slice(r.start, r.end)
+      el.append(a)
+      at = r.end
+    }
+    if (at < e.text.length) el.append(document.createTextNode(e.text.slice(at)))
     return el
   }
 
   private scrollEnd(): void { this.box.scrollTop = this.box.scrollHeight }
 
   private updateCount(): void {
-    const hidden = this.filter !== '' || !this.levelOn.error || !this.levelOn.warn || !this.levelOn.info
+    const hidden = this.filter !== '' || this.srcFilter !== 'all' || !this.levelOn.error || !this.levelOn.warn || !this.levelOn.info
     const shown = hidden ? this.shown().length : this.entries.length
     this.ui.count.textContent = hidden ? `${shown} of ${this.entries.length} lines` : `${this.entries.length} line${this.entries.length === 1 ? '' : 's'}`
     const errors = this.errorBlocks().length
