@@ -14,7 +14,9 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
     await page.waitForFunction(() => document.querySelector('.simhud .kv'), null, { timeout: 15000 }); await sleep(250)
   }
   const simTime = async () => Number((await page.$$eval('.simhud .kv', (rs) => Object.fromEntries(rs.map((r) => [r.querySelector('.k').textContent, r.querySelector('.v').textContent]))))['Sim time'].replace(' s', ''))
-  const runTo = async (t, speed = '8') => { await page.selectOption('#speed', speed); await page.click('#play'); await page.waitForFunction((t) => crucible.sim.latest && crucible.sim.latest.time >= t, t, { timeout: 60000 }); await page.click('#play'); await sleep(300); await page.selectOption('#speed', '1') }
+  // after a pause the sim time stops, but the page ingests the worker's frames and events a little later (much later on a busy runner): wait until the sim time and the recorder agree and stand still
+  const quiet = async () => { for (let i = 0; i < 80; i++) { const a = await rec(() => [crucible.sim.latest.time, crucible.recorder.time, crucible.sim.running]); await sleep(250); const b = await rec(() => [crucible.sim.latest.time, crucible.recorder.time, crucible.sim.running]); if (!b[2] && a[0] === b[0] && b[0] === b[1]) return } throw new Error('the sim and the recorder never settled') }
+  const runTo = async (t, speed = '8') => { await page.selectOption('#speed', speed); await page.click('#play'); await page.waitForFunction((t) => crucible.sim.latest && crucible.sim.latest.time >= t, t, { timeout: 60000 }); await page.click('#play'); await quiet(); await page.selectOption('#speed', '1') }
   const stub = (p) => app.evaluate(({ dialog }, p) => { dialog.showSaveDialog = async () => (p ? { canceled: false, filePath: p } : { canceled: true, filePath: undefined }) }, p)
   // synthetic frame + events straight into the recorder (the engine only launches shots with robot code)
   const feedIn = (time, events, phase = 'teleop', robotX = 2) => rec(({ time, events, phase, robotX }) => crucible.recorder.ingest({ time, phase, robot: [robotX, 3, 0, 1, 0, 0, 0], robotSpeed: 1.5, scores: { blue: 0, red: 0 } }, events), { time, events, phase, robotX })
@@ -120,7 +122,7 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
     await page.click('#sim-save'); await sleep(300); const tSaved = await simTime(); const s0 = await rec(() => crucible.recorder.scores.length); await runTo(9)
     await feedIn(9.5, [{ t: 9.5, kind: 'score', alliance: 'red', points: 4, reason: 'after save' }], 'teleop')
     eq(await rec(() => crucible.recorder.scores.length), (await rec(() => crucible.recorder.scores.filter((x) => x.t <= 9.5).length)), 'sanity'); expect((await rec(() => crucible.recorder.scores.length)) > s0, 'a score after the save exists')
-    await page.click('#sim-load'); await sleep(600)
+    await page.click('#sim-load'); await page.waitForFunction((s0) => crucible.recorder.scores.length === s0, s0, { timeout: 15000 }).catch(() => {}) // the loaded frame reaches the page when the page has time for it (slow on a busy runner)
     eq(await rec(() => crucible.recorder.scores.length), s0, 'scores after the save are forgotten'); expect(Math.abs((await rec(() => crucible.recorder.time)) - tSaved) < 0.05, 'recorder time back at the saved moment')
     await page.click('#sim-reset'); await sleep(600); eq(await rec(() => crucible.recorder.feed.length), 0, 'reset empties the feed')
     await feedIn(1, [{ t: 1, kind: 'score', alliance: 'blue', points: 1, reason: 'x' }], 'auto'); await startSim('test'); eq(await rec(() => crucible.recorder.scores.length), 0, 'new sim starts clean')

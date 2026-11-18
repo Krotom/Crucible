@@ -187,6 +187,18 @@ describe('CI workflow', () => {
     expect(install).toBeGreaterThan(0); expect(install).toBeLessThan(run); expect(yml).toMatch(/test -x node_modules\/electron\/dist\/electron/)
     expect(readFileSync(new URL('../e2e/run.sh', import.meta.url), 'utf8')).toMatch(/Electron binary missing/)
   })
+  it('runs every UI suite in the repository as its own job, with timeouts, and cancels a run that a newer push replaces', () => {
+    const suites = [...readdirSync(new URL('../e2e/', import.meta.url)).filter((f) => /^ui-.*\.js$/.test(f)).map((f) => f.replace(/\.js$/, '')), 'robot-ui'].sort()
+    const listed = /suite: \[([^\]]+)\]/.exec(yml)![1].split(',').map((x) => x.trim()).sort()
+    expect(listed).toEqual(suites)
+    expect(yml).toMatch(/cancel-in-progress: true/); expect(yml).toMatch(/E2E_VERBOSE: '1'/); expect(yml).toMatch(/fail-fast: false/)
+    expect((yml.match(/timeout-minutes:/g) ?? []).length).toBe(2) // checks and the UI jobs
+    const rel = readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8')
+    expect((rel.match(/runs-on:/g) ?? []).length).toBe((rel.match(/timeout-minutes:/g) ?? []).length) // no job without a timeout
+  })
+  it('does not run twice for one push (pushes to branches run as the pull request)', () => {
+    expect(yml).toMatch(/push:\n\s+branches: \[main\]/); expect(yml).toMatch(/pull_request:/)
+  })
   it('is plain valid YAML structure: jobs with names, runs-on and steps, no tabs', () => {
     expect(yml).not.toMatch(/\t/); expect(yml).toMatch(/^jobs:\n {2}\w+:\n {4}name:/m); expect((yml.match(/runs-on:/g) ?? []).length).toBe(2); expect(yml).toMatch(/needs: checks/)
   })

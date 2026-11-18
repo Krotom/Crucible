@@ -116,8 +116,11 @@ function makeProject(dir, { patched }) {
   })
   await check('P10 an editor that cannot be started falls back to the default app instead of failing silently', async () => {
     fs.writeFileSync(userData + '/crucible.config.json', JSON.stringify({ ...userCfg(), editor: '/nonexistent/editor {file}' }))
+    // the default app is stubbed: on a CI runner the real one is xdg-open, which starts whatever is registered for .java (vim, in a terminal) and never returns
+    await app.evaluate(({ shell }) => { globalThis.__openedPath = null; shell.openPath = async (p) => { globalThis.__openedPath = p; return '' } })
     await page.click('#robot-log a.src-link[data-file="Robot.java"]'); await sleep(2500)
     const n = await T('#notice'); expect(/opened Robot\.java:42 \(default app\)|could not open/.test(n), n)
+    const opened = await app.evaluate(() => globalThis.__openedPath); expect(typeof opened === 'string' && opened.endsWith('Robot.java'), 'the fallback asked the system to open the file: ' + opened)
   })
   await check('P11 past runs: each run is saved to a file, listed newest first, and can be put into the log split into build and robot output', async () => {
     await stopRobot(); await sleep(300)

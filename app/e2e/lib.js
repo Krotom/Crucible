@@ -22,7 +22,8 @@ exports.check = async (name, fn) => {
 }
 exports.expect = (cond, msg) => { if (!cond) throw new Error(msg || 'expectation failed') }
 exports.eq = (a, b, msg) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg || 'not equal'}: got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`) }
-exports.sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// E2E_SLOW multiplies every fixed wait: a CI runner has fewer CPUs than a desk machine and the page (software WebGL) answers later
+exports.sleep = (ms) => new Promise((r) => setTimeout(r, ms * (Number(process.env.E2E_SLOW) || 1)))
 exports.summary = () => {
   const c = { PASS: 0, NOTE: 0, FAIL: 0 }
   for (const r of results) c[r.status]++
