@@ -92,7 +92,7 @@ it('robot code UI e2e', async () => {
   const rows = (): Promise<Record<string, string>> => page.$$eval('.simhud .kv', (rs: any[]) => Object.fromEntries(rs.map((r) => [r.querySelector('.k').textContent, r.querySelector('.v').textContent])))
   const head = (): Promise<any> => page.$eval('.simhud-head', (e: any) => ({ phase: e.querySelector('.sh-phase').textContent, clock: e.querySelector('.sh-clock').textContent }))
   const titles = (): Promise<string[]> => page.$$eval('.simhud-body h4', (e: any[]) => e.map((x) => x.textContent))
-  const until = async (f: () => Promise<boolean> | boolean, ms = 8000, what = 'condition'): Promise<void> => { const t0 = Date.now(); for (;;) { if (await f()) return; if (Date.now() - t0 > ms) throw new Error('timed out waiting for ' + what); await sleep(100) } }
+  const until = async (f: () => Promise<boolean> | boolean, ms = 8000, what: string | (() => string) = 'condition'): Promise<void> => { const t0 = Date.now(); for (;;) { if (await f()) return; if (Date.now() - t0 > ms) throw new Error('timed out waiting for ' + (typeof what === 'function' ? what() : what)); await sleep(100) } }
   const startRobotSim = async (mode: 'robot' | 'lockstep', game = 'rebuilt'): Promise<void> => {
     if ((await page.textContent('#start-sim')) === 'Stop sim') { await page.click('#start-sim'); await sleep(300) }
     await page.click('[data-tab=robot]'); await page.selectOption('#sim-mode', mode); await page.click('[data-tab=session]')
@@ -198,9 +198,11 @@ it('robot code UI e2e', async () => {
   // ---------- reset, match
   await check('R10 Reset re-seeds the robot pose and returns sim time to 0', async () => {
     const before = robot.poseSeeds
-    await page.click('#sim-reset'); await sleep(800)
-    expect(robot.poseSeeds > before, 'no pose seed sent to the robot')
-    const c = parseFloat((await head()).clock); expect(c < 2, 'clock after reset ' + c)
+    await page.click('#sim-reset')
+    await until(async () => robot.poseSeeds > before, 8000, 'pose seed sent to the robot')
+    // the clock restarts from 0 and keeps running (a slow runner shows it late), so it is only required to have come back under a few seconds
+    let c = 99
+    await until(async () => { c = parseFloat((await head()).clock); return c < 3 }, 8000, () => 'clock after reset (last ' + c + ')')
   }, page)
   await check('R11 Start match: phase becomes Auto, robot enabled in AUTO with the autonomous bit, clock runs', async () => {
     robot.ds.length = 0
@@ -383,10 +385,10 @@ it('robot code UI e2e', async () => {
   await check('L1 lockstep: robot connects, the sim runs by itself and follows the robot clock only through Step exchanges', async () => {
     await startRobotSim('lockstep')
     await until(async () => (await rows())['Robot program'] === 'connected', 10000, 'connected')
-    await sleep(2500)
-    expect(lock.steps > 50, 'steps: ' + lock.steps)
-    const simT = parseFloat((await rows())['Sim time'])
-    expect(Math.abs(simT - lock.t) < 0.5, `app sim time ${simT} vs robot clock ${lock.t}`)
+    await until(async () => lock.steps > 50, 15000, 'steps: ' + lock.steps)
+    // the shown time is a frame behind the robot's clock, and a loaded runner shows frames late: look for the two to agree rather than once
+    let simT = 0, robotT = 0
+    await until(async () => { robotT = lock.t; simT = parseFloat((await rows())['Sim time']); return Math.abs(simT - robotT) < 0.5 }, 10000, () => `app sim time ${simT} vs robot clock ${robotT}`)
     expect((await page.textContent('#status')).includes('lockstep'), await page.textContent('#status'))
     eq(await page.textContent('#play'), 'Pause')
   }, page)
