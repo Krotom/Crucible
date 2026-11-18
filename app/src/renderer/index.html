@@ -22,6 +22,7 @@
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 11v5.2M12 7.7v.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
       <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6.5 9.5 12 15l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-keys" viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 10.2h.1M10 10.2h.1M13 10.2h.1M16 10.2h.1M7.5 14h9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3.5v2.3M12 18.2v2.3M3.5 12h2.3M18.2 12h2.3M6 6l1.6 1.6M16.4 16.4 18 18M18 6l-1.6 1.6M7.6 16.4 6 18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
       <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l1.6 2H19a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 19 18H5a1.5 1.5 0 0 1-1.5-1.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
     </svg>
 
@@ -50,6 +51,7 @@
         <button id="shot-btn" class="icon-btn" title="Screenshot of the 3D view (PNG)" aria-label="Screenshot"><svg class="i"><use href="#i-camera" /></svg></button>
         <button id="rec-btn" class="icon-btn rec" title="Record the 3D view to a WebM video" aria-label="Record video"><svg class="i"><use href="#i-rec" /></svg><span id="rec-time" class="rec-time" hidden>0:00</span></button>
         <button id="theme-btn" class="icon-btn" title="Switch between dark and light" aria-label="Theme"><svg class="i"><use href="#i-sun" /></svg></button>
+        <button id="prefs-btn" class="icon-btn" title="Preferences: language, colour-blind colours, large text" aria-label="Preferences"><svg class="i"><use href="#i-gear" /></svg></button>
         <button id="help-btn" class="icon-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg class="i"><use href="#i-keys" /></svg></button>
         <button id="about-btn" class="icon-btn" title="About BALTA Crucible" aria-label="About"><svg class="i"><use href="#i-info" /></svg></button>
       </div>
@@ -83,6 +85,18 @@
               <label class="field"><span>Step</span><select id="step-dt" title="Physics step (in lockstep also the time of one exchange): larger is faster and coarser"><option value="0.001">1 ms</option><option value="0.002" selected>2 ms</option><option value="0.005">5 ms</option></select></label>
               <label class="field"><span>Seed</span><input id="seed" value="42" inputmode="numeric" /></label>
             </div>
+            <details class="startpos" id="presets"><summary>Presets</summary>
+              <div class="row2">
+                <select id="preset-sel" title="Saved session setups"><option value="">Choose a preset…</option></select>
+                <button id="preset-load" title="Apply the chosen preset to the controls">Load</button>
+              </div>
+              <div class="row2">
+                <input id="preset-name" placeholder="Name" maxlength="40" spellcheck="false" title="Name for the setup you have now" />
+                <button id="preset-save" title="Save the current game, mode, opponent, start position, battery, faults and vision as a preset">Save</button>
+              </div>
+              <button id="preset-del" class="wide">Delete chosen preset</button>
+              <p id="preset-note" class="hint"></p>
+            </details>
             <button id="start-sim" class="primary wide">Start sim</button>
             <p id="sim-mode-hint" class="hint" hidden></p>
           </div>
@@ -91,6 +105,7 @@
             <h3>Data</h3>
             <button id="open-log" class="wide"><svg class="i inline"><use href="#i-folder" /></svg>Open log…</button>
             <input id="file" type="file" accept=".wpilog" hidden />
+            <select id="recent-files" class="wide" title="Logs you opened before" hidden><option value="">Recent files…</option></select>
             <p class="hint">or drop a .wpilog anywhere in the window</p>
             <label class="field"><span>NT host</span><input id="host" value="127.0.0.1" spellcheck="false" /></label>
             <button id="connect" class="wide">Connect</button>
@@ -213,7 +228,29 @@
               <button id="an-run" class="wide" title="Save this run as a report.json (the same shape npm run batch writes) to compare later">Save run (.json)…</button>
               <button id="an-log" title="Save everything plotted so far as a .wpilog: open it here, in AdvantageScope or any WPILOG tool">Save .wpilog…</button>
             </div>
+            <div class="btnrow">
+              <button id="an-proj" class="wide" title="Save the HTML report into the robot project (crucible/reports/) so it can be committed next to the code">Report into project</button>
+            </div>
+            <h4 class="sub">Share</h4>
+            <input id="share-note" placeholder="Note for whoever opens it (optional)" maxlength="300" spellcheck="false" />
+            <div class="btnrow">
+              <button id="an-share" class="wide" title="One file with the set-up and the result. Whoever opens it gets the same settings and the run as A in Compare runs">Share run…</button>
+              <button id="an-open-shared" title="Open a run file somebody shared: restores its settings and loads its result as run A">Open shared…</button>
+            </div>
+            <input id="shared-file" type="file" accept=".json,application/json" hidden />
+            <p id="share-hint" class="hint">The file holds the set-up and the result. The driver's keys are not recorded: scripted bots and the test scenarios repeat from the set-up alone.</p>
             <label class="check wrapcheck" title="Open the summary when the match reaches its end"><input id="an-popup" type="checkbox" checked />Show the summary when a match ends</label>
+          </div>
+          <div class="card" id="attempts-card">
+            <h3>Attempts</h3>
+            <div id="att-stats" class="dimtext">No attempts yet: each match that reaches its end is added here.</div>
+            <div id="att-list" class="att-list"></div>
+            <div class="btnrow"><button id="att-csv" class="wide" title="Save the attempts as a CSV table">Attempts CSV…</button><button id="att-clear" title="Remove every attempt">Clear</button></div>
+          </div>
+          <div class="card">
+            <h3>Strategy board</h3>
+            <p class="hint">Draw paths and number markers on the field, keep boards by name, and turn a spot into a start position.</p>
+            <button id="board-btn" class="wide">Open the board…</button>
           </div>
           <div class="card">
             <h3>Compare runs</h3>
@@ -317,6 +354,7 @@
               <label class="check"><input id="vm-trail" type="checkbox" />Robot trail</label>
               <label class="check"><input id="vm-arcs" type="checkbox" checked />Shot arcs and landing spots</label>
               <label class="check"><input id="vm-score" type="checkbox" />Scoreboard (B)</label>
+              <label class="check" title="Draw the score and the match time over screenshots and videos of the 3D view"><input id="vm-burn" type="checkbox" />Score and timer in screenshots and video</label>
               <label class="check"><input id="vm-cam" type="checkbox" />Robot camera
                 <select id="vm-cammode" title="What the robot camera looks at"><option value="front">front (intake)</option><option value="top">top-down</option></select></label>
             </div>
@@ -402,6 +440,65 @@
       </form>
     </dialog>
 
+    <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+    <dialog id="palette" aria-label="Command palette">
+      <input id="palette-input" placeholder="Type a command…  (Esc closes)" spellcheck="false" autocomplete="off" aria-label="Command" />
+      <div id="palette-list" class="palette-list" role="listbox"></div>
+    </dialog>
+
+    <dialog id="prefs">
+      <form method="dialog">
+        <h2 class="dlg-title">Preferences</h2>
+        <label class="field"><span>Language</span><select id="pref-lang"><option value="en">English</option><option value="tr">Türkçe</option></select></label>
+        <label class="check"><input id="pref-cb" type="checkbox" />Colour-blind-safe colours (blue and orange instead of blue and red)</label>
+        <label class="check"><input id="pref-large" type="checkbox" />Larger text and controls</label>
+        <h4 class="sub">For tools and scripts</h4>
+        <label class="check" title="A local HTTP API on 127.0.0.1 for scripts: read the sim state, start, stop, reset, play, step. Off by default; every request needs the token."><input id="pref-api" type="checkbox" />Local API on 127.0.0.1:5812</label>
+        <div id="api-info" class="api-info" hidden>
+          <div class="row2"><input id="api-token" readonly spellcheck="false" aria-label="API token" /><button type="button" id="api-copy">Copy</button></div>
+          <button type="button" id="api-new" class="wide" title="Make a new token: the old one stops working">New token</button>
+          <code id="api-example"></code>
+        </div>
+        <p id="api-note" class="about-line dim small"></p>
+        <button type="button" id="games-folder" class="wide" title="Game modules (.js) in this folder appear in the Game list. Only use files you trust: they run inside the simulation.">Open the game plugins folder</button>
+        <p class="about-line dim small">The Turkish interface covers the fixed labels; messages the app writes while it runs (toasts, panel rows, log lines) stay in English. The 3D field colours change at the next start of the sim.</p>
+        <div class="about-actions"><button class="primary">Close</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="board">
+      <form method="dialog" class="board-form">
+        <h2 class="dlg-title">Strategy board</h2>
+        <div class="board-tools">
+          <button type="button" class="bt on" data-tool="pen" title="Draw a path: press and drag">Pen</button>
+          <button type="button" class="bt" data-tool="marker" title="Click to drop a numbered marker">Marker</button>
+          <button type="button" class="bt" data-tool="move" title="Drag a marker">Move</button>
+          <button type="button" class="bt" data-tool="erase" title="Click a marker or a path to remove it">Erase</button>
+          <button type="button" class="bt" data-tool="start" title="Click for the start position, drag for its heading">Start here</button>
+          <span class="grow"></span>
+          <span id="board-colors" class="board-colors"></span>
+          <button type="button" id="board-undo" title="Undo the last change">Undo</button>
+          <button type="button" id="board-clear" title="Remove everything on the board">Clear</button>
+        </div>
+        <svg id="board-svg" class="board-svg" role="img" aria-label="Field"></svg>
+        <p id="board-hint" class="hint">Pen: press and drag to draw a path.</p>
+        <div class="row2"><select id="board-sel"><option value="">Saved boards…</option></select><button type="button" id="board-load">Load</button></div>
+        <div class="row2"><input id="board-name" placeholder="Board name" maxlength="40" spellcheck="false" /><button type="button" id="board-save">Save</button></div>
+        <textarea id="board-note" rows="2" placeholder="Notes for this board" maxlength="500"></textarea>
+        <div class="btnrow"><button type="button" id="board-path-start" title="Use where the first path begins and which way it heads as the start position">First path = start</button><button type="button" id="board-png">Save PNG…</button><button type="button" id="board-del">Delete saved</button></div>
+        <div class="about-actions"><button class="primary">Close</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="whatsnew">
+      <form method="dialog">
+        <h2 class="dlg-title">What's new</h2>
+        <div id="whatsnew-body" class="whatsnew"></div>
+        <div class="about-actions"><button class="primary">Close</button></div>
+      </form>
+    </dialog>
+
     <dialog id="shortcuts">
       <form method="dialog">
         <h2 class="dlg-title">Keyboard shortcuts</h2>
@@ -424,6 +521,8 @@
         </div>
         <p class="about-line">Physics simulation and analysis for FRC robot code. Version <span id="about-version"></span>.</p>
         <p class="about-line dim">Runs the robot's own code in the loop with a deterministic physics engine, a rules-aware REBUILT field, scripted runs and calibration.</p>
+        <div class="about-actions left"><button type="button" id="update-btn">Check for updates</button><button type="button" id="whatsnew-btn">What's new</button></div>
+        <p id="update-status" class="about-line dim small" role="status"></p>
         <p class="about-line dim small">Built with Rapier (Apache-2.0), three.js (MIT) and uPlot (MIT). The BALTA name, wordmark and emblem belong to BALTA Robotics.</p>
         <div class="about-actions"><button class="primary">Close</button></div>
       </form>

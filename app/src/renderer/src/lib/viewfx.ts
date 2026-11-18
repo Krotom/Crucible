@@ -1,5 +1,6 @@
 // Extras drawn over the 3D field: camera presets (including chase and follow cameras), the rules zones, the robot's trail, the arcs and landing
 // spots of shots, and a ruler. They live in their own group, which comes and goes with the simulation.
+import { allianceHex } from './a11y'
 import * as THREE from 'three'
 import type { FieldDefinition, RenderFrame } from '../../../engine/types'
 import { ALLIANCE_ZONE_DEPTH, CENTER_LINE } from '../../../games/rebuilt'
@@ -106,7 +107,7 @@ export class ViewFx {
     }
     const line = (x: number, color: number): THREE.Line => new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, 0, 0.012), new THREE.Vector3(x, W, 0.012)]), new THREE.LineBasicMaterial({ color }))
     if (gameId === 'game-rebuilt') {
-      this.rules.add(quad(0, ALLIANCE_ZONE_DEPTH, 0x4cc2ff, 0.14), quad(L - ALLIANCE_ZONE_DEPTH, L, 0xff5566, 0.14), line(ALLIANCE_ZONE_DEPTH, 0x4cc2ff), line(L - ALLIANCE_ZONE_DEPTH, 0xff5566), line(CENTER_LINE, 0xffffff))
+      this.rules.add(quad(0, ALLIANCE_ZONE_DEPTH, allianceHex('blue'), 0.14), quad(L - ALLIANCE_ZONE_DEPTH, L, allianceHex('red'), 0.14), line(ALLIANCE_ZONE_DEPTH, allianceHex('blue')), line(L - ALLIANCE_ZONE_DEPTH, allianceHex('red')), line(CENTER_LINE, 0xffffff))
     } else {
       this.rules.add(line(L / 2, 0xffffff))
     }

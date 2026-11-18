@@ -1,5 +1,5 @@
 // The renderer's only door to the main process: starting and stopping the robot simulation.
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('crucibleHost', {
   startRobot: (lockstep?: boolean, envText?: string): Promise<unknown> => ipcRenderer.invoke('robot:start', lockstep, envText),
@@ -11,6 +11,23 @@ contextBridge.exposeInMainWorld('crucibleHost', {
   listLogs: (): Promise<{ name: string; size: number; mtime: number }[]> => ipcRenderer.invoke('log:list'),
   readLog: (name: string): Promise<string | null> => ipcRenderer.invoke('log:read', name),
   saveFile: (name: string, data: ArrayBuffer, kind: string): Promise<{ ok: boolean; path?: string }> => ipcRenderer.invoke('file:save', name, data, kind),
+  /** the disk path of a file the user picked or dropped (empty when it has none) */
+  pathOf: (file: File): string => { try { return webUtils.getPathForFile(file) } catch { return '' } },
+  recentList: (): Promise<{ path: string; name: string }[]> => ipcRenderer.invoke('recent:list'),
+  recentAdd: (path: string): Promise<boolean> => ipcRenderer.invoke('recent:add', path),
+  recentForget: (path: string): Promise<void> => ipcRenderer.invoke('recent:forget', path),
+  recentRead: (path: string): Promise<{ name: string; data: ArrayBuffer } | null> => ipcRenderer.invoke('recent:read', path),
+  checkUpdate: (): Promise<{ status: 'newer' | 'current' | 'none' | 'error'; latest?: string; url?: string; notes?: string; error?: string }> => ipcRenderer.invoke('app:checkUpdate'),
+  openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('app:openExternal', url),
+  setZoom: (factor: number): void => { if (Number.isFinite(factor) && factor >= 0.5 && factor <= 3) webFrame.setZoomFactor(factor) },
+  saveReportToProject: (name: string, data: ArrayBuffer): Promise<{ ok: boolean; path?: string; error?: string }> => ipcRenderer.invoke('report:saveToProject', name, data),
+  listGames: (): Promise<{ file: string }[]> => ipcRenderer.invoke('games:list'),
+  openGamesFolder: (): Promise<string> => ipcRenderer.invoke('games:folder'),
+  apiGet: (): Promise<{ enabled: boolean; listening: boolean; token: string; port: number; error: string }> => ipcRenderer.invoke('api:get'),
+  apiSet: (enabled: boolean): Promise<{ enabled: boolean; listening: boolean; token: string; port: number; error: string }> => ipcRenderer.invoke('api:set', enabled),
+  apiNewToken: (): Promise<{ enabled: boolean; listening: boolean; token: string; port: number; error: string }> => ipcRenderer.invoke('api:newToken'),
+  onApiRequest: (cb: (id: number, command: { action: string }) => void): void => { ipcRenderer.on('api:request', (_e, m: { id: number; command: { action: string } }) => cb(m.id, m.command)) },
+  apiRespond: (id: number, ok: boolean, payload: unknown): void => { ipcRenderer.send('api:response', id, ok, payload) },
   stopRobot: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('robot:stop'),
   robotStatus: (): Promise<{ running: boolean }> => ipcRenderer.invoke('robot:status'),
   onRobotLog: (cb: (line: string) => void): void => { ipcRenderer.on('robot:log', (_e, line: string) => cb(line)) },

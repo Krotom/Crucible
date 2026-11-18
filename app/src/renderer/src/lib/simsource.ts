@@ -34,7 +34,7 @@ export class SimSource {
 
   get active(): boolean { return this.worker !== null }
 
-  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent: 'none' | 'blocker' | 'cycler' | 'ally' | 'both' = 'none', stepDt = 0.002, extra: { alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; vision?: Partial<VisionSettings>; breaks?: Partial<BreakSpec> } = {}): void {
+  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game = 'test', opponent: 'none' | 'blocker' | 'cycler' | 'ally' | 'both' = 'none', stepDt = 0.002, extra: { alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; vision?: Partial<VisionSettings>; breaks?: Partial<BreakSpec> } = {}): void {
     this.stop()
     this.store.startLive('Sim')
     this.lastPushed = -1

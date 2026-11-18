@@ -9,6 +9,8 @@ export interface ChromeOptions {
   render: () => void
   notify: (text: string) => void
   host?: Saver
+  /** the score and timer to burn into screenshots and videos, or null for none */
+  banner?: () => { left: string; mid: string; right: string } | null
 }
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
@@ -104,7 +106,7 @@ export function setupCapture(o: ChromeOptions): void {
 
   shotBtn.addEventListener('click', async () => {
     try {
-      const blob = await screenshot(o.canvas, o.render)
+      const blob = await screenshot(o.canvas, o.render, o.banner)
       const where = await saveBlob(timestampName('balta-crucible', 'png'), blob, o.host)
       if (where) o.notify(`Screenshot saved: ${where}`)
     } catch (e) { o.notify(`Screenshot failed: ${(e as Error).message}`) }
@@ -118,7 +120,7 @@ export function setupCapture(o: ChromeOptions): void {
   }
   recBtn.addEventListener('click', async () => {
     if (!rec.active) {
-      try { rec.start(o.canvas, 30) } catch (e) { o.notify(`Cannot record: ${(e as Error).message}`); return }
+      try { rec.start(o.canvas, 30, 8_000_000, o.banner) } catch (e) { o.notify(`Cannot record: ${(e as Error).message}`); return }
       timer = setInterval(() => { const s = Math.floor(rec.seconds); recTime.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }, 250)
       recTime.textContent = '0:00'
       paint()

@@ -65,23 +65,23 @@ UI tests: `npm run e2e` (needs Electron, xvfb, Playwright; see `app/e2e/run.sh`)
 ## Quality of life
 - [x] Keyboard shortcut sheet and shortcuts
 - [x] Remember last settings
-- [ ] Session presets
-- [ ] Command palette
-- [ ] Stacking notifications
-- [ ] Recent files
-- [ ] Update check and what's new
-- [ ] Turkish UI
-- [ ] Accessibility (colour-blind-safe colours, large text)
+- [x] Session presets (Session tab: save, load, delete named set-ups; also from the palette)
+- [x] Command palette (Ctrl+K: every shortcut action plus presets, language, colours; ignores accents)
+- [x] Stacking notifications (toasts: at most four, repeats counted, errors stay longer; the status line still shows the latest)
+- [x] Recent files (opened logs, eight newest, in the Data card; a deleted file is reported and dropped)
+- [x] Update check and what's new (About: asks GitHub for the latest release of this repo; an updated app shows a toast, never a dialog; no release exists yet, so the answer today is "none published")
+- [x] Turkish UI (partial: the fixed labels, about 190 strings; messages built at run time, panel rows and log lines stay English)
+- [x] Accessibility (colour-blind-safe colours in the interface and the 3D zones; large text is a 1.2x window zoom; robot and bumper colours in 3D are unchanged)
 
 ## Team and sharing
-- [ ] Share a run (replayable file)
-- [ ] Attempts scoreboard
-- [ ] Strategy board
-- [ ] Screenshots and videos with overlays
-- [ ] Report embedded in the repo (HTML)
+- [x] Share a run (Analysis tab: one file with the set-up and the result; opening it restores the settings and loads the result as run A. The driver's keys are not recorded, so it replays scripted bots and scenarios, not a human drive)
+- [x] Attempts scoreboard (every finished match, newest first, notes, best/average/record/trend, CSV)
+- [x] Strategy board (pen, numbered markers, move, erase, undo, named boards, PNG; "Start here" fills the start position)
+- [x] Screenshots and videos with overlays (View menu: score and match time burned into the capture)
+- [x] Report embedded in the repo (Analysis tab: "Report into project" writes crucible/reports/*.html in the robot project, ready to commit)
 
 ## Developer and CI
-- [ ] Headless mode in CI
-- [ ] Plugin / game-module loader
+- [x] Headless mode in CI (`.github/workflows/ci.yml`: typecheck, unit tests, build, and the UI suites under a virtual display; `npm run batch` runs robot-code batches headless where a JDK and the robot project exist)
+- [x] Plugin / game-module loader (.js files in the games folder appear in the Game list; `app/examples/game-plugin.js` is a working example; packaged app only)
 - [x] UI test suites in the repo (`app/e2e`)
-- [ ] Local API
+- [x] Local API (opt-in HTTP on 127.0.0.1:5812 with a token: status, start, stop, reset, play, pause, step, preset, set, attempts. HTTP only: no WebSocket stream)

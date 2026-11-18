@@ -35,6 +35,7 @@ export const SHORTCUTS: Shortcut[] = [
   { key: 'ctrl+f', label: 'Filter the robot log', group: 'Log', run: 'log-filter' },
   { key: 'n', label: 'Next error in the log', group: 'Log', run: 'err-next' },
   { key: 'shift+n', label: 'Previous error in the log', group: 'Log', run: 'err-prev' },
+  { key: 'ctrl+k', label: 'Command palette: find any action', group: 'Help', run: 'palette' },
   { key: '?', label: 'Show this list', group: 'Help', run: 'help' },
 ]
 

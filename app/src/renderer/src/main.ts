@@ -13,6 +13,7 @@ import { SimPanel } from './lib/simpanel'
 import { buildSimModel, scoreboardModel } from './lib/simmodel'
 import { CAMERA_PRESETS, ViewFx, type CameraPreset } from './lib/viewfx'
 import { VisionOverlay } from './lib/visionview'
+import { applyPrefs, applyValues, loadPreset, PRESET_IDS, presets, readControl, readPrefs, setupPalette, setupPrefs, setupPresets, setupRecent, setupToasts, setupUpdates, toast } from './lib/quality'
 import { appVersion, dismissSplash, setupAbout, setupCapture, setupShortcutsDialog, setupTabs, setupTheme, showTab } from './lib/chrome'
 import { RobotRun, formatElapsed } from './lib/robotrun'
 import { MatchRecorder, eventsCsv, reportHtml } from './lib/analysis'
@@ -28,7 +29,12 @@ import { storeToWpilog } from './lib/wpilogwriter'
 import type { RunReport } from '../../analysis/recorder'
 import { saveBlob, timestampName, type Saver } from './lib/capture'
 import { bindSettings } from './lib/settings'
-import { findShortcut, keyName } from './lib/shortcuts'
+import { findShortcut, keyLabel, keyName, SHORTCUTS } from './lib/shortcuts'
+import type { Command } from './lib/cmdpalette'
+import { attempts, recordAttempt, setupApiPrefs, setupAttempts, setupBoard, setupGames } from './lib/team'
+import { makeRunFile, parseRunFile } from './lib/runfile'
+import { captureValues } from './lib/presets'
+import { overlayLines } from './lib/compose'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
@@ -180,7 +186,8 @@ function stopSim(): void {
   updateTransportEnabled()
 }
 
-async function openLogFile(file: File): Promise<void> {
+async function openLogFile(file: File, path?: string): Promise<void> {
+  recent.remember(file, path)
   stopSim()
   live?.stop(); live = null
   $('connect').textContent = 'Connect'
@@ -374,8 +381,13 @@ sim.onFrame = (f, events) => {
   if (sim.bridge) mechHistory.add(f.time, sim.bridge.mechanisms)
   fx.sampleTrail(f)
   if (recorder.phase === 'ended') {
-    if (!endShown) { endShown = true; showMatchSummary() }
+    if (!endShown) { endShown = true; noteAttempt(); showMatchSummary() }
   } else endShown = false
+}
+/** Every finished match goes on the attempts list (once: `endShown` stops a match that stays ended from being added again). */
+function noteAttempt(): void {
+  const s = recorder.summary()
+  recordAttempt({ at: Date.now(), label: `${lastStart.game || 'match'} seed ${lastStart.seed}`, own: ownAlliance, blue: s.blue, red: s.red, duration: s.duration, shots: s.shots.fired, accuracy: s.shots.accuracy, fouls: s.fouls.length, note: '' })
 }
 function showMatchSummary(): void {
   if (!$<HTMLInputElement>('an-popup').checked) return
@@ -388,13 +400,36 @@ async function saveText(name: string, text: string, mime: string): Promise<void>
   const where = await saveBlob(name, new Blob([text], { type: mime }), saver)
   $('notice').textContent = where ? `Saved ${where}` : 'Save cancelled'
 }
+// shared runs: the set-up and the result in one file
+$('an-share').addEventListener('click', () => {
+  if (recorder.path.length === 0 && recorder.scores.length === 0) { $('notice').textContent = 'Nothing to share yet: run something first'; return }
+  const file = makeRunFile(captureValues(PRESET_IDS, readControl), currentRun(), appVersion(), $<HTMLInputElement>('share-note').value)
+  void saveText(timestampName('balta-crucible', 'run.json'), JSON.stringify(file, null, 1), 'application/json')
+})
+$('an-open-shared').addEventListener('click', () => { $<HTMLInputElement>('shared-file').value = ''; $<HTMLInputElement>('shared-file').click() })
+$<HTMLInputElement>('shared-file').addEventListener('change', async (e) => {
+  const f = (e.target as HTMLInputElement).files?.[0]
+  if (!f) return
+  const r = parseRunFile(await f.text())
+  if (!r.ok) { $('notice').textContent = `Could not open ${f.name}: ${r.error}`; return }
+  const n = r.hasSetup ? applyValues(r.file.setup) : 0
+  if (r.file.report.name === 'run' || r.file.report.name === '') r.file.report.name = f.name
+  cmpA = r.file.report; paintCompare()
+  $('notice').textContent = `Opened ${f.name}${r.file.note ? ` ("${r.file.note}")` : ''}: ${r.hasSetup ? `${n} settings restored, ` : 'no settings in it, '}the result is run A in Compare runs${r.hasSetup ? '. Press Start sim to run it again' : ''}`
+})
 const tune = new TuneUI({ live: (p) => { if (sim.active) sim.send({ type: 'tune', params: p }) }, notify: (t) => { $('notice').textContent = t }, saveText })
-async function saveReport(): Promise<void> {
+function reportHtmlNow(): string {
   const f = sim.ready?.field
-  const html = reportHtml(recorder, { title: 'BALTA Crucible match report', game: lastStart.game, mode: lastStart.mode, seed: lastStart.seed, version: appVersion(), date: new Date().toISOString().slice(0, 16).replace('T', ' ') }, f?.length ?? 16.541, f?.width ?? 8.069)
-  await saveText(timestampName('balta-crucible-report', 'html'), html, 'text/html')
+  return reportHtml(recorder, { title: 'BALTA Crucible match report', game: lastStart.game, mode: lastStart.mode, seed: lastStart.seed, version: appVersion(), date: new Date().toISOString().slice(0, 16).replace('T', ' ') }, f?.length ?? 16.541, f?.width ?? 8.069)
 }
+async function saveReport(): Promise<void> { await saveText(timestampName('balta-crucible-report', 'html'), reportHtmlNow(), 'text/html') }
 $('an-report').addEventListener('click', () => { void saveReport() })
+$('an-proj').addEventListener('click', async () => {
+  const h = (window as unknown as { crucibleHost?: { saveReportToProject?: (n: string, d: ArrayBuffer) => Promise<{ ok: boolean; path?: string; error?: string }> } }).crucibleHost
+  if (!h?.saveReportToProject) { $('notice').textContent = 'Saving into the robot project needs the desktop app'; return }
+  const r = await h.saveReportToProject(timestampName('balta-crucible-report', 'html'), new TextEncoder().encode(reportHtmlNow()).buffer as ArrayBuffer)
+  $('notice').textContent = r.ok ? `Saved ${r.path}` : `Could not save: ${r.error ?? 'unknown error'}`
+})
 $('ms-save').addEventListener('click', () => { void saveReport() })
 // save the run / the recorded topics, and compare runs
 function currentRun(): RunReport {
@@ -409,6 +444,7 @@ $('an-log').addEventListener('click', async () => {
 // seed sweep
 const sweep = new SweepRunner()
 $('sw-run').addEventListener('click', () => {
+  if ($<HTMLSelectElement>('game-select').value.startsWith('plugin:') && !sweep.running) { $('notice').textContent = 'The seed sweep works with the test game and REBUILT only'; return }
   if (sweep.running) { sweep.cancel(); $('sw-prog').textContent = 'Stopping after the current run…'; return }
   const n = Math.min(100, Math.max(1, Math.round(Number($<HTMLInputElement>('sw-n').value) || 10)))
   const secs = Math.min(300, Math.max(1, Number($<HTMLInputElement>('sw-t').value) || 30))
@@ -907,12 +943,47 @@ $<HTMLSelectElement>('log-history').addEventListener('change', async (e) => {
 })
 
 // remembered between runs: the choices in the side panels and the log's severity toggles
-bindSettings(['bat-on', 'bat-open', 'bat-res', 'f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop', 'vis-on', 'vis-noise', 'bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time', 'robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
+bindSettings(['bat-on', 'bat-open', 'bat-res', 'f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop', 'vis-on', 'vis-noise', 'bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time', 'robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'vm-burn', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
 for (const el of hostEls) el.value = hostEls[0].value // restored values may differ if only one was saved
 robotLog.syncLevels()
 paintFaultNote(); paintVisionNote()
 applyViewMenu()
 refreshRobot()
+
+// ---- the local API: commands from scripts, answered here because the simulation lives in this page
+function apiStatus(): Record<string, unknown> {
+  const f = sim.latest
+  return {
+    version: appVersion(), simActive: sim.active, running: sim.running, time: f?.time ?? null, phase: f?.phase ?? null, scores: f?.scores ?? null,
+    robot: f ? { x: f.robot[0], y: f.robot[1], yaw: 2 * Math.atan2(f.robot[6], f.robot[3]), speed: f.robotSpeed } : null,
+    game: lastStart.game, seed: lastStart.seed, mode: lastStart.mode, alliance: ownAlliance, robotProgramConnected: sim.bridge?.connected ?? null, attempts: attempts.list().length,
+  }
+}
+async function until(cond: () => boolean, ms = 15000): Promise<void> { const t0 = performance.now(); while (!cond()) { if (performance.now() - t0 > ms) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 50)) } }
+async function apiCommand(c: { action: string; [k: string]: unknown }): Promise<unknown> {
+  switch (c.action) {
+    case 'status': return apiStatus()
+    case 'start': if (!sim.active) $('start-sim').click(); await until(() => sim.active && sim.latest !== null); return apiStatus()
+    case 'stop': if (sim.active) $('start-sim').click(); await until(() => !sim.active); return apiStatus()
+    case 'reset': if (!sim.active) throw new Error('no sim is running: use "start"'); $('sim-reset').click(); return apiStatus()
+    case 'play': if (!sim.active) throw new Error('no sim is running: use "start"'); sim.send({ type: 'run', running: true }); return apiStatus()
+    case 'pause': if (!sim.active) throw new Error('no sim is running: use "start"'); sim.send({ type: 'run', running: false }); return apiStatus()
+    case 'step': if (!sim.active) throw new Error('no sim is running: use "start"'); if (robotMode) throw new Error('stepping needs the scripted robot'); sim.send({ type: 'run', running: false }); $('sim-step').click(); return apiStatus()
+    case 'preset': { if (typeof c.name !== 'string') throw new Error('"preset" needs a "name"'); const m = loadPreset(c.name); if (m.startsWith('No preset')) throw new Error(m); return { message: m } }
+    case 'set': {
+      if (typeof c.id !== 'string' || !PRESET_IDS.includes(c.id)) throw new Error(`"set" needs an "id" from: ${PRESET_IDS.join(', ')}`)
+      if (typeof c.value !== 'string' && typeof c.value !== 'boolean') throw new Error('"set" needs a string or boolean "value"')
+      if (applyValues({ [c.id]: c.value }) === 0) throw new Error(`could not set ${c.id} to that value`)
+      return { id: c.id, value: readControl(c.id) }
+    }
+    case 'attempts': return attempts.list()
+    default: throw new Error(`unknown action "${c.action}" (status, start, stop, reset, play, pause, step, preset, set, attempts)`)
+  }
+}
+{
+  const h = (window as unknown as { crucibleHost?: { onApiRequest?: (cb: (id: number, c: { action: string }) => void) => void; apiRespond?: (id: number, ok: boolean, p: unknown) => void } }).crucibleHost
+  h?.onApiRequest?.((id, c) => { apiCommand(c).then((r) => h.apiRespond?.(id, true, r), (e) => h.apiRespond?.(id, false, (e as Error).message)) })
+}
 
 // ---- keyboard shortcuts (the table in lib/shortcuts.ts also fills the cheat sheet)
 const shortcutsDialog = { open: () => {} }
@@ -941,6 +1012,7 @@ const actions: Record<string, () => void> = {
   'err-next': () => { showTab('robot'); robotLog.jumpError(1) },
   'err-prev': () => { showTab('robot'); robotLog.jumpError(-1) },
   help: () => shortcutsDialog.open(),
+  palette: () => palette.open(),
   controls: () => controls.open(),
 }
 window.addEventListener('keydown', (e) => {
@@ -955,10 +1027,50 @@ window.addEventListener('keydown', (e) => {
 })
 
 setupTabs()
+setupToasts()
+const palette = setupPalette(() => {
+  const cmds: Command[] = SHORTCUTS.filter((sc) => sc.run !== 'palette').map((sc) => ({ id: sc.run, label: sc.label, hint: keyLabel(sc.key), group: sc.group }))
+  for (const p of presets.list()) cmds.push({ id: `preset:${p.name}`, label: `Load preset: ${p.name}`, group: 'Preset' })
+  cmds.push({ id: 'board', label: 'Open the strategy board', group: 'Team' }, { id: 'prefs', label: 'Preferences: language, colours, text size', group: 'Settings' }, { id: 'lang:tr', label: 'Language: Türkçe', group: 'Settings' }, { id: 'lang:en', label: 'Language: English', group: 'Settings' },
+    { id: 'cb', label: 'Toggle colour-blind-safe colours', group: 'Settings' }, { id: 'large', label: 'Toggle larger text', group: 'Settings' }, { id: 'about', label: 'About and updates', group: 'Help' })
+  return cmds
+}, (id) => {
+  if (id.startsWith('preset:')) { toast(loadPreset(id.slice(7))); return }
+  const setPref = (patch: Partial<ReturnType<typeof readPrefs>>): void => {
+    const now = { ...readPrefs(), ...patch }
+    try { localStorage.setItem('crucible-prefs', JSON.stringify(now)) } catch { /* not remembered */ }
+    $<HTMLSelectElement>('pref-lang').value = now.lang; $<HTMLInputElement>('pref-cb').checked = now.colorblind; $<HTMLInputElement>('pref-large').checked = now.large
+    applyPrefs(now)
+  }
+  if (id === 'board') board.open()
+  else if (id === 'prefs') prefs.open()
+  else if (id === 'lang:tr') setPref({ lang: 'tr' })
+  else if (id === 'lang:en') setPref({ lang: 'en' })
+  else if (id === 'cb') setPref({ colorblind: !readPrefs().colorblind })
+  else if (id === 'large') setPref({ large: !readPrefs().large })
+  else if (id === 'about') $('about-btn').click()
+  else actions[id]?.()
+})
+setupPresets((t) => { $('notice').textContent = t })
+setupAttempts(saveText)
+const board = setupBoard({
+  field: () => sim.ready?.field ?? { length: 16.541, width: 8.069 },
+  setStart: (x, y, yaw) => {
+    for (const [id, v] of [['start-x', x.toFixed(2)], ['start-y', y.toFixed(2)], ...(yaw === null ? [] : [['start-yaw', String(Math.round(yaw))]])] as [string, string][]) { const i = $<HTMLInputElement>(id); i.value = v; i.dispatchEvent(new Event('input', { bubbles: true })) }
+    document.querySelector<HTMLDetailsElement>('.startpos')!.open = true
+  },
+  notify: (t) => { $('notice').textContent = t }, saver,
+})
+$('board-btn').addEventListener('click', () => board.open())
+void setupGames()
+setupApiPrefs()
+const recent = setupRecent((f, p) => { void openLogFile(f, p) }, (t) => { $('notice').textContent = t })
 shortcutsDialog.open = setupShortcutsDialog().open
 setupTheme()
 setupAbout()
-setupCapture({ canvas: view.renderer.domElement, render: () => view.render(), notify: (t) => { $('notice').textContent = t }, host: (window as unknown as { crucibleHost?: { saveFile?: never } }).crucibleHost as never })
+setupUpdates(appVersion())
+const prefs = setupPrefs()
+setupCapture({ canvas: view.renderer.domElement, render: () => view.render(), banner: () => ($<HTMLInputElement>('vm-burn').checked && sim.active && sim.latest ? overlayLines({ time: sim.latest.time, phase: sim.latest.phase, scores: sim.latest.scores }) : null), notify: (t) => { $('notice').textContent = t }, host: (window as unknown as { crucibleHost?: { saveFile?: never } }).crucibleHost as never })
 dismissSplash()
 updateTransportEnabled()
 renderTopicList()

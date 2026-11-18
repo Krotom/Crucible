@@ -161,6 +161,26 @@ dropdown paces it (`max` is as fast as it goes). Vision is off in this mode (the
 Robot tab, **Test scenarios**: a scripted driver (forward, strafe, spin, climb the BUMP) plays sticks against your robot code and checks where the robot ends up; each run starts a fresh sim, takes the keyboard away from you and shows which checks passed.
 Robot tab, **Vision camera**: a simulated AprilTag camera on the robot. The 3D view shows every tag (green when seen), the view cone, rays to the seen tags and the reported pose (amber, joined to the true position so the error shows); the panel gets a Vision row. The robot code is sent the tags and a noisy pose over bridge message 9 (see `docs/NT_CONTRACT.md` section 15). The tag layout is assumed, and the robot library does not read the message yet.
 
+## Quality of life
+
+- **Ctrl+K** opens the command palette: type a few letters of anything the shortcut sheet lists (plus presets, language and colour switches) and press Enter. Accents are ignored ("turk" finds "Türkçe").
+- **Toasts** in the bottom-right corner replace the single status line as the way messages reach you (the line still shows the latest). Click one to dismiss it; the same message twice shows a counter.
+- **Presets** (Session tab, under Simulation): save the game, mode, opponent, alliance, start position, step, seed, battery, faults, vision and breakpoints under a name and load them back with one click.
+- **Recent files**: logs you open are listed under the Open log button.
+- **Preferences** (gear in the top bar): Turkish interface (the fixed labels only), colour-blind-safe colours (blue and orange; the 3D field zones follow at the next start), larger text (a 1.2x window zoom).
+- **Updates**: About has Check for updates (asks the GitHub releases of this repository, sends nothing about you) and What's new. An updated app shows a toast the first time it runs.
+
+## Team and developer features
+
+- **Attempts** (Analysis tab): every match that reaches its end is added with its score, shots and fouls; add a note to each, see best, average, record and the trend, export CSV.
+- **Share run** (Analysis tab): one `.run.json` file with the set-up and the result. **Open shared…** restores the settings and puts the result in Compare runs as run A. The driver's keys are not recorded: bots and test scenarios repeat from the set-up, a human drive does not.
+- **Report into project**: writes the HTML report to `crucible/reports/` in the robot project (chosen in the Robot tab), so it can be committed next to the code.
+- **Strategy board** (Analysis tab, or Ctrl+K): draw paths, drop numbered markers, keep boards by name, save a PNG, and turn a spot or the first path into the start position.
+- **Score and timer in captures**: View menu, "Score and timer in screenshots and video".
+- **Game plugins**: put a `.js` file in the games folder (Preferences, "Open the game plugins folder") and restart; it appears in the Game list as "name (plugin)". The file exports a function that returns a game module (see `examples/game-plugin.js` and `GameModule` in `src/engine/types.ts`). A plugin runs inside the simulation: use only files you trust. Plugins load in the built app only, not in `npm run dev`, and the seed sweep does not support them.
+- **Local API** (Preferences, off by default): HTTP on `127.0.0.1:5812`, every request needs `Authorization: Bearer <token>` and web pages are refused. `GET /api/status`; `POST /api/command` with `{"action": "start" | "stop" | "reset" | "play" | "pause" | "step" | "preset" | "set" | "attempts"}`.
+- **CI**: `.github/workflows/ci.yml` runs the typecheck, the unit tests and the build, then the UI suites under a virtual display. The UI job is slow; it can be limited to pushes to the main branch by editing the `on:` block.
+
 ## Brand
 
 The name is BALTA Crucible. The images (emblem, wordmark, icons) are built from the BALTA Robotics logo file by `tools/build-brand-assets.mjs`; colors are gold #cb8e00, silver #dcdcdc, black #010101. The theme button switches dark and light

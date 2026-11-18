@@ -34,9 +34,9 @@ exports.summary = () => {
 const { _electron } = require('playwright')
 const { execSync } = require('child_process')
 exports.APP = require('path').resolve(__dirname, '..')
-exports.launch = async (extraEnv = {}) => {
-  // every launch gets its own settings folder, so nothing leaks from one suite (or run) into the next
-  const userData = require('fs').mkdtempSync(require('path').join(process.env.SP || require('os').tmpdir(), 'userdata-'))
+exports.launch = async (extraEnv = {}, opts = {}) => {
+  // every launch gets its own settings folder, so nothing leaks from one suite (or run) into the next (a test that restarts the app passes the folder to reuse)
+  const userData = opts.userData || require('fs').mkdtempSync(require('path').join(process.env.SP || require('os').tmpdir(), 'userdata-'))
   const app = await _electron.launch({
     executablePath: exports.APP + '/node_modules/electron/dist/electron',
     args: ['--no-sandbox', '--user-data-dir=' + userData, '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu-sandbox', '--in-process-gpu', exports.APP],

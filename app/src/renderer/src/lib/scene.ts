@@ -1,4 +1,5 @@
 // Three.js scene in WPILib coordinates (Z up, +X forward, field origin at a corner), so poses apply without conversion.
+import { allianceHex } from './a11y'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FieldDefinition, PieceSpec, RenderFrame } from '../../../engine/types'
@@ -146,7 +147,7 @@ export class SceneView {
     }
     for (const sn of field.sensors) {
       const geo = new THREE.BoxGeometry(sn.half[0] * 2, sn.half[1] * 2, sn.half[2] * 2)
-      const color = sn.alliance === 'red' ? 0xff5566 : sn.alliance === 'blue' ? 0x4cc2ff : 0x7bed9f
+      const color = sn.alliance === 'red' || sn.alliance === 'blue' ? allianceHex(sn.alliance) : 0x7bed9f
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false }))
       const w = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color }))
       for (const o of [m, w]) { o.position.set(sn.center[0], sn.center[1], sn.center[2]); o.rotation.z = sn.yaw ?? 0; o.visible = this.show.sensors; g.add(o); this.sensorObjs.push(o) }

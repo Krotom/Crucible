@@ -7,6 +7,7 @@ import { OFFSEASON } from '../robots/offseason'
 import { applyTune, type TuneParams } from './tuning'
 import type { Engine } from './engine'
 import type { ToWorker } from './protocol'
+import type { GameModule } from './types'
 
 export type InitParams = Extract<ToWorker, { type: 'init' }>
 type EngineConfig = Parameters<typeof Engine.create>[0]
@@ -18,13 +19,13 @@ export interface Setup {
   othersHalf: [number, number, number][]
 }
 
-export function buildSetup(m: Pick<InitParams, 'mode' | 'game' | 'opponent' | 'stepDt' | 'alliance' | 'start'> & { tune?: TuneParams }): Setup {
+export function buildSetup(m: Pick<InitParams, 'mode' | 'game' | 'opponent' | 'stepDt' | 'alliance' | 'start'> & { tune?: TuneParams; /** a game loaded from a plugin file replaces the built-in ones */ gameModule?: GameModule }): Setup {
   // the definition with the tuned values laid over it: copies, so a tune never leaks into the next sim
   const def = applyTune({ drivetrain: OFFSEASON.drivetrain, balls: OFFSEASON.balls, contact: OFFSEASON.contact }, m.tune ?? {})
   const rebuilt = m.game === 'rebuilt'
   // REBUILT: the manual's 408 FUEL in the neutral zone. A pile of that size stays real time because resting FUEL is frozen (src/engine/pile.ts),
   // CCD runs only on fast pieces, 2 solver iterations, and a 2 ms step by default; see rules/REBUILT_RULES_EXTRACT.md section 7
-  const game = rebuilt ? createRebuiltGame({ preload: OFFSEASON.balls?.preload ?? 0, neutralFuel: 408 }) : createTestGame()
+  const game = m.gameModule ?? (rebuilt ? createRebuiltGame({ preload: OFFSEASON.balls?.preload ?? 0, neutralFuel: 408 }) : createTestGame())
   const field0 = game.field()
   const alliance = m.alliance ?? 'blue'
   let start: { x: number; y: number; yaw: number } = rebuilt ? { x: 1.6, y: 4.0, yaw: 0 } : { ...OFFSEASON.start }

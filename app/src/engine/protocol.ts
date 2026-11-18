@@ -6,7 +6,7 @@ import type { TuneParams } from './tuning'
 import type { FieldDefinition, PieceSpec, RenderFrame } from './types'
 
 export type ToWorker =
-  | { type: 'init'; seed: number; mode: 'script' | 'robot' | 'lockstep'; host?: string; game?: 'test' | 'rebuilt'; opponent?: 'none' | 'blocker' | 'cycler' | 'ally' | 'both'; stepDt?: number; alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; vision?: Partial<VisionSettings>; breaks?: Partial<BreakSpec> }
+  | { type: 'init'; seed: number; mode: 'script' | 'robot' | 'lockstep'; host?: string; game?: string; opponent?: 'none' | 'blocker' | 'cycler' | 'ally' | 'both'; stepDt?: number; alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; vision?: Partial<VisionSettings>; breaks?: Partial<BreakSpec> }
   | { type: 'match'; run: boolean }
   /** seconds >= 0 sets the lead by hand; a negative value turns the automatic lead (follow the measured round trip) back on */
   | { type: 'lead'; seconds: number }

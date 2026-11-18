@@ -1,11 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn } from 'node:child_process'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { listLogs, readLog, RunLog } from './logstore'
 import { preflight, preflightBlocks } from './preflight'
 import { chooseRobotDir, findSourceFile, openInEditor, parseEnvText, readConfig, recentRobotDirs, resolveRobotDir, RobotLauncher, simulateCommand } from './robot'
 import { startStaticServer } from './static-server'
+import { RecentFiles } from './recent'
+import { checkForUpdate } from './update'
+import { ApiServer, API_PORT, newToken, type ApiHandler } from './api'
+import { writeProjectReport } from './projectfiles'
+import { PLUGIN_FILE } from '../engine/plugin'
 
 let win: BrowserWindow | null = null
 let launcher: RobotLauncher | null = null
@@ -29,7 +34,7 @@ async function createWindow(): Promise<void> {
   if (process.env['ELECTRON_RENDERER_URL']) win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   else {
     // the built app: its own page, worker and robot model come from a loopback-only server, as they do from the dev server
-    staticServer ??= await startStaticServer(join(__dirname, '../renderer'), app.getAppPath(), [app.getPath('userData')])
+    staticServer ??= await startStaticServer(join(__dirname, '../renderer'), app.getAppPath(), [app.getPath('userData')], join(app.getPath('userData'), 'games'))
     await win.loadURL(staticServer.url)
   }
 }
@@ -123,6 +128,58 @@ ipcMain.handle('file:save', async (_e, name: string, data: ArrayBuffer, kind: st
   return { ok: true, path: r.filePath }
 })
 
+const recent = new RecentFiles(userDir())
+ipcMain.handle('recent:list', () => recent.list())
+ipcMain.handle('recent:add', (_e, path: string) => recent.add(path))
+ipcMain.handle('recent:forget', (_e, path: string) => recent.forget(path))
+ipcMain.handle('recent:read', async (_e, path: string) => {
+  const r = await recent.read(path)
+  return r ? { name: r.name, data: r.data.buffer.slice(r.data.byteOffset, r.data.byteOffset + r.data.byteLength) } : null
+})
+ipcMain.handle('app:checkUpdate', () => checkForUpdate(app.getVersion()))
+ipcMain.handle('app:openExternal', async (_e, url: string) => { if (typeof url === 'string' && /^https:\/\//.test(url)) { await shell.openExternal(url); return true } return false })
+
+// reports written into the robot project (<project>/crucible/reports), so they can be committed next to the code
+ipcMain.handle('report:saveToProject', (_e, name: string, data: ArrayBuffer) => writeProjectReport(robotDir(), name, data))
+
+// game plugins: .js files in <user data>/games (served to the simulation worker by the loopback server)
+ipcMain.handle('games:list', async () => {
+  try { return (await readdir(join(userDir(), 'games'))).filter((f) => PLUGIN_FILE.test(f)).sort().map((file) => ({ file })) } catch { return [] }
+})
+ipcMain.handle('games:folder', async () => { const dir = join(userDir(), 'games'); await mkdir(dir, { recursive: true }); await shell.openPath(dir); return dir })
+
+// the local API (opt-in): the page answers the requests, since the simulation lives there
+interface ApiConfig { enabled: boolean; token: string }
+const apiConfigFile = (): string => join(userDir(), 'api.json')
+async function loadApiConfig(): Promise<ApiConfig> {
+  try { const j = JSON.parse(await readFile(apiConfigFile(), 'utf8')) as Partial<ApiConfig>; if (typeof j.token === 'string' && /^[0-9a-f]{48}$/.test(j.token)) return { enabled: j.enabled === true, token: j.token } } catch { /* first run */ }
+  return { enabled: false, token: newToken() }
+}
+const saveApiConfig = (c: ApiConfig): Promise<void> => writeFile(apiConfigFile(), JSON.stringify(c)).catch(() => {})
+let apiConfig: ApiConfig | null = null
+let api: ApiServer | null = null
+let apiError = ''
+const apiWaiting = new Map<number, { ok: (v: unknown) => void; fail: (e: Error) => void }>()
+let apiSeq = 0
+const apiHandler: ApiHandler = (command) => new Promise((ok, fail) => {
+  if (!win || win.isDestroyed()) { fail(new Error('the app window is closed')); return }
+  const id = ++apiSeq
+  apiWaiting.set(id, { ok, fail })
+  setTimeout(() => { if (apiWaiting.delete(id)) fail(new Error('timeout')) }, 7000)
+  win.webContents.send('api:request', { id, command })
+})
+ipcMain.on('api:response', (_e, id: number, ok: boolean, payload: unknown) => { const w = apiWaiting.get(id); apiWaiting.delete(id); if (w) { if (ok) w.ok(payload); else w.fail(new Error(typeof payload === 'string' ? payload : 'failed')) } })
+async function applyApi(): Promise<void> {
+  apiConfig ??= await loadApiConfig()
+  apiError = ''
+  if (apiConfig.enabled && !api) { api = new ApiServer(apiConfig.token, apiHandler); try { await api.start(API_PORT) } catch (e) { apiError = `Port ${API_PORT} is not available (${(e as Error).message})`; api = null } }
+  else if (!apiConfig.enabled && api) { await api.stop(); api = null }
+}
+const apiState = (): { enabled: boolean; listening: boolean; token: string; port: number; error: string } => ({ enabled: apiConfig?.enabled ?? false, listening: api?.listening ?? false, token: apiConfig?.token ?? '', port: API_PORT, error: apiError })
+ipcMain.handle('api:get', async () => { apiConfig ??= await loadApiConfig(); return apiState() })
+ipcMain.handle('api:set', async (_e, enabled: boolean) => { apiConfig ??= await loadApiConfig(); apiConfig.enabled = enabled === true; await applyApi(); if (!apiError) await saveApiConfig(apiConfig); else apiConfig.enabled = false; return apiState() })
+ipcMain.handle('api:newToken', async () => { apiConfig ??= await loadApiConfig(); apiConfig.token = newToken(); await saveApiConfig(apiConfig); if (api) { await api.stop(); api = null; await applyApi() }; return apiState() })
+
 app.setName('BALTA Crucible')
 if (process.platform === 'win32') app.setAppUserModelId('com.balta.crucible')
 
@@ -134,7 +191,8 @@ app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(
 app.whenReady().then(() => {
   if (!gotLock) return
   void createWindow()
+  void applyApi() // an API that was left on starts with the app
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
 })
-app.on('before-quit', () => { void launcher?.stop(); void runLog?.close(); staticServer?.close() })
+app.on('before-quit', () => { void api?.stop(); void launcher?.stop(); void runLog?.close(); staticServer?.close() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

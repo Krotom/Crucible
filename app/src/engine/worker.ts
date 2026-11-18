@@ -8,6 +8,7 @@ import { OFFSEASON } from '../robots/offseason'
 import { buildSetup } from './setup'
 import { cleanBattery, cleanFaults } from './bridge/faults'
 import { cleanVision } from './vision'
+import { gameFromModule, PLUGIN_FILE } from './plugin'
 import { anyBreak, cleanBreaks, matchBreak, NO_BREAKS } from './breaks'
 import { cleanTune } from './tuning'
 
@@ -152,13 +153,25 @@ function tick(): void {
   if ((running || bridge) && now - lastPost > 16) { lastPost = now; postFrame() }
 }
 
+/** Loads a game from a plugin file the page was told about ("plugin:name.js"): served from the app's games folder by the loopback server. */
+async function loadPlugin(spec: string | undefined): Promise<import('./types').GameModule | undefined> {
+  if (!spec || !spec.startsWith('plugin:')) return undefined
+  const file = spec.slice(7)
+  if (!PLUGIN_FILE.test(file)) throw new Error(`Game plugin "${file}": not a plain .js file name`)
+  let mod: unknown
+  try { mod = await import(/* @vite-ignore */ `${self.location.origin}/games/${file}?t=${Date.now()}`) } catch (e) { throw new Error(`Game plugin ${file} could not be loaded: ${(e as Error).message}`) }
+  const r = gameFromModule(mod)
+  if ('error' in r) throw new Error(`Game plugin ${file}: ${r.error}`)
+  return r.game
+}
+
 async function handle(m: ToWorker): Promise<void> {
   try {
     switch (m.type) {
       case 'init': {
         bridge?.stop()
         bridge = null
-        const setup = buildSetup(m)
+        const setup = buildSetup({ ...m, gameModule: await loadPlugin(m.game) })
         const lockstep = m.mode === 'lockstep'
         engine = await Engine.create({ ...setup.config, seed: m.seed })
         slots = [null, null, null]
