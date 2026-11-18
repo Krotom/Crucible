@@ -1,7 +1,6 @@
 # Crucible — plan
 
-Status: draft v2, 2026-11-17, after M0 (spikes done, all GO). Companion docs: [NT_CONTRACT.md](NT_CONTRACT.md),
-[spikes/M0_RESULTS.md](spikes/M0_RESULTS.md), [spikes/S5_LOCKSTEP_TALON.md](spikes/S5_LOCKSTEP_TALON.md), and (to be written) `rules/REBUILT_RULES_EXTRACT.md`.
+Status: the plan as written after M0 (2026-11-17), with each milestone marked as built (M0 to M13 are done, and the feature list in [IDEAS.md](IDEAS.md) after them; section 10 has the table). The text below keeps the original reasoning and decisions; where the build differs from the plan, the milestone rows and the notes in sections 7, 12 and 16 say so. Companion docs: [NT_CONTRACT.md](NT_CONTRACT.md), [spikes/M0_RESULTS.md](spikes/M0_RESULTS.md), [spikes/S5_LOCKSTEP_TALON.md](spikes/S5_LOCKSTEP_TALON.md), [../rules/REBUILT_RULES_EXTRACT.md](../rules/REBUILT_RULES_EXTRACT.md), [TESTING.md](TESTING.md), [RELEASING.md](RELEASING.md). What the finished app does and does not do is in [../app/README.md](../app/README.md).
 
 ## 1. Goal
 
@@ -229,6 +228,7 @@ ball in the CAD.
 - **Playback:** a `.wpilog` reader (the format is open and documented) drives the same scene from logged poses. The
   app also logs its own world state so a full run, balls and score included, can be replayed.
 - **Bonus:** the app publishes `/SimWorld/...` so AdvantageScope can display the same run.
+- **As built:** the layout became a tabbed side panel (Session, Robot, Topics, Analysis, Tune) beside the 3D view, with a foldable stats panel over the view, a timeline above the transport and a title bar with capture, theme, preferences, shortcuts and About; the sim publishes `/Sim/*` rather than `/SimWorld/*`. See [../app/README.md](../app/README.md).
 
 ## 8. Robot definition file (sketch, with values taken from your code)
 
@@ -295,8 +295,12 @@ Every milestone ends with something you can run.
 | M11 | **(done: PNG screenshot and WebM recording of the 3D view) Video and screenshot export** | S | Record a run to a file |
 | M12 | **(done as a workflow, checked on synthetic data; no real data has been fitted yet) Calibration** when real data exists: shot table fit, drivetrain acceleration fit, validation plots | M | Sim reproduces a recorded real-robot shot table within an agreed tolerance |
 | M13 | **Branding (done)**: the BALTA Robotics identity (name BALTA Crucible, emblem, wordmark, gold / silver / black palette), a redesigned interface with dark and light themes, splash and About, app icon, branded reports | S | The app and its reports look like a BALTA product |
+| M14 | **Analysis and replay (done)**: match recorder and summary, timeline, shot map, rewind and slots, WPILOG / CSV / PNG / report exports, comparison, seed sweep, breakpoints, reference log | L | A match ends with a summary; a run can be rewound, exported and compared |
+| M15 | **Tuning and robot testing (done)**: tunable physics values with presets and calibration in the app, sensitivity probes, battery model, injected faults, mechanism inspector, gamepad remapping, test scenarios, a simulated AprilTag camera (robot-side reader still to write) | L | Change friction or a fault and see the effect without editing files |
+| M16 | **Quality of life and team features (done)**: robot launcher tab and log, command palette, presets, toasts, Turkish interface, accessibility, attempts, shared runs, strategy board, project reports, game plugins, local API | L | Everything on the feature list works and has a UI test |
+| M17 | **Delivery (done; Linux verified, Windows and macOS written but not run)**: CI with UI tests, automated releases for three systems, checksums and optional signatures, self-update ([RELEASING.md](RELEASING.md)) | M | Bump the version, merge, and installed apps offer the new release |
 
-Natural stopping points: after M1 (an AdvantageScope-style viewer for your robot), after M5 (balls and shooting), after
+Natural stopping points (all passed now): after M1 (an AdvantageScope-style viewer for your robot), after M5 (balls and shooting), after
 M6 (a scored game).
 
 ## 11. Calibration and validation without data
@@ -321,6 +325,7 @@ We have no measured data yet, so v1 is built to be tunable and honest about it:
 - **Contract tests:** a fake robot (a small script speaking the NT contract) exercises the app without Java.
 - **Robot-side tests:** the bridge gets headless HAL tests like the ones you already use locally.
 - **Golden runs:** recorded scripted matches whose scores and key events are asserted.
+- **As built:** about 360 unit tests, UI tests that drive the real built app (eleven suites plus one against a fake robot on the real ports, and a self-update test of a packaged app), and CI that runs them; see [TESTING.md](TESTING.md).
 
 ## 13. Risks
 
@@ -342,12 +347,14 @@ Resolved: app name and repo (Crucible, `Krotom/Crucible`), field geometry source
 M6), multi-robot (scripted bots), gamepad mapping (`UniversalController` default), PathPlanner autos (they run inside
 the robot code), app launches the robot sim (yes).
 
+Resolved since: the ball-count budget (408 FUEL in the neutral zone, kept real time by freezing resting FUEL, see [PERFORMANCE.md](PERFORMANCE.md)); how much Talon emulation Mode B shares (a Java `EmuTalon` and `EmuSwerve` in `robot-lib`, see NT_CONTRACT section 14); sim truth logging (the app writes its own WPILOG, `Save .wpilog…`, and publishes `/Sim/*`; nothing is logged through AdvantageKit on the robot side).
+
 Still open:
 
-1. Full current robot CAD (you will supply it); mass, bumper footprint and wheel type until then.
-2. Should the sim truth also be logged through AdvantageKit on the robot side, or only in the app's own log?
-3. Mode B: how much of the Talon emulation can be shared with the existing `TalonFXSim` code (decide at M8).
-4. Ball-count budget per game: set when the REBUILT rules extract says how many fuel are on the field.
+1. Full current robot CAD and measured data: mass, bumper footprint, wheel type, friction, ball drag and spin are estimates (`GUESS` tags in `robot.yaml`) and nothing has been fitted to real measurements, so the physics is not validated against the real robot.
+2. A robot-side reader for the simulated AprilTag camera (bridge message 9, NT_CONTRACT section 15).
+3. TOWER and the endgame climb in the REBUILT module.
+4. Code signing and notarisation of the release packages, and a first real run of the Windows and macOS packages and their self-update.
 
 ## 15. Prior art to review (not yet reviewed in this session)
 
@@ -363,7 +370,7 @@ about them above is from memory and needs checking.
 
 ## 16. Proposed repository layout
 
-Note from M1/M2: the app, the engine and the test game live together under `app/` (`app/src/engine`, `app/src/games`) as plain
+As built: the repository is `app/` (Electron app, engine, games, calibration, scripts, tests), `docs/`, `rules/`, `robot-lib/` (the Java bridge library for the robot project) and `.github/workflows/` (CI and releases); the package split below was not needed. Note from M1/M2: the app, the engine and the test game live together under `app/` (`app/src/engine`, `app/src/games`) as plain
 folders with no UI imports in the engine. They can be split into the packages below once a second consumer exists (a
 headless batch runner at M9 is the likely trigger).
 

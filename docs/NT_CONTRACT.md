@@ -1,8 +1,8 @@
-# NT contract (protocol 0, implemented for the drivetrain in M3)
+# Bridge contract (protocol 0, as built)
 
-How the robot process and the app talk. Everything under `/SimBridge/<robot>/` belongs to this contract; `<robot>` is
-`main` unless several robots are connected (milestone M10). Draft: the spikes (M0) will confirm or change numbers
-here. Protocol version: **0**.
+How the robot process and the app talk. Sections 1 to 8 are the original design; sections 9 to 15 record what each milestone actually built and where it differs (read those for the real layouts: the transport became a local WebSocket on port 5811 in M4, with NetworkTables kept for the component poses). Protocol version: **0**.
+
+**Message types on the WebSocket (section numbers in brackets):** 1 `ToApp` robot to app (3, 10), 2 `FromApp` app to robot (3, 10), 3 Control / Driver Station incl. Game Data (4, 12), 4 joystick (4), 5 pose seed (10), 6 hello, UTF-8 JSON (10), 7 stats, round trip (10), 8 Step, lockstep (14), 9 vision, UTF-8 JSON (15, only when the vision camera is on; the robot library does not read it yet).
 
 ## 1. Principles
 

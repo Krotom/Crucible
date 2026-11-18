@@ -55,6 +55,10 @@ Mode B (deterministic, faster than real time) replaces the Talon firmware contro
 
 Mode A (real time) is enough for driver practice, tuning and most testing; add Mode B when you want repeatable batch runs.
 
+## Vision (optional, not read yet)
+
+With the app's vision camera switched on (Robot tab), the app sends the robot a message (bridge type 9: the AprilTags the simulated camera sees and a noisy robot pose, see NT_CONTRACT section 15). The robot library does not read it yet, so nothing changes in your code until a reader is added (the natural place is an `addVisionMeasurement` call on the drivetrain's pose estimator).
+
 ## If something does not work
 
 - **The robot connects but does not move:** the simulation GUI is still on (step 4), or CTRE's drivetrain sim is still running (step 3).

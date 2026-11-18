@@ -1,7 +1,6 @@
 # Ideas checklist
 
-Status of the feature ideas list (see the conversation history of the session that built it). `[x]` done and tested, `[~]` partly, `[ ]` not yet.
-UI tests: `npm run e2e` (needs Electron, xvfb, Playwright; see `app/e2e/run.sh`). Unit tests: `npm test`.
+Status of the feature ideas list: `[x]` done and tested, `[~]` partly, `[ ]` not yet. Every item is done. How things are tested: [TESTING.md](TESTING.md) (unit tests `npm test`, UI tests `npm run e2e`). What each feature does: [../app/README.md](../app/README.md).
 
 ## Robot launcher and log
 - [x] Build and run status line (parsed from Gradle output, elapsed time, bar)
@@ -85,3 +84,9 @@ UI tests: `npm run e2e` (needs Electron, xvfb, Playwright; see `app/e2e/run.sh`)
 - [x] Plugin / game-module loader (.js files in the games folder appear in the Game list; `app/examples/game-plugin.js` is a working example; packaged app only)
 - [x] UI test suites in the repo (`app/e2e`)
 - [x] Local API (opt-in HTTP on 127.0.0.1:5812 with a token: status, start, stop, reset, play, pause, step, preset, set, attempts. HTTP only: no WebSocket stream)
+
+## Delivery
+- [x] CI on every push: typecheck, unit tests, build, UI tests (`.github/workflows/ci.yml`)
+- [x] Automated releases for Windows (installer), Linux (tar.gz) and macOS (zip, Apple silicon and Intel) when the version changes on `main` (`.github/workflows/release.yml`, [RELEASING.md](RELEASING.md)); only the Linux package is verified here, the Windows and macOS packages are written but not yet run
+- [x] Checksums for every release file, and an optional Ed25519 signature (`npm run update-keys`)
+- [x] Self-update: start-up check, download, verification, swap after quit, rollback if the swap fails; the Linux path is tested end to end; the Windows and macOS paths are written but not run
