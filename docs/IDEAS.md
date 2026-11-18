@@ -55,11 +55,11 @@ UI tests: `npm run e2e` (needs Electron, xvfb, Playwright; see `app/e2e/run.sh`)
 
 ## Robot testing
 - [ ] Built-in test scenarios
-- [ ] Fault injection
-- [ ] Battery model
-- [ ] Mechanism inspector graphs
-- [ ] Breakpoints on events
-- [ ] Gamepad remapping and controller test
+- [x] Fault injection (Robot tab: brownout, latency, noise, dropped CAN ids)
+- [x] Battery model (Robot tab, live in the panel)
+- [x] Mechanism inspector graphs (volts, speed, position, current; no thermal model)
+- [x] Breakpoints on events (Analysis tab)
+- [x] Gamepad remapping and controller test (Controls dialog, G)
 - [ ] Vision simulation
 
 ## Quality of life

@@ -177,6 +177,13 @@ export class Engine {
     if (p.bumperFriction !== undefined) this.robotSpec.chassis = { ...this.robotSpec.chassis, friction: p.bumperFriction }
   }
 
+  /** Estimated current drawn from the battery by the drivetrain and the mechanisms in the last step, amps. */
+  batteryAmps(): number {
+    let a = this.drivetrain?.currentAmps ?? 0
+    for (const m of this.mechanisms.values()) a += m.supplyAmps
+    return a
+  }
+
   /** Frees the physics world (WebAssembly memory): call when an engine is thrown away, as the seed sweep does after every run. */
   dispose(): void { this.world?.free() }
 

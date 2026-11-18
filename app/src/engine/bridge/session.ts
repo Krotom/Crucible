@@ -7,8 +7,9 @@ import type { Engine } from '../engine'
 import { checkAgainstHello, type RobotDefinition } from '../../robots/definition'
 import { decodeStruct } from '../../renderer/src/lib/structs'
 import { Nt4Raw } from './nt4raw'
+import { applyFaults, batteryVoltage, DEFAULT_BATTERY, NO_FAULTS, Noise, type BatteryModel, type Faults } from './faults'
 import {
-  decodeToApp, encodeDs, encodeFromApp, encodeJoystick, encodePoseSeed, encodeStep, type DsState, type JoystickState, type ToApp,
+  decodeToApp, encodeDs, encodeFromApp, encodeJoystick, encodePoseSeed, encodeStep, type DsState, type FromApp, type JoystickState, type ToApp,
 } from './frames'
 import {
   DEFAULT_WS_PORT, MSG_DS, MSG_FROM_APP, MSG_HELLO, MSG_JOYSTICK, MSG_POSE_SEED, MSG_STATS, MSG_STEP, MSG_TO_APP, WsTransport,
@@ -82,6 +83,12 @@ export class BridgeSession {
   autoLead = true
   /** the robot's measured round trip of the exchange, seconds (0 until it reports) */
   rtt = 0
+  /** things that go wrong (dropped devices, brownout, noise, latency) and the battery that sags under load */
+  faults: Faults = { ...NO_FAULTS }
+  battery: BatteryModel = { ...DEFAULT_BATTERY }
+  private noise = new Noise(1)
+  /** the battery voltage and current the robot was last told about, for the panel */
+  batteryReading = { volts: 12, amps: 0 }
   private ds: DsState = { counter: 0n, gameData: '', enabled: false, autonomous: false, test: false, estop: false, dsAttached: true, alliance: 1, station: 1, matchTime: 0 }
   private joystick: JoystickState = { counter: 0n, axes: [0, 0, 0, 0, 0, 0], buttons: 0n, pov: -1 }
   private poseSeedCounter = 0n
@@ -207,10 +214,19 @@ export class BridgeSession {
 
   private sendFromApp(seq: bigint, battery: number): void {
     const dt = this.engine.drivetrain
-    this.ws.send(MSG_FROM_APP, encodeFromApp({
-      seq, simTime: this.engine.time, batteryVolts: battery, motors: this.engine.predictMotorStates(0),
-      cancoders: dt?.cancoderStates() ?? [], pigeons: dt ? [dt.pigeonState()] : [],
-    }))
+    // lockstep: no real time passes between exchanges, so the latency fault does not apply
+    this.emitFromApp({ seq, simTime: this.engine.time, batteryVolts: battery, motors: this.engine.predictMotorStates(0), cancoders: dt?.cancoderStates() ?? [], pigeons: dt ? [dt.pigeonState()] : [] }, false)
+  }
+
+  /** Sends the state to the robot: with the battery model and the faults applied, and (real-time mode) delayed by the latency fault. */
+  private emitFromApp(frame: FromApp, delayable: boolean): void {
+    const amps = this.engine.batteryAmps()
+    const volts = this.battery.enabled ? batteryVoltage(this.battery, amps) : frame.batteryVolts
+    const out = applyFaults({ ...frame, batteryVolts: volts }, this.faults, this.noise)
+    this.batteryReading = { volts: out.batteryVolts, amps }
+    const bytes = encodeFromApp(out)
+    if (delayable && this.faults.latencyMs > 0) setTimeout(() => this.ws.send(MSG_FROM_APP, bytes), this.faults.latencyMs)
+    else this.ws.send(MSG_FROM_APP, bytes)
   }
 
   private sendStep(): void {
@@ -266,6 +282,7 @@ export class BridgeSession {
 
     for (const m of f.motors) {
       this.engine.setMotorVolts(m.id, m.appliedVolts)
+      this.lastMotorVolts.set(m.id, m.appliedVolts)
       // the robot code re-zeroed a mechanism: act once, on the rising edge of the flag
       const reset = (m.flags & MOTOR_FLAG_RESET) !== 0
       if (reset && !this.resetSeen.has(m.id)) this.engine.resetMechanism(m.id)
@@ -284,14 +301,14 @@ export class BridgeSession {
     }
     this.lastRobotTime = f.simTime
 
-    this.ws.send(MSG_FROM_APP, encodeFromApp({
+    this.emitFromApp({
       seq: f.seq,
       simTime: this.engine.time,
       batteryVolts: f.batteryVolts,
       motors: this.engine.predictMotorStates(this.lead),
       cancoders: dt?.cancoderStates() ?? [],
       pigeons: dt ? [dt.pigeonState()] : [],
-    }))
+    }, true)
     this.updateFms()
     if (this.seedAtFrame !== null && s.frames >= this.seedAtFrame) { this.seedAtFrame = null; this.sendSeed() }
     if (s.frames % 20 === 0) this.onStatus()

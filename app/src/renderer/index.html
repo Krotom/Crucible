@@ -133,6 +133,28 @@
             <p id="robot-state" class="hint"></p>
           </div>
 
+          <div class="card" id="testing-card">
+            <div class="logbar"><h3>Robot testing</h3><span class="grow"></span><button id="controls-btn" title="Gamepad test and remapping, keyboard driving keys (G)">Controls…</button></div>
+            <label class="check" title="The battery sags under load, as a real one does: the robot code sees the lower voltage"><input id="bat-on" type="checkbox" />Battery model</label>
+            <div class="row2" id="bat-opts">
+              <label class="field"><span>Open V</span><input id="bat-open" value="12.6" inputmode="decimal" title="battery voltage with no load" /></label>
+              <label class="field"><span>mΩ</span><input id="bat-res" value="18" inputmode="decimal" title="internal resistance including wiring, milliohm" /></label>
+            </div>
+            <h4 class="sub">Things that go wrong</h4>
+            <div class="row2">
+              <label class="check" title="Force the battery voltage the robot sees"><input id="f-brown-on" type="checkbox" />Brownout at</label>
+              <label class="field"><span>V</span><input id="f-brown" value="6.8" inputmode="decimal" /></label>
+            </div>
+            <label class="field"><span>Latency</span><input id="f-lat" type="range" min="0" max="200" step="5" value="0" title="extra delay before the robot sees the state (real-time mode)" /></label>
+            <label class="field"><span>Noise</span><input id="f-noise" type="range" min="0" max="5" step="0.5" value="0" title="sensor noise on rotor, CANcoder and Pigeon readings" /></label>
+            <label class="field"><span>Drop CAN</span><input id="f-drop" placeholder="e.g. 8, 37" spellcheck="false" title="CAN ids that stop answering (the robot gets no state for them)" /></label>
+            <p id="f-note" class="hint"></p>
+          </div>
+          <div class="card" id="inspector-card">
+            <h3>Mechanism inspector</h3>
+            <div id="mech-inspector" class="mi"><div class="dimtext">Connects when robot code runs (Robot code modes).</div></div>
+          </div>
+
           <div class="card logcard">
             <div class="logbar">
               <h3>Gradle output</h3>
@@ -187,6 +209,21 @@
             <div class="btnrow"><button id="cmp-b" class="wide" title="Load a report.json as run B">B: load…</button><button id="cmp-b-cur" title="Use the current run as B">B = this run</button></div>
             <input id="cmp-file" type="file" accept=".json,application/json" hidden />
             <div id="cmp-body" class="an-body"></div>
+          </div>
+          <div class="card">
+            <h3>Pause when…</h3>
+            <div class="chips">
+              <label class="check"><input id="bp-launch" type="checkbox" />a shot is launched</label>
+              <label class="check"><input id="bp-capture" type="checkbox" />FUEL is picked up</label>
+              <label class="check"><input id="bp-score" type="checkbox" />points are scored</label>
+              <label class="check"><input id="bp-foul" type="checkbox" />a foul is called</label>
+              <label class="check"><input id="bp-phase" type="checkbox" />the phase changes</label>
+            </div>
+            <div class="row2">
+              <label class="check"><input id="bp-impact-on" type="checkbox" />impact over <input id="bp-impact" class="mini" value="2" inputmode="decimal" /> m/s</label>
+              <label class="check"><input id="bp-time-on" type="checkbox" />sim time <input id="bp-time" class="mini" value="10" inputmode="decimal" /> s</label>
+            </div>
+            <div id="bp-last" class="dimtext">No pause yet.</div>
           </div>
           <div class="card">
             <h3>Seed sweep</h3>
@@ -327,6 +364,23 @@
       <span class="grow"></span>
       <span class="legal">BALTA Crucible <span id="app-version"></span> · BALTA Robotics</span>
     </footer>
+
+    <dialog id="controls">
+      <form method="dialog">
+        <h2 class="dlg-title">Controls</h2>
+        <h4 class="sub">Gamepad</h4>
+        <div id="pad-live" class="pad-live"></div>
+        <div id="pad-map" class="pm"></div>
+        <label class="field"><span>Dead zone</span><input id="pm-dead" type="range" min="0" max="0.4" step="0.01" value="0.06" /><b id="pm-dead-val" class="dimtext"></b></label>
+        <div id="pad-msg" class="dimtext"></div>
+        <div class="btnrow"><button id="pad-reset" type="button">Standard layout</button></div>
+        <h4 class="sub">Keyboard driving</h4>
+        <div id="key-map" class="kb"></div>
+        <div id="key-msg" class="dimtext"></div>
+        <div class="btnrow"><button id="keys-reset" type="button">Default keys</button></div>
+        <div class="about-actions"><button class="primary">Close</button></div>
+      </form>
+    </dialog>
 
     <dialog id="match-summary">
       <form method="dialog">

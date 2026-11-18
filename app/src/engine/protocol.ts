@@ -1,9 +1,11 @@
 // Messages between the renderer and the physics worker.
+import type { BatteryModel, Faults } from './bridge/faults'
+import type { BreakSpec } from './breaks'
 import type { TuneParams } from './tuning'
 import type { FieldDefinition, PieceSpec, RenderFrame } from './types'
 
 export type ToWorker =
-  | { type: 'init'; seed: number; mode: 'script' | 'robot' | 'lockstep'; host?: string; game?: 'test' | 'rebuilt'; opponent?: 'none' | 'blocker' | 'cycler' | 'ally' | 'both'; stepDt?: number; alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams }
+  | { type: 'init'; seed: number; mode: 'script' | 'robot' | 'lockstep'; host?: string; game?: 'test' | 'rebuilt'; opponent?: 'none' | 'blocker' | 'cycler' | 'ally' | 'both'; stepDt?: number; alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; breaks?: Partial<BreakSpec> }
   | { type: 'match'; run: boolean }
   /** seconds >= 0 sets the lead by hand; a negative value turns the automatic lead (follow the measured round trip) back on */
   | { type: 'lead'; seconds: number }
@@ -15,6 +17,11 @@ export type ToWorker =
   | { type: 'reset'; seed?: number }
   /** change physical values live (see engine/tuning.ts: some apply from the next reset) */
   | { type: 'tune'; params: TuneParams }
+  /** things that go wrong on a robot, and the battery that sags (robot-code modes) */
+  | { type: 'faults'; faults: Partial<Faults> }
+  /** pause the run when something happens (see breaks.ts) */
+  | { type: 'breaks'; breaks: Partial<BreakSpec> }
+  | { type: 'battery'; battery: Partial<BatteryModel> }
   | { type: 'save'; slot?: number }
   | { type: 'load'; slot?: number }
   /** go back this many simulated seconds (scripted sims only: the robot program cannot be rewound) */
@@ -56,7 +63,9 @@ export interface BridgeInfo {
   rttMs: number
   leadMs: number
   components: Float64Array | null
-  mechanisms: { name: string; position: number; velocity: number }[]
+  mechanisms: { name: string; position: number; velocity: number; volts: number; amps: number }[]
+  /** the battery voltage the robot was last told and the current drawn */
+  battery: { volts: number; amps: number }
   fms: boolean
 }
 
@@ -64,3 +73,5 @@ export type FromWorker =
   | WorkerReady
   | { type: 'frame'; frame: RenderFrame; running: boolean; speed: number; hasSnapshot: boolean; slots: boolean[]; canRewind: number; simRate: number; bridge?: BridgeInfo; events: UiEvent[] }
   | { type: 'error'; message: string }
+  /** a breakpoint stopped the run */
+  | { type: 'paused'; reason: string; time: number }

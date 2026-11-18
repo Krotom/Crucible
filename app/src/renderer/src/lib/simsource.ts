@@ -3,6 +3,8 @@
 import SimWorker from '../../../engine/worker?worker'
 import type { BridgeInfo, FromWorker, ToWorker, UiEvent, WorkerReady } from '../../../engine/protocol'
 import type { RenderFrame } from '../../../engine/types'
+import type { BatteryModel, Faults } from '../../../engine/bridge/faults'
+import type { BreakSpec } from '../../../engine/breaks'
 import type { TuneParams } from '../../../engine/tuning'
 import type { DataStore } from './store'
 
@@ -22,6 +24,8 @@ export class SimSource {
   bridge: BridgeInfo | null = null
   /** Called for every frame the worker sends (not just the latest one per screen refresh), with the events since the previous frame. */
   onFrame: ((f: RenderFrame, events: UiEvent[]) => void) | null = null
+  /** Called when a breakpoint stopped the run. */
+  onPaused: ((reason: string, time: number) => void) | null = null
   private lastPushed = -1
   private lastTime = 0
 
@@ -29,7 +33,7 @@ export class SimSource {
 
   get active(): boolean { return this.worker !== null }
 
-  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent: 'none' | 'blocker' | 'cycler' | 'ally' | 'both' = 'none', stepDt = 0.002, extra: { alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams } = {}): void {
+  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent: 'none' | 'blocker' | 'cycler' | 'ally' | 'both' = 'none', stepDt = 0.002, extra: { alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; breaks?: Partial<BreakSpec> } = {}): void {
     this.stop()
     this.store.startLive('Sim')
     this.lastPushed = -1
@@ -54,6 +58,7 @@ export class SimSource {
   private onMessage(m: FromWorker): void {
     if (m.type === 'ready') { this.ready = m; this.onReady(m); return }
     if (m.type === 'error') { this.onError(m.message); return }
+    if (m.type === 'paused') { this.onPaused?.(m.reason, m.time); return }
     const f = m.frame
     this.latest = f
     this.running = m.running

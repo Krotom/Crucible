@@ -28,6 +28,7 @@ export const SHORTCUTS: Shortcut[] = [
   { key: 'c', label: 'Next camera', group: 'View', run: 'camera' },
   { key: 'shift+c', label: 'Previous camera', group: 'View', run: 'camera-prev' },
   { key: 'm', label: 'Ruler: measure on the floor', group: 'View', run: 'ruler' },
+  { key: 'g', label: 'Controls: gamepad and driving keys', group: 'Help', run: 'controls' },
   { key: 'b', label: 'Scoreboard overlay', group: 'View', run: 'scoreboard' },
   { key: 't', label: 'Switch dark / light theme', group: 'View', run: 'theme' },
   { key: 'ctrl+l', label: 'Clear the robot log', group: 'Log', run: 'log-clear' },

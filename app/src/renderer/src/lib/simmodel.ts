@@ -91,6 +91,7 @@ export function buildSimModel(f: RenderFrame, info: SimInfo): PanelModel {
         { id: 'enabled', label: 'Robot state', value: b.robotEnabled ? 'enabled' : 'disabled', tone: b.robotEnabled ? 'ok' : 'dim', hint: 'Driver Station state the robot sees' },
         { id: 'rtt', label: 'Round trip', value: `${b.rttMs.toFixed(1)} ms`, hint: 'Time for one exchange with the robot program' },
         { id: 'lead', label: 'Lead', value: `${b.leadMs.toFixed(1)} ms`, hint: 'How far the simulation runs ahead of the robot' },
+        ...(b.battery ? [{ id: 'battery', label: 'Battery', value: `${b.battery.volts.toFixed(1)} V · ${b.battery.amps.toFixed(0)} A`, tone: (b.battery.volts < 7 ? 'bad' : b.battery.volts < 9 ? 'warn' : undefined) as Tone | undefined, hint: 'The battery voltage the robot code was told and the current the motors draw (turn the battery model on in the Robot tab to see it sag)' }] : []),
         { id: 'frames', label: 'Frames', value: String(b.frames) },
       )
     }

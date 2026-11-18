@@ -19,6 +19,8 @@ import { AnalysisView, TimelineBar, renderSummary } from './lib/analysis-view'
 import { renderCompare } from './lib/compare-view'
 import { renderSweep, SweepRunner } from './lib/sweep-ui'
 import { TuneUI } from './lib/tune-ui'
+import { MechHistory, MechInspector } from './lib/mechhistory'
+import { setupControls } from './lib/controls-ui'
 import { parseRunReport } from './lib/compare'
 import { storeToWpilog } from './lib/wpilogwriter'
 import type { RunReport } from '../../analysis/recorder'
@@ -294,10 +296,10 @@ $('start-sim').addEventListener('click', () => {
   $('ds-enable').textContent = 'Enable'
   lastInput = null
   simPanel.clear()
-  recorder.reset(); endShown = false
+  recorder.reset(); mechHistory.clear(); endShown = false
   lastStart = { seed: seedValue(), game: $<HTMLSelectElement>('game-select').selectedOptions[0].textContent ?? '', mode: $<HTMLSelectElement>('sim-mode').selectedOptions[0].textContent ?? '' }
   ownAlliance = $<HTMLSelectElement>('alliance').value === 'red' ? 'red' : 'blue'
-  sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLSelectElement>('opponent').value as 'none' | 'blocker' | 'cycler' | 'ally' | 'both', Number($<HTMLSelectElement>('step-dt').value), { alliance: ownAlliance, start: startOverrides(), tune: tune.params() })
+  sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLSelectElement>('opponent').value as 'none' | 'blocker' | 'cycler' | 'ally' | 'both', Number($<HTMLSelectElement>('step-dt').value), { alliance: ownAlliance, start: startOverrides(), tune: tune.params(), faults: faultsSpec(), battery: batterySpec(), breaks: breakSpec() })
   $('start-sim').textContent = 'Stop sim'
   setStatus(lockstepMode ? 'Sim: robot code, lockstep (Mode B)' : robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
   playEl.textContent = 'Play'
@@ -356,6 +358,7 @@ let lastStart = { seed: 42, game: '', mode: '' }
 let ownAlliance: 'blue' | 'red' = 'blue'
 sim.onFrame = (f, events) => {
   recorder.ingest(f, events)
+  if (sim.bridge) mechHistory.add(f.time, sim.bridge.mechanisms)
   fx.sampleTrail(f)
   if (recorder.phase === 'ended') {
     if (!endShown) { endShown = true; showMatchSummary() }
@@ -452,6 +455,7 @@ function simFrame(): void {
 // ---- frame loop
 let lastList = 0
 let lastAnalysis = 0
+let lastInspect = 0
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
@@ -495,6 +499,7 @@ function frame(now: number): void {
   if (tl.hidden === showTl) tl.hidden = !showTl
   if (showTl) timeline.update(sim.ready!.phases, recorder, sim.latest!.time)
   if (now - lastAnalysis > 250 && !$('tab-analysis').hidden) { lastAnalysis = now; analysisView.render() }
+  if (now - lastInspect > 200 && !$('tab-robot').hidden) { lastInspect = now; if (sim.active && sim.bridge) inspector.update(mechHistory) }
 
   // topic values at 5 Hz
   if (now - lastList > 200) {
@@ -512,6 +517,36 @@ let listTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleListRefresh(): void {
   if (listTimer) return
   listTimer = setTimeout(() => { listTimer = null; renderTopicList() }, 250)
+}
+
+// ---- robot testing: battery model, faults, mechanism inspector; breakpoints
+const mechHistory = new MechHistory()
+const inspector = new MechInspector($('mech-inspector'))
+const numOf = (id: string, d: number): number => { const v = Number($<HTMLInputElement>(id).value.trim().replace(',', '.')); return Number.isFinite(v) ? v : d }
+function batterySpec(): { enabled: boolean; openVolts: number; resistance: number } {
+  return { enabled: $<HTMLInputElement>('bat-on').checked, openVolts: numOf('bat-open', 12.6), resistance: numOf('bat-res', 18) / 1000 }
+}
+function faultsSpec(): { brownoutVolts: number | null; latencyMs: number; noise: number; dropIds: number[] } {
+  const ids = $<HTMLInputElement>('f-drop').value.split(/[\s,;]+/).filter(Boolean).map(Number).filter((n) => Number.isInteger(n))
+  return { brownoutVolts: $<HTMLInputElement>('f-brown-on').checked ? numOf('f-brown', 6.8) : null, latencyMs: numOf('f-lat', 0), noise: numOf('f-noise', 0), dropIds: ids }
+}
+function paintFaultNote(): void {
+  const f = faultsSpec(), b = batterySpec()
+  const parts = [b.enabled ? `battery ${b.openVolts} V, ${(b.resistance * 1000).toFixed(0)} mΩ` : '', f.brownoutVolts !== null ? `brownout ${f.brownoutVolts} V` : '', f.latencyMs > 0 ? `latency ${f.latencyMs} ms` : '', f.noise > 0 ? `noise ${f.noise}` : '', f.dropIds.length ? `CAN ${f.dropIds.join(', ')} dropped` : ''].filter(Boolean)
+  $('f-note').textContent = parts.length ? `Active: ${parts.join(' · ')}. Robot-code modes only.` : 'Nothing injected. Robot-code modes only.'
+}
+for (const id of ['bat-on', 'bat-open', 'bat-res']) $(id).addEventListener('change', () => { if (sim.active) sim.send({ type: 'battery', battery: batterySpec() }); paintFaultNote() })
+for (const id of ['f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop']) $(id).addEventListener('input', () => { if (sim.active) sim.send({ type: 'faults', faults: faultsSpec() }); paintFaultNote() })
+$('f-brown-on').addEventListener('change', () => { if (sim.active) sim.send({ type: 'faults', faults: faultsSpec() }); paintFaultNote() })
+
+function breakSpec(): { launch: boolean; capture: boolean; score: boolean; foul: boolean; phase: boolean; impact: number | null; time: number | null } {
+  const on = (id: string): boolean => $<HTMLInputElement>(id).checked
+  return { launch: on('bp-launch'), capture: on('bp-capture'), score: on('bp-score'), foul: on('bp-foul'), phase: on('bp-phase'), impact: on('bp-impact-on') ? numOf('bp-impact', 2) : null, time: on('bp-time-on') ? numOf('bp-time', 10) : null }
+}
+for (const id of ['bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time']) $(id).addEventListener('change', () => { if (sim.active) sim.send({ type: 'breaks', breaks: breakSpec() }) })
+sim.onPaused = (reason, t) => {
+  $('notice').textContent = `Paused: ${reason} at ${t.toFixed(2)} s`
+  $('bp-last').textContent = `Paused at ${t.toFixed(2)} s: ${reason}`
 }
 
 // ---- start position / alliance, view menu, camera, ruler, scoreboard
@@ -769,14 +804,16 @@ $<HTMLSelectElement>('log-history').addEventListener('change', async (e) => {
 })
 
 // remembered between runs: the choices in the side panels and the log's severity toggles
-bindSettings(['robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
+bindSettings(['bat-on', 'bat-open', 'bat-res', 'f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop', 'bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time', 'robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
 for (const el of hostEls) el.value = hostEls[0].value // restored values may differ if only one was saved
 robotLog.syncLevels()
+paintFaultNote()
 applyViewMenu()
 refreshRobot()
 
 // ---- keyboard shortcuts (the table in lib/shortcuts.ts also fills the cheat sheet)
 const shortcutsDialog = { open: () => {} }
+const controls = setupControls((t) => { $('notice').textContent = t })
 const actions: Record<string, () => void> = {
   play: togglePlay,
   step: () => { if (sim.active && !robotMode) $('sim-step').click() },
@@ -801,6 +838,7 @@ const actions: Record<string, () => void> = {
   'err-next': () => { showTab('robot'); robotLog.jumpError(1) },
   'err-prev': () => { showTab('robot'); robotLog.jumpError(-1) },
   help: () => shortcutsDialog.open(),
+  controls: () => controls.open(),
 }
 window.addEventListener('keydown', (e) => {
   if (e.repeat || document.querySelector('dialog[open]')) return
@@ -825,4 +863,4 @@ view.loadRobotModel().then((msg) => { $('notice').textContent = msg }).catch((e)
 requestAnimationFrame(frame)
 
 // exposed for debugging in the browser console and for automated checks
-;(window as unknown as Record<string, unknown>).crucible = { store, view, plot, sim, openLogFile, seekTo, recorder, analysisView, fx, sweep, refStore, tune, get time() { return time } }
+;(window as unknown as Record<string, unknown>).crucible = { store, view, plot, sim, openLogFile, seekTo, recorder, analysisView, fx, sweep, refStore, tune, mechHistory, readInput, get time() { return time } }

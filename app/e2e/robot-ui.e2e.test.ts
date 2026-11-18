@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import { it } from 'vitest'
-import { encodeToApp } from '../src/engine/bridge/frames'
+import { decodeFromApp, encodeToApp, type FromApp } from '../src/engine/bridge/frames'
 import { MSG_DS, MSG_HELLO, MSG_JOYSTICK, MSG_POSE_SEED, MSG_STATS, MSG_STEP, MSG_TO_APP, MSG_FROM_APP } from '../src/engine/bridge/ws-transport'
 import { OFFSEASON, OFFSEASON_DRIVETRAIN } from '../src/robots/offseason'
 import { FakeRobotWs } from '../tests/helpers/fake-ws-robot'
@@ -35,6 +35,10 @@ class FakeRobot {
   ds: { flags: number; matchTime: number; gameData: number }[] = []
   joystick: { axes: number[]; buttons: bigint }[] = []
   poseSeeds = 0; steps = 0; fromApp = 0; limit = Infinity
+  /** what the app sent back, newest last (bounded), and how long each answer took */
+  recent: FromApp[] = []
+  latencies: number[] = []
+  private sentAt = new Map<number, number>()
   private timer: ReturnType<typeof setInterval> | null = null
   sendHello = true
   lockstepHello = false
@@ -46,14 +50,18 @@ class FakeRobot {
     this.ws.onConnect = () => {
       if (this.sendHello) this.ws.send(MSG_HELLO, new TextEncoder().encode(JSON.stringify({ protocol: 0, ...(this.lockstepHello ? { lockstep: true } : {}), devices: [{ type: 'talonfx', id: 20 }], mechanisms: [] })))
       const stats = new Uint8Array(24); new DataView(stats.buffer).setFloat64(0, 4500, true); this.ws.send(MSG_STATS, stats)
-      if (!this.lockstep) this.timer = setInterval(() => { this.seq++; this.t += 0.02; this.ws.send(MSG_TO_APP, this.toApp(this.seq, this.t)) }, 20)
+      if (!this.lockstep) this.timer = setInterval(() => { this.seq++; this.t += 0.02; this.sentAt.set(Number(this.seq), Date.now()); this.ws.send(MSG_TO_APP, this.toApp(this.seq, this.t)) }, 20)
     }
     this.ws.onMessage = (m) => {
       const v = new DataView(m.body.buffer, m.body.byteOffset, m.body.byteLength)
       if (m.type === MSG_DS) { this.ds.push({ flags: v.getUint32(8, true), gameData: v.getUint8(14), matchTime: v.getFloat64(16, true) }); this.enabled = (v.getUint32(8, true) & 1) !== 0 }
       else if (m.type === MSG_JOYSTICK) { const axes: number[] = []; for (let i = 0; i < 6; i++) axes.push(v.getFloat64(8 + i * 8, true)); this.joystick.push({ axes, buttons: v.getBigUint64(56, true) }) }
       else if (m.type === MSG_POSE_SEED) this.poseSeeds++
-      else if (m.type === MSG_FROM_APP) this.fromApp++
+      else if (m.type === MSG_FROM_APP) {
+        this.fromApp++
+        const d = decodeFromApp(m.body)
+        if (d) { this.recent.push(d); if (this.recent.length > 60) this.recent.shift(); const t0 = this.sentAt.get(Number(d.seq)); if (t0) { this.latencies.push(Date.now() - t0); if (this.latencies.length > 60) this.latencies.shift() } }
+      }
       else if (m.type === MSG_STEP) { if (this.t >= this.limit) return; this.steps++; const seq = v.getBigUint64(0, true); const dt = v.getFloat64(8, true); this.t += dt; this.ws.send(MSG_TO_APP, this.toApp(seq, this.t)) }
     }
   }
@@ -243,6 +251,53 @@ it('robot code UI e2e', async () => {
     expect(await page.$eval('#start-sim', (b: any) => b.textContent) === 'Stop sim', 'the sim keeps running after a mass change and Reset')
   }, page)
   await page.click('#tune-reset').catch(() => {}); await page.click('[data-tab=session]').catch(() => {})
+
+  // ---------- testing tools with robot code
+  const setRange = async (id: string, v: string): Promise<void> => { await page.$eval(id, (r: any, v: string) => { r.value = v; r.dispatchEvent(new Event('input', { bubbles: true })) }, v) }
+  await check('R16 faults reach the robot: brownout voltage, a dropped CAN device, sensor noise, latency; the battery model sags under drive load and shows in the panel', async () => {
+    await page.click('[data-tab=robot]')
+    const last = (): FromApp => live.recent[live.recent.length - 1]
+    await sleep(300); expect(last().batteryVolts === 12 && last().motors.some((m) => m.id === 8), 'clean state at first')
+    await page.check('#f-brown-on'); await page.fill('#f-brown', '6.5'); await page.press('#f-brown', 'Tab'); await sleep(400)
+    expect(Math.abs(last().batteryVolts - 6.5) < 1e-6, 'brownout reaches the robot: ' + last().batteryVolts); await page.uncheck('#f-brown-on'); await sleep(400); eq(last().batteryVolts, 12, 'and goes away')
+    await page.fill('#f-drop', '8, 37'); await sleep(400); expect(!last().motors.some((m) => m.id === 8 || m.id === 37) && last().motors.some((m) => m.id === 38), 'ids 8 and 37 stop answering, others still do'); await page.fill('#f-drop', ''); await sleep(400); expect(last().motors.some((m) => m.id === 8), 'and answer again')
+    const spread = (): number => { const v = live.recent.slice(-30).map((f) => f.motors.find((m) => m.id === 38)!.rotorPositionRot); return Math.max(...v) - Math.min(...v) }
+    await sleep(700); const quiet = spread(); await setRange('#f-noise', '3'); await sleep(900); const noisy = spread(); await setRange('#f-noise', '0'); await sleep(900)
+    expect(noisy > quiet + 0.002, `noise visible in the rotor position: ${quiet} -> ${noisy}`); expect(spread() < 0.0005, 'noise off again')
+    const base = live.latencies.slice(-20).reduce((a, b) => a + b, 0) / 20; live.latencies.length = 0; await setRange('#f-lat', '120'); await sleep(1500); const slow = live.latencies.slice(-15).reduce((a, b) => a + b, 0) / 15; await setRange('#f-lat', '0'); await sleep(600)
+    expect(slow > 100 && slow > base + 80, `latency: ${base.toFixed(0)} ms -> ${slow.toFixed(0)} ms`)
+    await page.check('#bat-on'); await sleep(300); for (const id of [20, 23, 26, 29]) live.volts[id] = 12
+    let low = 99; for (let i = 0; i < 25; i++) { await sleep(40); low = Math.min(low, last().batteryVolts) }
+    const panel = await page.$$eval('.simhud .kv', (rs: any[]) => Object.fromEntries(rs.map((r) => [r.querySelector('.k').textContent, r.querySelector('.v').textContent])))
+    for (const id of [20, 23, 26, 29]) live.volts[id] = 0
+    expect(low < 11, 'the battery sags under full drive voltage: lowest ' + low); expect(/^\d+\.\d V · \d+ A$/.test(panel['Battery']), 'panel shows it: ' + panel['Battery'])
+    await sleep(1200); await page.uncheck('#bat-on'); await sleep(400); eq(last().batteryVolts, 12, 'battery model off: back to what the robot reported')
+  }, page)
+  await check('R17 the mechanism inspector draws volts, speed, position and current for every mechanism, with the values the robot applies', async () => {
+    await page.click('[data-tab=robot]'); live.volts[8] = 6; await sleep(1500)
+    const rows = await page.$$eval('#mech-inspector .mi-row .mi-name', (e: any[]) => e.map((x) => x.textContent)); for (const n of OFFSEASON.mechanisms.map((m) => m.name)) expect(rows.includes(n), 'inspector row for ' + n + ': ' + rows)
+    const turret = await page.evaluate(() => { const r = [...document.querySelectorAll('#mech-inspector .mi-row')].find((x: any) => x.querySelector('.mi-name').textContent === 'turret') as any; return { paths: [...r.querySelectorAll('path')].map((p: any) => p.getAttribute('d').length), vals: [...r.querySelectorAll('.mi-cap b')].map((b: any) => b.textContent) } })
+    expect(turret.paths.length === 4 && turret.paths.every((n: number) => n > 10), 'four charts with data: ' + JSON.stringify(turret.paths)); expect(/^6\.0 V$/.test(turret.vals[2]) && /^\d+ A$/.test(turret.vals[3]), 'volts and amps shown: ' + turret.vals)
+    live.volts[8] = 0; await sleep(300)
+  }, page)
+  await check('R18 rebound driving keys drive the robot, the old key stops; the dialog and the robot agree', async () => {
+    await page.click('[data-tab=robot]'); await page.click('#controls-btn'); await page.click('#kb-btn-forward'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('Escape'); await sleep(200)
+    await page.locator('body').click({ position: { x: 4, y: 4 } }); live.joystick.length = 0
+    await page.keyboard.down('ArrowUp'); await sleep(600); const up = live.joystick[live.joystick.length - 1]; await page.keyboard.up('ArrowUp'); await sleep(300)
+    live.joystick.length = 0; await page.keyboard.down('w'); await sleep(500); const w = live.joystick.some((j) => j.axes.some((a) => a !== 0)); await page.keyboard.up('w')
+    await page.keyboard.press('g'); await page.click('#keys-reset'); await page.keyboard.press('Escape'); await sleep(200)
+    expect(up && up.axes[1] === -1, 'ArrowUp pushes the left stick forward: ' + JSON.stringify(up?.axes)); expect(!w, 'W no longer drives after the rebind')
+  }, page)
+  await check('R19 a breakpoint pauses a robot-code sim (its clock stands still while the robot keeps sending), Play continues', async () => {
+    const now = await page.evaluate(() => (window as any).crucible.sim.latest.time)
+    await page.click('[data-tab=analysis]'); await page.check('#bp-time-on'); await page.fill('#bp-time', String(Math.ceil(now) + 2)); await page.press('#bp-time', 'Tab')
+    await page.waitForFunction(() => !(window as any).crucible.sim.running, null, { timeout: 15000 })
+    const t0 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(Math.abs(t0 - (Math.ceil(now) + 2)) < 0.3, `paused near the breakpoint: ${t0} (wanted ${Math.ceil(now) + 2})`)
+    const f0 = live.fromApp; await sleep(800); const t1 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(Math.abs(t1 - t0) < 0.03, 'sim clock frozen: ' + t0 + ' -> ' + t1); expect(live.fromApp > f0 + 10, 'the robot is still being answered')
+    expect((await page.textContent('#bp-last'))!.includes('sim time'), await page.textContent('#bp-last')); await page.uncheck('#bp-time-on')
+    await page.click('#play'); await sleep(1200); const t2 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(t2 > t1 + 0.5, 'Play continues: ' + t1 + ' -> ' + t2)
+    await page.click('[data-tab=session]')
+  }, page)
 
   // ---------- stop
   await check('R15 Stop sim hides the panel and DS controls, then lockstep mode starts clean', async () => {

@@ -6,6 +6,8 @@ import type { EngineSnapshot } from './types'
 import { BridgeSession } from './bridge/session'
 import { OFFSEASON } from '../robots/offseason'
 import { buildSetup } from './setup'
+import { cleanBattery, cleanFaults } from './bridge/faults'
+import { anyBreak, cleanBreaks, matchBreak, NO_BREAKS } from './breaks'
 import { cleanTune } from './tuning'
 
 let frameCount = 0
@@ -15,6 +17,8 @@ let hashedAt = -1 // sim time the cached hash belongs to
 let forceHash = false // the next frame must carry a fresh hash (after a step, reset or load)
 let engine: Engine | null = null
 let bridge: BridgeSession | null = null
+let breaks = { ...NO_BREAKS }
+let breakTimeDone = false
 const SLOTS = 3
 let slots: (EngineSnapshot | null)[] = [null, null, null]
 // a ring of snapshots every half second of sim time (the last minute): rewinding restores one and steps forward to the exact moment
@@ -79,7 +83,20 @@ function rewindTo(t: number): void {
   postFrame()
 }
 
+/** Stops the run because a breakpoint matched: the sim pauses (also the robot's clock in the robot-code modes) and the page is told why. */
+function pauseFor(reason: string): void {
+  running = false
+  budget = 0
+  if (bridge) bridge.paused = true
+  post({ type: 'paused', reason, time: engineTime() })
+}
+
 function postFrame(): void {
+  // with robot code the robot's frames drive the sim, so breakpoints are checked here, once per frame, on what happened since the last one
+  if (bridge && running && anyBreak(breaks) && engine) {
+    const hit = matchBreak(pendingEvents, breaks, engine.time, breakTimeDone)
+    if (hit) { breakTimeDone = hit.timeFired; pauseFor(hit.reason) }
+  }
   if (!engine) return
   frameCount++
   // The hash walks every body, so while the sim runs it is refreshed only every 12th frame. Whenever the sim is paused or was just stepped,
@@ -95,7 +112,8 @@ function postFrame(): void {
     bridge: st && {
       connected: st.connected, frames: st.frames, robotTime: st.robotTime, skipped: st.skipped, robotEnabled: st.robotEnabled, hello: st.helloDevices,
       helloIssues: st.helloIssues, components: st.components, fms: bridge?.fms ?? false, rttMs: (bridge?.rtt ?? 0) * 1000, leadMs: (bridge?.lead ?? 0) * 1000,
-      mechanisms: [...(engine?.mechanisms.values() ?? [])].map((m) => ({ name: m.spec.name, position: m.rotations, velocity: m.rps })),
+      mechanisms: [...(engine?.mechanisms.values() ?? [])].map((m) => ({ name: m.spec.name, position: m.rotations, velocity: m.rps, volts: bridge?.lastMotorVolts.get(m.spec.id) ?? 0, amps: m.supplyAmps })),
+      battery: bridge?.batteryReading ?? { volts: 12, amps: 0 },
     },
   })
 }
@@ -110,7 +128,16 @@ function tick(): void {
     const t0 = performance.now()
     let n = 0
     // never spend more than ~12 ms of a tick stepping, so the loop stays responsive when the load is high
-    while (budget >= dt && performance.now() - t0 < 12) { engine.step(); budget -= dt; n++ }
+    const armed = anyBreak(breaks)
+    let mark = pendingEvents.length
+    while (budget >= dt && performance.now() - t0 < 12) {
+      engine.step(); budget -= dt; n++
+      if (armed) {
+        const hit = matchBreak(pendingEvents.slice(mark), breaks, engine.time, breakTimeDone)
+        if (hit) { breakTimeDone = hit.timeFired; pauseFor(hit.reason); postFrame(); break }
+        mark = pendingEvents.length
+      }
+    }
     if (budget > 0.25) budget = 0 // fell behind: drop the backlog instead of spiraling
     rateWindow.sim += n * dt
     if (n > 0) remember()
@@ -134,11 +161,15 @@ async function handle(m: ToWorker): Promise<void> {
         engine = await Engine.create({ ...setup.config, seed: m.seed })
         slots = [null, null, null]
         ring = []
+        breaks = cleanBreaks(m.breaks)
+        breakTimeDone = false
         pendingEvents = []
         watchEngine(engine)
         remember()
         if (m.mode !== 'script') {
           bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: lockstep ? null : 5810 }, () => {}, OFFSEASON, lockstep ? { dt: engine.dt, speed: speed } : null)
+          bridge.faults = cleanFaults(m.faults)
+          bridge.battery = cleanBattery(m.battery)
           bridge.start()
           running = true
         }
@@ -158,14 +189,17 @@ async function handle(m: ToWorker): Promise<void> {
       case 'joystick': bridge?.setJoystick(m.axes, BigInt(m.buttons), m.pov); break
       case 'speed': speed = m.value; if (bridge?.isLockstep) bridge.speed = m.value; postFrame(); break
       case 'step': if (engine && !bridge) { for (let i = 0; i < m.steps; i++) engine.step(); remember(); forceHash = true; postFrame() } break
-      case 'reset': if (engine) { engine.reset(m.seed); ring = []; remember(); pendingEvents = []; budget = 0; bridge?.seedPose(); forceHash = true; postFrame() } break
+      case 'reset': if (engine) { engine.reset(m.seed); ring = []; remember(); breakTimeDone = breaks.time !== null && engine.time >= breaks.time; pendingEvents = []; budget = 0; bridge?.seedPose(); forceHash = true; postFrame() } break
       case 'save': if (engine) { slots[Math.min(SLOTS - 1, Math.max(0, m.slot ?? 0))] = engine.snapshot(); postFrame() } break
       case 'load': {
         const snap = slots[Math.min(SLOTS - 1, Math.max(0, m.slot ?? 0))]
-        if (engine && snap) { engine.restore(snap); ring = ring.filter((r) => r.time <= engine!.time); remember(); pendingEvents = []; budget = 0; bridge?.seedPose(); forceHash = true; postFrame() }
+        if (engine && snap) { engine.restore(snap); ring = ring.filter((r) => r.time <= engine!.time); remember(); breakTimeDone = breaks.time !== null && engine.time >= breaks.time; pendingEvents = []; budget = 0; bridge?.seedPose(); forceHash = true; postFrame() }
         break
       }
       case 'tune': if (engine) engine.tune(cleanTune(m.params)); break
+      case 'breaks': breaks = cleanBreaks(m.breaks); breakTimeDone = breaks.time !== null && engineTime() >= breaks.time; break
+      case 'faults': if (bridge) bridge.faults = cleanFaults(m.faults); break
+      case 'battery': if (bridge) bridge.battery = cleanBattery(m.battery); break
       case 'rewind': if (engine && !bridge) rewindTo(Math.max(0, engine.time - Math.max(0, m.seconds))); break
       case 'seek': if (engine && !bridge && m.time < engine.time - 1e-9) rewindTo(Math.max(0, m.time)); break
     }
