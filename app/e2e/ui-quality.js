@@ -192,6 +192,16 @@ fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
     const leaks = await page.$$eval('[hidden]', (els) => els.filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.id || e.className || e.tagName)); eq(leaks, [], 'hidden elements that are shown anyway')
     await page.click('#about .primary'); await sleep(300); eq(await page.$eval('#about', (d) => d.open), false, 'Close closes it')
   })
+  await check('Q25 a toast keeps its element while it shows: it is not rebuilt (which replayed its entrance animation every half second), and a repeat only changes its counter', async () => {
+    await page.click('[data-tab=session]'); await ev(() => { for (const t of [...document.querySelectorAll('#toasts .toast')]) t.click() }); await sleep(200)
+    await say('animation check one'); await page.waitForSelector('#toasts .toast'); await ev(() => { document.querySelector('#toasts .toast').__mark = 'same element' })
+    await sleep(1600) // several redraws of the toast layer
+    eq(await ev(() => document.querySelector('#toasts .toast').__mark), 'same element', 'the toast element survived the redraws')
+    const anims = await ev(() => document.getAnimations().filter((a) => a.animationName === 'toast-in' && a.playState === 'running').length); eq(anims, 0, 'no entrance animation is running again')
+    await say('animation check one'); await sleep(200); eq(await ev(() => document.querySelector('#toasts .toast').__mark), 'same element', 'a repeat of the same message reuses the element'); expect((await toasts())[0].includes('×2'), 'with a counter: ' + (await toasts()))
+    await say('animation check two'); await sleep(200); eq(await ev(() => document.querySelector('#toasts .toast').__mark), 'same element', 'a new toast does not touch the old one'); eq((await toasts()).length, 2)
+    await ev(() => { for (const t of [...document.querySelectorAll('#toasts .toast')]) t.click() })
+  })
   await check('Q22 no console errors or page errors during any of this', async () => { eq(errors, [], 'errors') })
 
   await app.close()
