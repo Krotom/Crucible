@@ -20,6 +20,7 @@
       <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 11v5.2M12 7.7v.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6.5 9.5 12 15l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l1.6 2H19a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 19 18H5a1.5 1.5 0 0 1-1.5-1.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
     </svg>
 
@@ -122,7 +123,15 @@
             <label>Components <select id="comp-select"></select></label>
             <button id="focus">Focus robot</button>
           </div>
-          <pre id="simhud" class="simhud" hidden></pre>
+          <div id="simhud" class="simhud" hidden>
+            <button class="simhud-head" aria-expanded="true">
+              <span class="sh-phase"></span>
+              <span class="sh-clock"></span>
+              <span class="sh-score" title="Score: blue, red"><b class="sh-blue">0</b><i>:</i><b class="sh-red">0</b></span>
+              <svg class="i chev"><use href="#i-chevron" /></svg>
+            </button>
+            <div class="simhud-body"></div>
+          </div>
           <div id="drop" class="drop"><div><strong>Drop a .wpilog</strong><span>to open it in BALTA Crucible</span></div></div>
         </div>
         <div id="transport">

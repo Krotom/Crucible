@@ -43,7 +43,7 @@ a lap through the pile. Balls are real rigid bodies (restitution, friction, roll
 robot is a kinematic body that shoves them.
 
 - Play/Pause, speed (0.25x to 8x), Step (10 ms), Reset (with the seed box), Save state / Load state (an in-memory snapshot).
-- The top-right readout shows phase, sim time, rate, score, ball counts and a **state hash**. The same seed gives the same
+- The panel at the top right of the 3D view shows the phase, sim time and score in its header; click the header to fold the details away (it remembers). The details are grouped (Match, Field, Game, Robot, Robot link, Mechanisms, Determinism) with plain labels, and hovering a row explains it. The **state hash** is at the bottom. The same seed gives the same
   hash at the same step on every run, in Node and in the app; restoring a saved state replays the identical future.
 - The sim also publishes `/Sim/*` topics (pose, speed, scores, ball counts) into the topic list and plots.
 - The orange wireframe on the robot is its collision box.

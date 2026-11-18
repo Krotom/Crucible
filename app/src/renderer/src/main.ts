@@ -8,6 +8,8 @@ import { DataStore } from './lib/store'
 import { isNumericType, type Value } from './lib/structs'
 import { parseWpilog } from './lib/wpilog'
 import { LogView } from './lib/robotlog'
+import { SimPanel } from './lib/simpanel'
+import { buildSimModel } from './lib/simmodel'
 import { dismissSplash, setupAbout, setupCapture, setupTabs, setupTheme } from './lib/chrome'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
@@ -259,6 +261,7 @@ function pumpInput(): void {
   sim.send({ type: 'joystick', axes: r.axes, buttons: r.buttons, pov: r.pov })
 }
 
+const simPanel = new SimPanel($('simhud'))
 function simFrame(): void {
   if (robotMode) pumpInput()
   playEl.textContent = sim.running ? 'Pause' : 'Play'
@@ -267,22 +270,7 @@ function simFrame(): void {
   if (!f) return
   time = f.time
   $('time').textContent = `sim ${f.time.toFixed(2)} s`
-  $('simhud').textContent = [
-    `phase  ${f.phase}`,
-    `time   ${f.time.toFixed(2)} s  (${sim.running ? sim.simRate.toFixed(2) + 'x real time' : 'paused'})`,
-    `score  blue ${f.scores.blue}  red ${f.scores.red}`,
-    `balls  ${f.pieceCount} (${f.awakeCount} moving)`,
-    ...(f.impacts.count > 0 ? [`hits   ${f.impacts.count}, hardest ${f.impacts.peak.toFixed(2)} m/s`] : []),
-    ...(f.capture ? [`robot  holds ${f.held.length}  beams ${f.beams.map((b) => (b ? '#' : '.')).join('')}  caught ${f.captured}  shots ${f.shots}${f.capture.active ? '  INTAKE ON' : ''}`] : []),
-    ...Object.entries(f.status).map(([k, v]) => `${k.padEnd(6)} ${v}`),
-    `hash   ${f.hash}`,
-    ...(sim.bridge ? [
-      `robot  ${sim.bridge.connected ? 'connected' : 'waiting for robot'}${sim.bridge.frames ? `, ${sim.bridge.frames} frames, ${sim.bridge.robotEnabled ? 'enabled' : 'disabled'}` : ''}`,
-      `  exchange round trip ${sim.bridge.rttMs.toFixed(1)} ms, lead ${sim.bridge.leadMs.toFixed(1)} ms`,
-      ...sim.bridge.mechanisms.map((m) => `  ${m.name.padEnd(12)} ${m.position.toFixed(3).padStart(8)} rot ${m.velocity.toFixed(2).padStart(7)} rps`),
-      ...sim.bridge.helloIssues.map((i) => `! ${i}`),
-    ] : []),
-  ].join('\n')
+  simPanel.update(buildSimModel(f, { running: sim.running, simRate: sim.simRate, bridge: sim.bridge }))
   plot.build(store)
 }
 
