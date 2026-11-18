@@ -22,6 +22,20 @@ describe('RobotLauncher', () => {
     expect(lines.length).toBe(n) // nothing keeps printing after stop
   })
 
+  it('killNow stops the process at once (the last moments of the app), and does nothing when nothing runs', async () => {
+    const lines: string[] = []
+    const l = new RobotLauncher({ cwd: process.cwd(), command: process.execPath, args: ['-e', "console.log('pid=' + process.pid); setInterval(() => {}, 1000)"], onLog: (x) => lines.push(x), onExit: () => {} })
+    l.killNow() // nothing started yet: no error
+    l.start()
+    await expect.poll(() => lines.some((x) => x.startsWith('pid=')), { timeout: 5000 }).toBe(true)
+    const pid = Number(lines.find((x) => x.startsWith('pid='))!.slice(4))
+    const alive = (): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
+    expect(alive()).toBe(true)
+    l.killNow()
+    await expect.poll(alive, { timeout: 5000 }).toBe(false)
+    l.killNow() // already gone: no error
+  })
+
   it('reports a last line that has no newline before the exit', async () => {
     const lines: string[] = []
     const events: string[] = []

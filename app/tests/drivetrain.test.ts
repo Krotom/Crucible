@@ -34,6 +34,16 @@ function pose(e: Engine): { x: number; y: number; yaw: number; vx: number; vy: n
 }
 
 describe('swerve drivetrain', () => {
+  it('the gyro reads the start heading from the very first state, before any step (a robot that seeds its odometry then must not count a jump as a turn)', async () => {
+    for (const yawDeg of [0, 45, -60, 90, 180]) {
+      const e = await make([], { x: 3, y: 2, yaw: (yawDeg * Math.PI) / 180 })
+      expect(e.drivetrain!.pigeonState().yawDeg, `start ${yawDeg}`).toBeCloseTo(yawDeg, 3)
+      e.step(); e.step()
+      const wrap = (d: number): number => ((d + 540) % 360) - 180
+      expect(wrap(e.drivetrain!.pigeonState().yawDeg - yawDeg), `after two steps from ${yawDeg}`).toBeCloseTo(0, 2) // and it stays with the real heading
+    }
+  })
+
   it('sits still with no voltage', async () => {
     const e = await make()
     e.run(1)

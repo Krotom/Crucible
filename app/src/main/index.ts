@@ -248,5 +248,19 @@ app.whenReady().then(() => {
   if (app.isPackaged) void cleanStale(installTarget(process.platform, process.execPath)) // the leftovers of an interrupted update
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
 })
-app.on('before-quit', () => { void api?.stop(); void launcher?.stop(); void runLog?.close(); staticServer?.close() })
+// Leaving the app stops the robot program it started (and the Gradle and Java processes under it), so no robot simulation is left holding the robot's
+// ports. The quit waits for that to finish (a few seconds at most); only a robot this app launched is touched.
+let quitting = false
+const closeServices = (): void => { void api?.stop(); void runLog?.close(); staticServer?.close() }
+app.on('before-quit', (e) => {
+  if (quitting) return
+  quitting = true
+  if (launcher?.running) {
+    e.preventDefault()
+    void launcher.stop().finally(() => { closeServices(); app.quit() })
+  } else closeServices()
+})
+// every other way out (a signal, a crash, the last exit): a synchronous kill, because nothing can wait for a promise any more
+process.on('exit', () => launcher?.killNow())
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => { launcher?.killNow(); app.quit() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

@@ -49,12 +49,19 @@ export interface BridgePorts {
 /** Lockstep (Mode B): the app owns the clock. dt is the simulated time of one exchange; speed is the multiple of real time (0 = as fast as it goes). */
 export interface LockstepOptions { dt: number; speed?: number }
 
+/**
+ * Message counters tell the robot that a message is new, and the robot ignores a number it has already applied. The robot program outlives the sims the app
+ * starts and stops, so a new session must not reuse the numbers of an earlier one: it counts on from the clock (microseconds), which no earlier session reached.
+ * (Starting from 0 or 1 made the robot drop the first pose seed of every later session: it kept the position of the sim before, and aimed from there.)
+ */
+const sessionBase = (): bigint => BigInt(Math.floor((performance.timeOrigin + performance.now()) * 1000))
+
 export class BridgeSession {
   private ws: WsTransport
   private nt: Nt4Raw | null = null
   private lastRobotTime: number | null = null
   private owed = 0
-  private ctrlCounter = 1n
+  private ctrlCounter = sessionBase() + 1n
   /** Paused: Mode A stops stepping the engine; lockstep stops sending steps (the robot's clock stands still). */
   get paused(): boolean { return this._paused }
   set paused(v: boolean) { this._paused = v; if (!v) this.resumeLockstep() }
@@ -97,7 +104,9 @@ export class BridgeSession {
   batteryReading = { volts: 12, amps: 0 }
   private ds: DsState = { counter: 0n, gameData: '', enabled: false, autonomous: false, test: false, estop: false, dsAttached: true, alliance: 1, station: 1, matchTime: 0 }
   private joystick: JoystickState = { counter: 0n, axes: [0, 0, 0, 0, 0, 0], buttons: 0n, pov: -1 }
-  private poseSeedCounter = 0n
+  private poseSeedCounter = sessionBase()
+  /** lockstep: a pose seed waits for the next state update (see seedPose) */
+  private seedAfterNextState = false
   /** frame count at which a pending pose seed is sent (null when none is pending) */
   private seedAtFrame: number | null = null
   private resetSeen = new Set<number>()
@@ -169,7 +178,10 @@ export class BridgeSession {
    * jump in the wheel distances that odometry integrates as motion.
    */
   seedPose(): void {
-    if (this.lockstep) { if (this.lockstepStarted) this.sendSeed(); return } // between exchanges, so it lands at a known step
+    // Lockstep: the seed goes out right after the next state update (onToAppLockstep) and before the next step, so it lands at a known step. Sent at once it would
+    // reach the robot before the gyro and wheel readings of the new start, and the robot would reset its odometry against the old ones (and then add the difference
+    // to its heading: a turret that aims from the wrong angle after every Reset).
+    if (this.lockstep) { if (this.lockstepStarted) this.seedAfterNextState = true; return }
     this.seedAtFrame = this.status.frames + SEED_DELAY_FRAMES
   }
 
@@ -211,8 +223,8 @@ export class BridgeSession {
 
   private beginLockstep(): void {
     this.lockstepStarted = true
-    this.sendSeed()
     this.sendFromApp(0n, 12) // the state the robot starts from; steps are numbered from 1
+    this.sendSeed() // after it: the robot resets its odometry against these gyro and wheel readings, not the ones of an earlier sim
     this.stepSeq = 0n
     this.paceWall = 0
     this.sendStep()
@@ -278,6 +290,7 @@ export class BridgeSession {
     for (let i = 0; i < n; i++) this.engine.step()
     this.lockstepSteps++
     this.sendFromApp(f.seq, f.batteryVolts)
+    if (this.seedAfterNextState) { this.seedAfterNextState = false; this.sendSeed() }
     if (s.frames % 200 === 0) this.onStatus()
     // pacing: hold the sim clock to speed x wall clock (unlimited when 0)
     const speed = this.lockstep.speed ?? 0

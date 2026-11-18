@@ -245,4 +245,33 @@ describe('bridge session against a fake robot', () => {
     expect(sv.getFloat64(16, true)).toBeCloseTo(4)
     expect(sv.getFloat64(24, true)).toBeCloseTo(1)
   })
+
+  it('a second session never reuses the counters of the first: the robot drops a seed whose number it already applied (the position stayed that of the sim before)', async () => {
+    const counters = (): { seed: bigint[]; ds: bigint[]; joy: bigint[] } => ({
+      seed: robot!.of(MSG_POSE_SEED).map((b) => new DataView(b.buffer, b.byteOffset).getBigUint64(0, true)),
+      ds: robot!.of(MSG_DS).map((b) => new DataView(b.buffer, b.byteOffset).getBigUint64(0, true)),
+      joy: robot!.of(MSG_JOYSTICK).map((b) => new DataView(b.buffer, b.byteOffset).getBigUint64(0, true)),
+    })
+    await setup({ x: 2, y: 4, yaw: 0 })
+    for (let i = 0; i < 25; i++) sendToApp(i, 1 + i * 0.005)
+    await until(() => robot!.of(MSG_POSE_SEED).length >= 1 && robot!.of(MSG_DS).length >= 1 && robot!.of(MSG_JOYSTICK).length >= 1)
+    const first = counters()
+    session!.stop(); session = null
+    await wait(5) // the clock moves on, as it does between two real starts
+    // a second app session towards the same robot program, started somewhere else
+    const e2 = await Engine.create({ game, robot: { half: OFFSEASON_HALF, start: { x: 2.5, y: 2, yaw: 0 }, script: [], drivetrain: OFFSEASON_DRIVETRAIN, mechanisms: OFFSEASON.mechanisms }, seed: 1 })
+    const before = { seed: robot!.of(MSG_POSE_SEED).length, ds: robot!.of(MSG_DS).length, joy: robot!.of(MSG_JOYSTICK).length }
+    session = new BridgeSession(e2, '127.0.0.1', { ws: robot!.port, nt: nt!.port }, () => {}, OFFSEASON)
+    session.start()
+    await until(() => session!.status.connected)
+    for (let i = 0; i < 25; i++) sendToApp(i, 1 + i * 0.005)
+    await until(() => robot!.of(MSG_POSE_SEED).length > before.seed && robot!.of(MSG_DS).length > before.ds && robot!.of(MSG_JOYSTICK).length > before.joy)
+    const all = counters()
+    const maxOf = (a: bigint[]): bigint => a.reduce((m, v) => (v > m ? v : m), 0n)
+    const minOf = (a: bigint[]): bigint => a.reduce((m, v) => (v < m ? v : m), a[0])
+    for (const k of ['seed', 'ds', 'joy'] as const) expect(minOf(all[k].slice(before[k])), `${k}: the second session starts above everything the first sent`).toBeGreaterThan(maxOf(first[k]))
+    const sv = new DataView(robot!.of(MSG_POSE_SEED).at(-1)!.buffer, robot!.of(MSG_POSE_SEED).at(-1)!.byteOffset)
+    expect(sv.getFloat64(8, true)).toBeCloseTo(2.5) // and the seed is the new start
+    expect(sv.getFloat64(16, true)).toBeCloseTo(2)
+  })
 })

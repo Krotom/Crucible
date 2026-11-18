@@ -1,6 +1,6 @@
 // Starts and stops the robot simulation process (a Gradle build running the robot project's simulateJava task) for the app.
 // Plain Node: no Electron imports, so it can be tested with a fake command.
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -74,6 +74,17 @@ export class RobotLauncher {
     if (process.platform === 'win32') spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true })
     else try { process.kill(-pid, 'SIGTERM') } catch { child.kill('SIGTERM') }
     return wait()
+  }
+
+  /** Stops the process tree at once and waits for the kill itself, not for the exit report: for the last moments of the app (an exit handler cannot wait for a promise). Safe when nothing runs. */
+  killNow(): void {
+    const child = this.child
+    const pid = child?.pid
+    if (!child || pid === undefined) return
+    try {
+      if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, timeout: 8000 })
+      else process.kill(-pid, 'SIGTERM')
+    } catch { try { child.kill('SIGTERM') } catch { /* already gone */ } }
   }
 }
 

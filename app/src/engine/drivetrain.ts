@@ -119,6 +119,12 @@ export class Drivetrain {
     this.pitch = pitch; this.roll = roll
   }
 
+  /**
+   * The robot stands at `yaw` before the first step: the gyro must say so from the very first state it sends. Until the first step it would read 0 and then jump
+   * to the real heading, and a robot that resets its odometry in between (the pose seed) counts that jump as a turn and ends up with twice the heading.
+   */
+  setStartYaw(yaw: number): void { this.unwrappedYaw = yaw; this.lastYaw = yaw }
+
   /** Plain-data copy of the dynamic state, for snapshots. Applied voltages are inputs and are not part of it. */
   save(): unknown {
     return { states: this.states.map((s) => ({ ...s })), unwrappedYaw: this.unwrappedYaw, lastYaw: this.lastYaw, lastOmega: this.lastOmega, inertial: [this.accX, this.accY, this.pitch, this.roll, this.pitchRate, this.rollRate] }

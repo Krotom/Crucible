@@ -277,6 +277,7 @@ export class Engine {
     this.robotCollider = this.world.createCollider(bumper, body)
     this.robotMass = driven ? this.drivetrain!.spec.mass : 1
     this.robot = body
+    this.drivetrain?.setStartYaw(r.start.yaw) // the gyro reads the start heading before the first step, not 0
   }
 
   /**
