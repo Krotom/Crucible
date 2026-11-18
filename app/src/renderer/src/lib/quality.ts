@@ -15,7 +15,10 @@ interface Host {
   recentAdd?: (p: string) => Promise<boolean>
   recentForget?: (p: string) => Promise<void>
   recentRead?: (p: string) => Promise<{ name: string; data: ArrayBuffer } | null>
-  checkUpdate?: () => Promise<{ status: string; latest?: string; url?: string; notes?: string; error?: string }>
+  checkUpdate?: () => Promise<{ status: string; latest?: string; url?: string; notes?: string; error?: string; canInstall?: boolean; cannotInstall?: string }>
+  installUpdate?: () => Promise<{ ok: boolean; error?: string }>
+  onUpdateProgress?: (cb: (p: { stage: string; done?: number; total?: number; text: string }) => void) => void
+  appInfo?: () => Promise<{ packaged: boolean; testUpdateUrl: boolean }>
   openExternal?: (u: string) => Promise<boolean>
   setZoom?: (f: number) => void
 }
@@ -152,12 +155,12 @@ export function setupPresets(notify: (t: string) => void): void {
 
 // ---------------------------------------------------------------- preferences: language, colours, text size
 const PREFS_KEY = 'crucible-prefs'
-export interface Prefs extends A11y { lang: Lang }
+export interface Prefs extends A11y { lang: Lang; /** look for a newer release when the app starts */ autoUpdate: boolean }
 export function readPrefs(): Prefs {
   try {
     const v = JSON.parse(store()?.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>
-    return { lang: v.lang === 'tr' ? 'tr' : 'en', colorblind: v.colorblind === true, large: v.large === true }
-  } catch { return { lang: 'en', colorblind: false, large: false } }
+    return { lang: v.lang === 'tr' ? 'tr' : 'en', colorblind: v.colorblind === true, large: v.large === true, autoUpdate: v.autoUpdate !== false }
+  } catch { return { lang: 'en', colorblind: false, large: false, autoUpdate: true } }
 }
 let langObserver: MutationObserver | null = null
 export function applyPrefs(p: Prefs): void {
@@ -187,16 +190,16 @@ export function applyPrefs(p: Prefs): void {
 
 export function setupPrefs(): { open: () => void } {
   const dlg = $<HTMLDialogElement>('prefs')
-  const lang = $<HTMLSelectElement>('pref-lang'), cb = $<HTMLInputElement>('pref-cb'), large = $<HTMLInputElement>('pref-large')
+  const lang = $<HTMLSelectElement>('pref-lang'), cb = $<HTMLInputElement>('pref-cb'), large = $<HTMLInputElement>('pref-large'), auto = $<HTMLInputElement>('pref-autoupdate')
   const p = readPrefs()
-  lang.value = p.lang; cb.checked = p.colorblind; large.checked = p.large
+  lang.value = p.lang; cb.checked = p.colorblind; large.checked = p.large; auto.checked = p.autoUpdate
   applyPrefs(p)
   const change = (): void => {
-    const now: Prefs = { lang: lang.value === 'tr' ? 'tr' : 'en', colorblind: cb.checked, large: large.checked }
+    const now: Prefs = { lang: lang.value === 'tr' ? 'tr' : 'en', colorblind: cb.checked, large: large.checked, autoUpdate: auto.checked }
     try { store()?.setItem(PREFS_KEY, JSON.stringify(now)) } catch { /* not remembered */ }
     applyPrefs(now)
   }
-  for (const e of [lang, cb, large]) e.addEventListener('change', change)
+  for (const e of [lang, cb, large, auto]) e.addEventListener('change', change)
   $('prefs-btn').addEventListener('click', () => { if (!dlg.open) dlg.showModal() })
   dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close() })
   return { open: () => { if (!dlg.open) dlg.showModal() } }
@@ -247,18 +250,54 @@ export function setupUpdates(version: string): void {
   // an updated app announces itself with a toast (not a dialog: it must never block the first click); a first run says nothing
   if (last && last !== version && entriesSince(last, version).length > 0) toast(`Updated to v${version}: click to see what's new`, 'info', () => showWhatsNew(version, last))
   $('whatsnew-btn').addEventListener('click', () => showWhatsNew(version, null))
-  const status = $('update-status'), btn = $<HTMLButtonElement>('update-btn')
-  btn.addEventListener('click', async () => {
-    if (!host().checkUpdate) { status.textContent = 'Update checks are only available in the desktop app.'; return }
-    btn.disabled = true; status.textContent = 'Checking…'
-    const r = await host().checkUpdate!()
-    btn.disabled = false
+  const status = $('update-status'), btn = $<HTMLButtonElement>('update-btn'), actions = $('update-actions'), install = $<HTMLButtonElement>('update-install'), bar = $<HTMLProgressElement>('update-progress')
+  const showResult = (r: NonNullable<Awaited<ReturnType<NonNullable<Host['checkUpdate']>>>>): void => {
     status.textContent = ''
+    actions.hidden = true
     if (r.status === 'newer') {
       status.append(`Version ${r.latest} is available (you have ${version}). `)
-      if (r.url) { const a = document.createElement('a'); a.href = '#'; a.textContent = 'Open the release page'; a.addEventListener('click', (e) => { e.preventDefault(); void host().openExternal?.(r.url!) }); status.appendChild(a) }
+      if (r.canInstall) { actions.hidden = false; install.disabled = false }
+      else {
+        if (r.cannotInstall) status.append(`${r.cannotInstall} `)
+        if (r.url) { const a = document.createElement('a'); a.href = '#'; a.textContent = 'Open the release page'; a.addEventListener('click', (e) => { e.preventDefault(); void host().openExternal?.(r.url!) }); status.appendChild(a) }
+      }
     } else if (r.status === 'current') status.textContent = `You have the latest version (${version}).`
     else if (r.status === 'none') status.textContent = `No release has been published yet (this is ${version}).`
     else status.textContent = r.error ?? 'The check failed.'
+  }
+  const check = async (): Promise<NonNullable<Awaited<ReturnType<NonNullable<Host['checkUpdate']>>>> | null> => {
+    if (!host().checkUpdate) return null
+    return host().checkUpdate!()
+  }
+  btn.addEventListener('click', async () => {
+    if (!host().checkUpdate) { status.textContent = 'Update checks are only available in the desktop app.'; return }
+    btn.disabled = true; status.textContent = 'Checking…'
+    const r = await check()
+    btn.disabled = false
+    if (r) showResult(r)
   })
+  host().onUpdateProgress?.((p) => {
+    status.textContent = p.text
+    bar.hidden = p.stage === 'restart' || (p.stage !== 'download' && p.stage !== 'verify' && p.stage !== 'prepare')
+    if (p.stage === 'download' && p.total) { bar.hidden = false; bar.value = Math.round(((p.done ?? 0) / p.total) * 100); status.textContent = `Downloading… ${Math.round(((p.done ?? 0) / p.total) * 100)}%` } else bar.hidden = true
+  })
+  install.addEventListener('click', async () => {
+    install.disabled = true; btn.disabled = true; status.textContent = 'Starting…'
+    const r = await host().installUpdate!()
+    if (!r.ok) { status.textContent = `The update was not installed: ${r.error ?? 'unknown error'}`; install.disabled = false; btn.disabled = false; bar.hidden = true }
+  })
+  // look for an update when the app starts (at most once a day; only a packaged app, or a test server), and say so with a toast: nothing is downloaded until the user presses Install
+  void (async () => {
+    const info = await host().appInfo?.()
+    if (!info || !readPrefs().autoUpdate || !(info.packaged || info.testUpdateUrl)) return
+    let last = 0
+    try { last = Number(store()?.getItem('crucible-lastcheck') ?? 0) } catch { /* check */ }
+    if (!info.testUpdateUrl && Date.now() - last < 20 * 3600_000) return
+    const r = await check()
+    try { store()?.setItem('crucible-lastcheck', String(Date.now())) } catch { /* not remembered */ }
+    if (r && r.status === 'newer') {
+      showResult(r)
+      toast(`Version ${r.latest} is available: click to install it`, 'info', () => { const d = $<HTMLDialogElement>('about'); if (!d.open) d.showModal() })
+    }
+  })()
 }

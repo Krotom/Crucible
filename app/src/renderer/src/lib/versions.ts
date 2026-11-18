@@ -31,16 +31,27 @@ export function entriesSince(lastSeen: string | null, current: string, log: Rele
   return log.filter((r) => (compareVersions(r.version, current) ?? 1) <= 0 && (lastSeen === null || (compareVersions(r.version, lastSeen) ?? 1) > 0))
 }
 
-export interface UpdateResult { status: 'newer' | 'current' | 'none' | 'error'; latest?: string; url?: string; notes?: string; error?: string }
+export interface ReleaseAsset { name: string; url: string; size: number }
+export interface UpdateResult { status: 'newer' | 'current' | 'none' | 'error'; latest?: string; url?: string; notes?: string; error?: string; /** the files of the release (https download addresses only) */ assets?: ReleaseAsset[] }
 
 /** Reads a GitHub "latest release" API answer. 404 means the repository has no release yet. */
 export function interpretRelease(current: string, httpStatus: number, body: unknown): UpdateResult {
   if (httpStatus === 404) return { status: 'none' }
   if (httpStatus < 200 || httpStatus >= 300) return { status: 'error', error: `The update server answered ${httpStatus}` }
-  const b = body as { tag_name?: unknown; html_url?: unknown; body?: unknown } | null
+  const b = body as { tag_name?: unknown; html_url?: unknown; body?: unknown; assets?: unknown } | null
   const tag = typeof b?.tag_name === 'string' ? b.tag_name : ''
   const cmp = compareVersions(tag, current)
   if (cmp === null) return { status: 'error', error: `Unreadable version "${tag}" from the update server` }
   const url = typeof b?.html_url === 'string' && /^https:\/\//.test(b.html_url) ? b.html_url : undefined
-  return cmp > 0 ? { status: 'newer', latest: tag.replace(/^v/, ''), url, notes: typeof b?.body === 'string' ? b.body.slice(0, 1000) : undefined } : { status: 'current', latest: tag.replace(/^v/, '') }
+  const assets: ReleaseAsset[] = []
+  for (const a of Array.isArray(b?.assets) ? (b!.assets as unknown[]) : []) {
+    const x = a as { name?: unknown; browser_download_url?: unknown; size?: unknown }
+    if (typeof x?.name === 'string' && /^[A-Za-z0-9._-]{1,120}$/.test(x.name) && typeof x.browser_download_url === 'string' && isAllowedUrl(x.browser_download_url) && typeof x.size === 'number' && x.size >= 0) assets.push({ name: x.name, url: x.browser_download_url, size: x.size })
+  }
+  return cmp > 0 ? { status: 'newer', latest: tag.replace(/^v/, ''), url, assets, notes: typeof b?.body === 'string' ? b.body.slice(0, 1000) : undefined } : { status: 'current', latest: tag.replace(/^v/, '') }
+}
+
+/** Download addresses the updater accepts: https, or http on this computer (the test server). */
+export function isAllowedUrl(u: string): boolean {
+  try { const x = new URL(u); return x.protocol === 'https:' || (x.protocol === 'http:' && (x.hostname === '127.0.0.1' || x.hostname === 'localhost')) } catch { return false }
 }

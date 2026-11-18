@@ -1,9 +1,11 @@
 // "Check for updates": asks GitHub for the latest release of the project and compares it with this version. Sends nothing about the user.
-import { interpretRelease, type UpdateResult } from '../renderer/src/lib/versions'
+import { interpretRelease, isAllowedUrl, type UpdateResult } from '../renderer/src/lib/versions'
 
 export const RELEASES_URL = 'https://api.github.com/repos/krotom/crucible/releases/latest'
+/** The address can be pointed at a test server (a local one only), so the update flow can be tried without publishing anything. */
+export function releasesUrl(env: Record<string, string | undefined> = process.env): string { const u = env.CRUCIBLE_UPDATE_URL; return u && isAllowedUrl(u) ? u : RELEASES_URL }
 
-export async function checkForUpdate(current: string, fetchFn: typeof fetch = fetch, url = RELEASES_URL): Promise<UpdateResult> {
+export async function checkForUpdate(current: string, fetchFn: typeof fetch = fetch, url = releasesUrl()): Promise<UpdateResult> {
   try {
     const ctl = new AbortController()
     const timer = setTimeout(() => ctl.abort(), 8000)

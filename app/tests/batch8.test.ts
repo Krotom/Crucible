@@ -85,7 +85,7 @@ describe('versions and the update check', () => {
     expect(CHANGELOG.length).toBeGreaterThan(0)
   })
   it('reads a release answer: newer, current, no release yet, server trouble, junk', () => {
-    expect(interpretRelease('1.1.0', 200, { tag_name: 'v1.2.0', html_url: 'https://github.com/x/y/releases/v1.2.0', body: 'notes' })).toEqual({ status: 'newer', latest: '1.2.0', url: 'https://github.com/x/y/releases/v1.2.0', notes: 'notes' })
+    expect(interpretRelease('1.1.0', 200, { tag_name: 'v1.2.0', html_url: 'https://github.com/x/y/releases/v1.2.0', body: 'notes' })).toEqual({ status: 'newer', latest: '1.2.0', url: 'https://github.com/x/y/releases/v1.2.0', assets: [], notes: 'notes' })
     expect(interpretRelease('1.1.0', 200, { tag_name: 'v1.1.0' })).toEqual({ status: 'current', latest: '1.1.0' }); expect(interpretRelease('1.1.0', 200, { tag_name: 'v1.0.0' }).status).toBe('current')
     expect(interpretRelease('1.1.0', 404, {}).status).toBe('none'); expect(interpretRelease('1.1.0', 500, {}).status).toBe('error'); expect(interpretRelease('1.1.0', 200, { tag_name: 'nightly' }).status).toBe('error'); expect(interpretRelease('1.1.0', 200, null).status).toBe('error')
     expect(interpretRelease('1.1.0', 200, { tag_name: 'v2.0.0', html_url: 'javascript:alert(1)' }).url).toBeUndefined() // only https links are offered

@@ -16,3 +16,8 @@ app/runs/out*/
 app/runs/calibration/
 app/runs/bench.txt
 app/dist-installer/
+
+update-private-key.pem
+app/update-private-key.pem
+dist-release/
+app/dist-release/

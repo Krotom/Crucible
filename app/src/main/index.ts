@@ -8,6 +8,9 @@ import { chooseRobotDir, findSourceFile, openInEditor, parseEnvText, readConfig,
 import { startStaticServer } from './static-server'
 import { RecentFiles } from './recent'
 import { checkForUpdate } from './update'
+import { cannotSelfUpdate, cleanStale, fetchAndVerify, installTarget, prepareSwap, startSwap } from './updater'
+import { UPDATE_PUBLIC_KEY } from './update-key'
+import type { UpdateResult } from '../renderer/src/lib/versions'
 import { ApiServer, API_PORT, newToken, type ApiHandler } from './api'
 import { writeProjectReport } from './projectfiles'
 import { PLUGIN_FILE } from '../engine/plugin'
@@ -136,7 +139,36 @@ ipcMain.handle('recent:read', async (_e, path: string) => {
   const r = await recent.read(path)
   return r ? { name: r.name, data: r.data.buffer.slice(r.data.byteOffset, r.data.byteOffset + r.data.byteLength) } : null
 })
-ipcMain.handle('app:checkUpdate', () => checkForUpdate(app.getVersion()))
+ipcMain.handle('app:info', () => ({ packaged: app.isPackaged, testUpdateUrl: !!process.env.CRUCIBLE_UPDATE_URL }))
+let lastUpdate: UpdateResult | null = null
+let installing = false
+const selfUpdateReason = (): Promise<string | null> => cannotSelfUpdate({ packaged: app.isPackaged, platform: process.platform, execPath: process.execPath })
+ipcMain.handle('app:checkUpdate', async () => {
+  const r = await checkForUpdate(app.getVersion())
+  lastUpdate = r
+  const why = r.status === 'newer' ? await selfUpdateReason() : null
+  return { ...r, canInstall: r.status === 'newer' && why === null, cannotInstall: why ?? undefined }
+})
+// installs the release the last check found (the page never supplies an address): download, check, then swap after the app has quit
+ipcMain.handle('app:installUpdate', async () => {
+  if (installing) return { ok: false, error: 'An update is already being installed' }
+  const r = lastUpdate
+  if (!r || r.status !== 'newer' || !r.assets || !r.latest) return { ok: false, error: 'Check for updates first' }
+  const why = await selfUpdateReason()
+  if (why) return { ok: false, error: why }
+  installing = true
+  try {
+    const target = installTarget(process.platform, process.execPath)!
+    const dir = join(userDir(), 'updates')
+    const verified = await fetchAndVerify({ fetchFn: fetch, assets: r.assets, platform: process.platform, arch: process.arch, version: r.latest, dir, publicKey: UPDATE_PUBLIC_KEY, onProgress: (p) => send('update:progress', p) })
+    send('update:progress', { stage: 'prepare', text: 'Preparing the update…' })
+    const plan = await prepareSwap({ platform: process.platform, target, verified, pid: process.pid, tmpDir: dir })
+    send('update:progress', { stage: 'restart', text: 'Restarting to finish the update…' })
+    startSwap(plan)
+    setTimeout(() => app.quit(), 600)
+    return { ok: true }
+  } catch (e) { installing = false; return { ok: false, error: (e as Error).message } }
+})
 ipcMain.handle('app:openExternal', async (_e, url: string) => { if (typeof url === 'string' && /^https:\/\//.test(url)) { await shell.openExternal(url); return true } return false })
 
 // reports written into the robot project (<project>/crucible/reports), so they can be committed next to the code
@@ -192,6 +224,7 @@ app.whenReady().then(() => {
   if (!gotLock) return
   void createWindow()
   void applyApi() // an API that was left on starts with the app
+  if (app.isPackaged) void cleanStale(installTarget(process.platform, process.execPath)) // the leftovers of an interrupted update
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
 })
 app.on('before-quit', () => { void api?.stop(); void launcher?.stop(); void runLog?.close(); staticServer?.close() })

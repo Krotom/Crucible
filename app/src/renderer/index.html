@@ -459,6 +459,7 @@
         <label class="field"><span>Language</span><select id="pref-lang"><option value="en">English</option><option value="tr">Türkçe</option></select></label>
         <label class="check"><input id="pref-cb" type="checkbox" />Colour-blind-safe colours (blue and orange instead of blue and red)</label>
         <label class="check"><input id="pref-large" type="checkbox" />Larger text and controls</label>
+        <label class="check" title="Looks for a newer release when the app starts (at most once a day). It only tells you: nothing is downloaded until you press Install."><input id="pref-autoupdate" type="checkbox" checked />Look for updates when the app starts</label>
         <h4 class="sub">For tools and scripts</h4>
         <label class="check" title="A local HTTP API on 127.0.0.1 for scripts: read the sim state, start, stop, reset, play, step. Off by default; every request needs the token."><input id="pref-api" type="checkbox" />Local API on 127.0.0.1:5812</label>
         <div id="api-info" class="api-info" hidden>
@@ -529,6 +530,8 @@
         <p class="about-line dim">Runs the robot's own code in the loop with a deterministic physics engine, a rules-aware REBUILT field, scripted runs and calibration.</p>
         <div class="about-actions left"><button type="button" id="update-btn">Check for updates</button><button type="button" id="whatsnew-btn">What's new</button></div>
         <p id="update-status" class="about-line dim small" role="status"></p>
+        <div id="update-actions" class="about-actions left" hidden><button type="button" id="update-install" class="primary">Install the update</button></div>
+        <progress id="update-progress" max="100" hidden></progress>
         <p class="about-line dim small">Built with Rapier (Apache-2.0), three.js (MIT) and uPlot (MIT). The BALTA name, wordmark and emblem belong to BALTA Robotics.</p>
         <div class="about-actions"><button class="primary">Close</button></div>
       </form>
