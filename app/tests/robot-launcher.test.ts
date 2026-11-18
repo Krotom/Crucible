@@ -22,6 +22,29 @@ describe('RobotLauncher', () => {
     expect(lines.length).toBe(n) // nothing keeps printing after stop
   })
 
+  it('reports a last line that has no newline before the exit', async () => {
+    const lines: string[] = []
+    const events: string[] = []
+    const l = new RobotLauncher({
+      cwd: process.cwd(), command: process.execPath, args: ['-e', "process.stdout.write('first\\nBUILD FAILED without newline')"],
+      onLog: (x) => { lines.push(x); events.push('log:' + x) }, onExit: (c) => events.push('exit:' + c),
+    })
+    l.start()
+    await expect.poll(() => events.some((e) => e.startsWith('exit:')), { timeout: 5000 }).toBe(true)
+    expect(lines).toEqual(['first', 'BUILD FAILED without newline'])
+    expect(events[events.length - 1]).toBe('exit:0') // the line comes before the exit
+  })
+
+  it('still reports the exit when a grandchild keeps the output pipe open', async () => {
+    let exited: number | null | undefined
+    const script = "require('child_process').spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 3000)'], { stdio: 'inherit', detached: true }).unref(); console.log('parent done')"
+    const l = new RobotLauncher({ cwd: process.cwd(), command: process.execPath, args: ['-e', script], onLog: () => {}, onExit: (c) => { exited = c } })
+    const t0 = Date.now()
+    l.start()
+    await expect.poll(() => exited, { timeout: 2500 }).toBe(0)
+    expect(Date.now() - t0).toBeLessThan(2500)
+  })
+
   it('builds the simulate command with the bridge enabled and no daemon', () => {
     const c = simulateCommand()
     expect(c.env.CRUCIBLE_BRIDGE).toBe('1')

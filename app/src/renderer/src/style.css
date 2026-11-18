@@ -18,6 +18,8 @@
   --accent-soft: rgba(203, 142, 0, 0.14);
   --ok: #5bd490;
   --danger: #ff6b5e;
+  --blue: #5aa0ff;
+  --red: #ff6b6b;
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   --glass: rgba(17, 19, 22, 0.82);
   color-scheme: dark;
@@ -30,13 +32,15 @@
   --line: #dcd9d3;
   --line-strong: #c6c2ba;
   --text: #15171a;
-  --dim: #636a73;
+  --dim: #565d66;
   --accent: #a87400;
   --accent-hi: #8d6200;
   --accent-ink: #ffffff;
   --accent-soft: rgba(168, 116, 0, 0.12);
   --ok: #1a8f4d;
   --danger: #c93a2e;
+  --blue: #1c63cf;
+  --red: #c8372d;
   --shadow: 0 8px 24px rgba(30, 24, 10, 0.16);
   --glass: rgba(255, 255, 255, 0.86);
   color-scheme: light;
@@ -136,6 +140,8 @@ input[type='range'] { accent-color: var(--accent); padding: 0; height: 18px; }
 #view canvas { display: block; }
 .hud { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); color: var(--dim); font-size: 12px; }
 .hud label { display: flex; align-items: center; gap: 6px; }
+/* while the sim panel is shown it owns the top-right corner: the pose pickers wrap into the space that is left instead of sliding under it */
+#view:has(#simhud:not([hidden])) .hud { flex-wrap: wrap; max-width: calc(100% - 24px - 292px); }
 .hud select { max-width: 220px; color: var(--text); }
 .simhud { position: absolute; right: 12px; top: 12px; width: 280px; max-height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); color: var(--text); overflow: hidden; }
 .simhud-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px 8px 12px; background: transparent; border: none; border-radius: 0; text-align: left; flex: none; }
@@ -144,8 +150,8 @@ input[type='range'] { accent-color: var(--accent); padding: 0; height: 18px; }
 .sh-clock { color: var(--dim); font: 12px ui-monospace, 'Cascadia Mono', Consolas, monospace; font-variant-numeric: tabular-nums; }
 .sh-score { margin-left: auto; font: 700 13px ui-monospace, 'Cascadia Mono', Consolas, monospace; font-variant-numeric: tabular-nums; display: inline-flex; gap: 4px; }
 .sh-score i { color: var(--dim); font-style: normal; }
-.sh-blue { color: #5aa0ff; }
-.sh-red { color: #ff6b6b; }
+.sh-blue { color: var(--blue); }
+.sh-red { color: var(--red); }
 .chev { color: var(--dim); transition: transform 0.15s; }
 .simhud.collapsed .chev { transform: rotate(-90deg); }
 .simhud.collapsed .simhud-body { display: none; }

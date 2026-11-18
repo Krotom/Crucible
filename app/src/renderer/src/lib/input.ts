@@ -14,7 +14,16 @@ export interface JoystickReading {
 const pressed = new Set<string>()
 
 export function installKeyboard(): void {
+  // After a dropdown is used with the mouse (Teleop / Auto / Test, speed) it keeps keyboard focus, and the driving keys would then be ignored
+  // (or type-ahead into the list). Let go of the focus right after a mouse choice; a keyboard user who is working the list keeps it.
+  let pointerAt = -Infinity
+  window.addEventListener('pointerdown', () => { pointerAt = performance.now() }, true)
+  document.addEventListener('change', (e) => {
+    if (e.target instanceof HTMLSelectElement && performance.now() - pointerAt < 15000) e.target.blur()
+  })
   window.addEventListener('keydown', (e) => {
+    pointerAt = -Infinity // the keyboard is in use now
+
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
     pressed.add(e.code)
   })

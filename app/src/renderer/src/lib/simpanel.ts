@@ -55,6 +55,13 @@ export class SimPanel {
     this.head.title = on ? 'Show the simulation details' : 'Hide the simulation details'
   }
 
+  /** Forgets everything shown (a new sim starts, or the sim stopped), so old numbers never flash before the first frame of the next one. */
+  clear(): void {
+    for (const s of this.sections.values()) s.el.remove()
+    this.sections.clear()
+    for (const el of [this.phase, this.clock, this.blue, this.red]) el.textContent = ''
+  }
+
   update(m: PanelModel): void {
     setText(this.phase, m.phase)
     setText(this.clock, m.clock)

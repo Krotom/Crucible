@@ -39,7 +39,22 @@ export class RobotLauncher {
     child.stdout?.on('data', feed)
     child.stderr?.on('data', feed)
     child.on('error', (e) => this.opts.onLog(`launch failed: ${e.message}`))
-    child.on('exit', (code) => { this.child = null; this.opts.onExit(code) })
+    child.on('exit', (code) => {
+      this.child = null
+      // a last line without a newline (a crash message, "BUILD FAILED") is still waiting in `tail`: report it before the exit.
+      // 'close' follows once the pipes are drained; a grandchild that holds them open must not keep the app waiting, so give up after a moment.
+      let done = false
+      const finish = (): void => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        if (tail.trim()) this.opts.onLog(tail)
+        tail = ''
+        this.opts.onExit(code)
+      }
+      const timer = setTimeout(finish, 300)
+      child.once('close', finish)
+    })
   }
 
   /** Stops the process and everything it started. Resolves once it has exited (or after a few seconds). */

@@ -5,6 +5,12 @@ export type LogLevel = 'error' | 'warn' | 'ok' | 'info' | 'sys'
 
 export const MAX_LINES = 5000
 
+/** Removes terminal color / cursor codes (ESC [ ... letter) and stray carriage returns: the log shows plain text, colored by severity instead. */
+export function stripAnsi(line: string): string {
+  // eslint-disable-next-line no-control-regex
+  return line.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/\u001b[@-Z\\-_]/g, '').replace(/\r/g, '')
+}
+
 /** Severity of one line of Gradle / robot output, for coloring. */
 export function classifyLine(line: string): LogLevel {
   if (/^BUILD SUCCESSFUL/.test(line)) return 'ok'
@@ -40,8 +46,9 @@ export class LogView {
   }
 
   /** Adds one line (output of the robot process). */
-  add(text: string, level: LogLevel = classifyLine(text)): void {
-    this.entries.push({ text, level, el: null })
+  add(raw: string, level?: LogLevel): void {
+    const text = stripAnsi(raw)
+    this.entries.push({ text, level: level ?? classifyLine(text), el: null })
     if (this.entries.length > MAX_LINES) {
       const drop = this.entries.splice(0, this.entries.length - MAX_LINES)
       for (const d of drop) d.el?.remove()

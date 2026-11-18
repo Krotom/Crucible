@@ -11,6 +11,8 @@ import { OFFSEASON } from '../robots/offseason'
 
 let frameCount = 0
 let lastHash = ''
+let hashedAt = -1 // sim time the cached hash belongs to
+let forceHash = false // the next frame must carry a fresh hash (after a step, reset or load)
 let engine: Engine | null = null
 let bridge: BridgeSession | null = null
 let snapshot: EngineSnapshot | null = null
@@ -28,7 +30,11 @@ const post = (m: FromWorker): void => (self as unknown as Worker).postMessage(m)
 function postFrame(): void {
   if (!engine) return
   frameCount++
-  const frame = engine.getFrame(frameCount % 12 === 1)
+  // The hash walks every body, so while the sim runs it is refreshed only every 12th frame. Whenever the sim is paused or was just stepped,
+  // reset or loaded, the shown hash must belong to the state shown next to it, so it is recomputed (only when something changed).
+  const wantHash = forceHash || frameCount % 12 === 1 || (!running && engine.time !== hashedAt)
+  const frame = engine.getFrame(wantHash)
+  if (wantHash) { hashedAt = engine.time; forceHash = false }
   if (frame.hash) lastHash = frame.hash
   else frame.hash = lastHash
   const st = bridge?.status
@@ -104,10 +110,10 @@ async function handle(m: ToWorker): Promise<void> {
       case 'ds': bridge?.setDs({ enabled: m.enabled, autonomous: m.autonomous, test: m.test }); break
       case 'joystick': bridge?.setJoystick(m.axes, BigInt(m.buttons), m.pov); break
       case 'speed': speed = m.value; if (bridge?.isLockstep) bridge.speed = m.value; postFrame(); break
-      case 'step': if (engine && !bridge) { for (let i = 0; i < m.steps; i++) engine.step(); postFrame() } break
-      case 'reset': if (engine) { engine.reset(m.seed); budget = 0; bridge?.seedPose(); postFrame() } break
+      case 'step': if (engine && !bridge) { for (let i = 0; i < m.steps; i++) engine.step(); forceHash = true; postFrame() } break
+      case 'reset': if (engine) { engine.reset(m.seed); budget = 0; bridge?.seedPose(); forceHash = true; postFrame() } break
       case 'save': if (engine) { snapshot = engine.snapshot(); postFrame() } break
-      case 'load': if (engine && snapshot) { engine.restore(snapshot); budget = 0; bridge?.seedPose(); postFrame() } break
+      case 'load': if (engine && snapshot) { engine.restore(snapshot); budget = 0; bridge?.seedPose(); forceHash = true; postFrame() } break
     }
   } catch (e) {
     post({ type: 'error', message: (e as Error).message })

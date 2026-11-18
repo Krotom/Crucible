@@ -122,7 +122,8 @@ function updateTransportEnabled(): void {
   $('sim-buttons').hidden = !isSim
   $('ds-controls').hidden = !(isSim && robotMode)
   $<HTMLButtonElement>('sim-step').disabled = robotMode
-  $('simhud').hidden = !isSim
+  $('simhud').hidden = !(isSim && sim.latest) // shown from the first frame on: nothing stale before it
+  if (!isSim) simPanel.clear()
 }
 
 function stopSim(): void {
@@ -225,6 +226,7 @@ $('start-sim').addEventListener('click', () => {
   dsEnabled = false
   $('ds-enable').textContent = 'Enable'
   lastInput = null
+  simPanel.clear()
   sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLSelectElement>('opponent').value as 'none' | 'blocker' | 'cycler', Number($<HTMLSelectElement>('step-dt').value))
   $('start-sim').textContent = 'Stop sim'
   setStatus(lockstepMode ? 'Sim: robot code, lockstep (Mode B)' : robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
@@ -245,7 +247,7 @@ $('ds-mode').addEventListener('change', sendDs)
 $('match-start').addEventListener('click', () => { dsEnabled = false; $('ds-enable').textContent = 'Enable'; sim.send({ type: 'match', run: true }) })
 $('match-end').addEventListener('click', () => sim.send({ type: 'match', run: false }))
 installKeyboard()
-$('sim-step').addEventListener('click', () => sim.send({ type: 'step', steps: 10 }))
+$('sim-step').addEventListener('click', () => sim.send({ type: 'step', steps: Math.max(1, Math.round(0.01 / (sim.ready?.dt ?? 0.002))) })) // always 10 ms of simulated time, as the button says (the running sim's own step, not the dropdown)
 $('sim-reset').addEventListener('click', () => sim.send({ type: 'reset', seed: seedValue() }))
 $('sim-save').addEventListener('click', () => sim.send({ type: 'save' }))
 $('sim-load').addEventListener('click', () => sim.send({ type: 'load' }))
@@ -271,6 +273,7 @@ function simFrame(): void {
   time = f.time
   $('time').textContent = `sim ${f.time.toFixed(2)} s`
   simPanel.update(buildSimModel(f, { running: sim.running, simRate: sim.simRate, bridge: sim.bridge }))
+  if ($('simhud').hidden) $('simhud').hidden = false
   plot.build(store)
 }
 
