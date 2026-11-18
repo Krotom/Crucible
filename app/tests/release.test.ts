@@ -43,6 +43,13 @@ describe('release workflow', () => {
   it('lists checksums for every file, signs when a key is set, refuses to publish unsigned when the app carries a key, and updates files of an existing release', () => {
     expect(yml).toMatch(/sha256sum -- \* > SHA256SUMS\.txt/); expect(yml).toMatch(/sign-release\.mjs dist\/SHA256SUMS\.txt/); expect(yml).toMatch(/BEGIN PUBLIC KEY/); expect(yml).toMatch(/gh release upload "\$TAG" dist\/\* --clobber/); expect(yml).toMatch(/gh release create/)
   })
+  it('gets NSIS for the Windows installer in a way that survives a flaky package feed: cached, retried, and checked before packaging', () => {
+    expect(yml).toMatch(/uses: actions\/cache@v4[\s\S]*path: C:\\Program Files \(x86\)\\NSIS/)
+    const step = yml.slice(yml.indexOf('name: NSIS (Windows installer)'), yml.indexOf('npm run package'))
+    expect(step).toMatch(/for i in 1 2 3 4/); expect(step).toMatch(/choco install nsis[^\n]*\|\| true/); expect(step).toMatch(/\[ ! -f "\$nsis" \]/); expect(step).toMatch(/::error::makensis\.exe was not installed/); expect(step).toMatch(/MAKENSIS=/)
+    expect(yml.indexOf('name: NSIS (Windows installer)')).toBeLessThan(yml.indexOf('npm run package'))
+    expect(read('../scripts/build-installer.mjs')).toMatch(/process\.env\.MAKENSIS/)
+  })
   it('smoke-tests the packaged Linux app and its self-update before publishing', () => {
     expect(yml).toMatch(/scripts\/smoke-packaged\.mjs/); expect(yml).toMatch(/e2e\/update-packaged\.mjs/)
   })

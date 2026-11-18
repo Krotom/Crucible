@@ -170,7 +170,7 @@ const alive = (pid) => { const st = sh(`ps -o stat= -p ${pid}`); return st !== '
     expect(lines[lines.length - 1].startsWith('flood line 20000'), 'last: ' + lines[lines.length - 1])
     expect(!lines.some((l) => l === 'flood line 1'), 'oldest line should be dropped')
     expect((await page.textContent('#log-count')) === '5000 lines', await page.textContent('#log-count'))
-    const t0 = Date.now(); await page.click('[data-tab=topics]'); await page.click('[data-tab=robot]'); expect(Date.now() - t0 < 1500, 'UI sluggish after flood')
+    const t0 = Date.now(); await page.click('[data-tab=topics]'); await page.click('[data-tab=robot]'); expect(Date.now() - t0 < 1500 * Math.max(1, Number(process.env.E2E_SLOW) || 1), 'UI sluggish after flood: ' + (Date.now() - t0) + ' ms')
     const bottom = await page.$eval('#robot-log', (e) => e.scrollHeight - e.scrollTop - e.clientHeight)
     expect(bottom < 30, 'follow should keep the bottom in view, off by ' + bottom)
   })

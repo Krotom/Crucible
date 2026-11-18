@@ -68,6 +68,17 @@ describe('layout (6.3.4)', () => {
     expect(inPile.length).toBeGreaterThanOrEqual(404)
     expect(ids.every((id) => e.pieceState(id)!.sleeping)).toBe(true) // at rest, costing nothing
   })
+  it('puts each DEPOT against its own alliance wall, blue on the +y side and red on the -y side (mirrored across the long axis from the first version)', async () => {
+    const e = await Engine.create({ game: createRebuiltGame({ preload: 0 }), robot: robot({ x: 1, y: 7, yaw: 0 }), seed: 1 })
+    const pos = e.pieceIds.map((id) => e.pieceState(id)!.position)
+    const L = 16.541, W = 8.069
+    const blueDepot = pos.filter((p) => p[0] < 0.7), redDepot = pos.filter((p) => p[0] > L - 0.7) // against the alliance walls, clear of the pile
+    expect(blueDepot).toHaveLength(24); expect(redDepot).toHaveLength(24)
+    const mean = (v: number[]): number => v.reduce((a, b) => a + b, 0) / v.length
+    expect(mean(blueDepot.map((p) => p[1]))).toBeCloseTo(W - 2.0, 1) // blue: the +y side
+    expect(mean(redDepot.map((p) => p[1]))).toBeCloseTo(2.0, 1) // red: the -y side
+    for (const p of [...blueDepot, ...redDepot]) { expect(p[1]).toBeGreaterThan(0.5); expect(p[1]).toBeLessThan(W - 0.5) } // inside the field
+  })
 })
 
 describe('scoring', () => {

@@ -19,7 +19,8 @@ const run = (cmd, args, opts = {}) => {
   if (r.status !== 0) { console.error(`failed: ${cmd} ${args.join(' ')}`); process.exit(r.status ?? 1) }
 }
 
-const makensis = [process.env.MAKENSIS, 'C:\\Program Files (x86)\\NSIS\\makensis.exe', 'C:\\Program Files\\NSIS\\makensis.exe'].filter(Boolean).find((p) => fs.existsSync(p))
+const onPath = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean).map((d) => path.join(d, 'makensis.exe'))
+const makensis = [process.env.MAKENSIS, 'C:\\Program Files (x86)\\NSIS\\makensis.exe', 'C:\\Program Files\\NSIS\\makensis.exe', ...onPath].filter(Boolean).find((p) => fs.existsSync(p))
 if (!makensis) { console.error('NSIS not found: install it or set MAKENSIS to makensis.exe'); process.exit(1) }
 
 if (!process.argv.includes('--skip-build')) run(process.execPath, [path.join(app, 'node_modules', 'electron-vite', 'bin', 'electron-vite.js'), 'build'])

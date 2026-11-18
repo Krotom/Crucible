@@ -22,6 +22,7 @@ const SENSOR_Z = HUB_RIM - 0.23 // ASSUMED: the depth of the sensor array below 
 const GUARDRAIL_H = 20 * IN // 0.508 m (5.2)
 const BUMP = { width: 73 * IN, depth: 44.4 * IN, height: 6.513 * IN } // 5.5
 const DEPOT = { width: 42 * IN, depth: 27 * IN } // 5.7
+const DEPOT_OFFSET = 2.0 // ASSUMED: the depot centre's distance from the near field edge (the drawings give the real one)
 
 /** FUEL: 5.91 in, 0.203 to 0.227 kg (5.10); bounce and friction are not stated, so these are calibration guesses (M12). */
 export const FUEL: PieceSpec = {
@@ -189,10 +190,11 @@ function layout(rng: () => number, preload: number, neutralFuel: number): PieceS
   for (const c of cells.slice(0, total)) {
     out.push({ spec: 'ball', asleep: true, position: [c[0] + (rng() - 0.5) * 0.002, c[1] + (rng() - 0.5) * 0.002, FUEL.radius] })
   }
-  // DEPOTS: 24 FUEL each along the alliance wall. ASSUMED position (the drawings give it): blue at y = 2.0, red at the point-symmetric spot.
+  // DEPOTS: 24 FUEL each along the alliance wall. ASSUMED position (the drawings give it): blue on the +y side of its wall (y = width - 2.0), red at the point-symmetric spot (y = 2.0).
+  // (An earlier version had them the other way round: mirrored across the long axis of the field, each still against its own alliance wall.)
   for (const a of ['blue', 'red'] as const) {
     const cx = a === 'blue' ? DEPOT.depth / 2 : FIELD_LENGTH - DEPOT.depth / 2
-    const cy = a === 'blue' ? 2.0 : FIELD_WIDTH - 2.0
+    const cy = a === 'blue' ? FIELD_WIDTH - DEPOT_OFFSET : DEPOT_OFFSET
     for (let k = 0; k < 24; k++) {
       const i = k % 4
       const j = Math.floor(k / 4)

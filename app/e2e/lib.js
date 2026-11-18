@@ -22,7 +22,10 @@ exports.check = async (name, fn) => {
 }
 exports.expect = (cond, msg) => { if (!cond) throw new Error(msg || 'expectation failed') }
 exports.eq = (a, b, msg) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg || 'not equal'}: got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`) }
-exports.sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// E2E_SLOW multiplies every fixed wait: a CI runner has fewer CPUs than a desk machine and the page (software WebGL) answers later
+// Only short waits are stretched: a long sleep is usually a duration ("play for 3 s") that a test's numbers depend on.
+exports.slow = Number(process.env.E2E_SLOW) || 1
+exports.sleep = (ms) => new Promise((r) => setTimeout(r, ms <= 800 ? ms * exports.slow : ms))
 exports.summary = () => {
   const c = { PASS: 0, NOTE: 0, FAIL: 0 }
   for (const r of results) c[r.status]++
@@ -48,6 +51,9 @@ exports.launch = async (extraEnv = {}, opts = {}) => {
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message))
   page.on('console', (m) => { if (m.type() === 'error' && !/404/.test(m.text())) errors.push('console: ' + m.text()) })
   await page.waitForSelector('#start-sim', { timeout: 30000 })
+  await page.waitForFunction(() => !!window.crucible, null, { timeout: 60000 }) // the page's script sets this last; a slow runner shows the controls long before
+  // The match-summary popup is modal: a sim that runs to its end on a slow machine would open it and block every later click. Suites that test the popup ask for it.
+  if (!opts.popup) await page.evaluate(() => { const c = document.getElementById('an-popup'); if (c && c.checked) { c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })) } })
   exports.setPage(page)
   return { app, page, errors, userData }
 }

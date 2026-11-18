@@ -29,6 +29,10 @@ describe('toasts', () => {
     const q = new ToastQueue(); expect(q.push('   ')).toBeNull(); const t = q.push('hello', 'info', 0)!; q.dismiss(t.id); expect(q.visible(1)).toEqual([])
     expect(kindOf('Could not open x.wpilog')).toBe('error'); expect(kindOf('Saved /tmp/a.png')).toBe('ok'); expect(kindOf('Nothing is plotted yet')).toBe('warn'); expect(kindOf('Paused: shot')).toBe('warn'); expect(kindOf('Reference log a')).toBe('info')
   })
+  it('shows a toast that asks for a click longer than a note, and a repeat keeps the longer time', () => {
+    const q = new ToastQueue(); q.push('Updated: click here', 'info', 0, 30_000); q.push('plain', 'info', 0)
+    expect(q.visible(10_000).map((t) => t.text)).toEqual(['Updated: click here']); expect(q.visible(29_000)).toHaveLength(1); expect(q.visible(31_000)).toEqual([])
+  })
   it('keeps a bounded history', () => { const q = new ToastQueue(4, 3); for (let i = 0; i < 10; i++) q.push('m' + i, 'info', 0); expect(q.history.map((h) => h.text)).toEqual(['m7', 'm8', 'm9']) })
 })
 

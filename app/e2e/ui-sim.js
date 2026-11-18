@@ -14,7 +14,10 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
   const head = () => page.$eval('.simhud-head', (e) => ({ phase: e.querySelector('.sh-phase').textContent, clock: e.querySelector('.sh-clock').textContent, blue: e.querySelector('.sh-blue').textContent, red: e.querySelector('.sh-red').textContent }))
   const simT = async () => Number((await rows())['Sim time'].replace(' s', ''))
   const hash = async () => (await rows())['State hash']
-  const settle = () => sleep(250)
+  // the page shows the sim time a little after the worker has it (much later on a busy machine): wait until it stops changing and the panel shows the latest frame
+  const settle = async () => { let last = null, same = 0; for (let i = 0; i < 150 && same < 3; i++) { const now = await page.evaluate(() => [crucible.sim.latest ? crucible.sim.latest.time.toFixed(2) : '', (document.querySelector('.simhud .kv .v') && [...document.querySelectorAll('.simhud .kv')].find((r) => r.querySelector('.k').textContent === 'Sim time')?.querySelector('.v').textContent.replace(' s', '')) || '']); same = now[0] === last && now[0] === now[1] ? same + 1 : 0; last = now[0]; await sleep(120) } }
+  // press a button that changes the sim time (Step, back 1 s ...) and wait for the new time to arrive before reading it
+  const press = async (sel) => { const before = await page.evaluate(() => crucible.sim.latest.time); await page.click(sel); await page.waitForFunction((b) => crucible.sim.latest.time !== b, before, { timeout: 20000 }); await settle() }
   const startSim = async (opts = {}) => {
     if ((await page.textContent('#start-sim')) === 'Stop sim') { await page.click('#start-sim'); await sleep(200) }
     if (opts.game) await page.selectOption('#game-select', opts.game)
@@ -49,16 +52,16 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
   })
   await check('S3 Step button advances by what its label says (10 ms)', async () => {
     await startSim({ game: 'test', seed: 42, dt: '0.002' })
-    await page.click('#sim-step'); await settle(); const d1 = await simT()
-    await page.click('#sim-step'); await settle(); const d2 = (await simT()) - d1
+    await press('#sim-step'); const d1 = await simT()
+    await press('#sim-step'); const d2 = (await simT()) - d1
     const label = await page.getAttribute('#sim-step', 'title')
     expect(Math.abs(d2 - 0.01) < 0.0005, `label says "${label}" but one click advances ${(d2 * 1000).toFixed(0)} ms at 2 ms step`)
   })
   await check('S4 Step stays 10 ms at a 5 ms physics step (and ignores a dropdown change after start)', async () => {
     await startSim({ game: 'test', seed: 42, dt: '0.005' })
-    await page.click('#sim-step'); await settle()
+    await press('#sim-step')
     const t = await simT(); expect(Math.abs(t - 0.01) < 1e-6, `one Step = ${(t * 1000).toFixed(0)} ms at the 5 ms setting (label says 10 ms)`)
-    await page.selectOption('#step-dt', '0.001'); await page.click('#sim-step'); await settle()
+    await page.selectOption('#step-dt', '0.001'); await press('#sim-step')
     expect(Math.abs((await simT()) - 0.02) < 1e-6, 'changing the dropdown after start must not change what Step does: ' + (await simT()))
   })
   await check('S5 Determinism: same seed + same steps gives the same hash, other seed differs', async () => {
@@ -195,8 +198,8 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
     eq(await page.inputValue('#pose-select'), '/Swerve/Pose')
     expect(await page.$eval('#seek', (e) => !e.disabled), 'seek enabled')
     eq(await page.textContent('#time'), '0.00 / 10.00 s')
-    await page.click('#play'); await sleep(1500); await page.click('#play')
-    const t = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t > 0.8 && t < 2.5, 'played ' + t + ' s in 1.5 s')
+    const w0 = Date.now(); await page.click('#play'); await sleep(1500); await page.click('#play'); const wall = (Date.now() - w0) / 1000
+    const t = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t > Math.min(0.8, wall * 0.3) && t < wall + 1, `played ${t} s in ${wall.toFixed(1)} s of wall time (a busy runner may play less, never more)`)
     await page.$eval('#seek', (e) => { e.value = '0.5'; e.dispatchEvent(new Event('input', { bubbles: true })) }); await sleep(300)
     const t2 = parseFloat((await page.textContent('#time')).split('/')[0]); expect(Math.abs(t2 - 5) < 0.3, 'seek to half gave ' + t2)
     await page.click('[data-tab=topics]'); await page.click('#topics .topic.plottable'); await settle(); expect(await page.$('#plot .uplot'), 'plot')
@@ -205,6 +208,7 @@ fs.writeFileSync(OUT + '/empty.wpilog', Buffer.alloc(0))
   await check('L2 Play at the end restarts from the beginning; speed 8x finishes sooner', async () => {
     await page.selectOption('#speed', '8'); await page.click('#play'); await page.waitForFunction(() => document.getElementById('play').textContent === 'Play', null, { timeout: 8000 })
     const t = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t >= 9.9, 'ended at ' + t)
+    await page.selectOption('#speed', '1') // at 8x a busy page could already be seconds in
     await page.click('#play'); await sleep(300); const t2 = parseFloat((await page.textContent('#time')).split('/')[0]); expect(t2 < 5, 'restart from start, got ' + t2)
     await page.click('#play'); await page.selectOption('#speed', '1')
   })

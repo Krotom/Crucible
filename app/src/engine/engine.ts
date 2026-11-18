@@ -504,7 +504,25 @@ export class Engine {
     return out
   }
 
+  /** wall time spent in step(), since the last takeStepStats(): only for the performance readout, never read by the simulation */
+  private stepWall = { sum: 0, max: 0, n: 0 }
+  takeStepStats(): { avgMs: number; worstMs: number; steps: number } {
+    const w = this.stepWall
+    const r = { avgMs: w.n > 0 ? w.sum / w.n : 0, worstMs: w.max, steps: w.n }
+    this.stepWall = { sum: 0, max: 0, n: 0 }
+    return r
+  }
+
   step(): void {
+    const t0 = performance.now()
+    this.stepInner()
+    const ms = performance.now() - t0
+    const w = this.stepWall
+    w.sum += ms; w.n++
+    if (ms > w.max) w.max = ms
+  }
+
+  private stepInner(): void {
     for (const [id, m] of this.mechanisms) m.step(this.dt, this.mechanismVolts.get(id) ?? 0)
     const v0 = this.robot.linvel()
     if (this.drivetrain) this.driveFromMotors()
@@ -514,8 +532,7 @@ export class Engine {
     this.world.step()
     this.stepCount++
     this.senseChassis(v0)
-    this.pile?.step()
-    this.checkSensors()
+    this.observePieces()
     this.ballSystem?.step()
     this.flushRemovals()
     this.updatePhase()
@@ -689,9 +706,9 @@ export class Engine {
     const fastSpeed = this.tuning.fastSpeed ?? 3
     this.forEachActivePiece((p, b) => {
       const sp = p.spec
-      if (fastCcd) { const lv = b.linvel(); b.enableCcd(lv.x * lv.x + lv.y * lv.y + lv.z * lv.z > fastSpeed * fastSpeed) }
-      if (sp.dragCoefficient === 0 && !sp.magnus && !sp.restitutionCurve) return
       const v = b.linvel()
+      if (fastCcd) b.enableCcd(v.x * v.x + v.y * v.y + v.z * v.z > fastSpeed * fastSpeed)
+      if (sp.dragCoefficient === 0 && !sp.magnus && !sp.restitutionCurve) return
       const speed = Math.hypot(v.x, v.y, v.z)
       if (sp.restitutionCurve) b.collider(0).setRestitution(sp.restitution * interp(sp.restitutionCurve, speed))
       b.resetForces(false)
@@ -722,12 +739,20 @@ export class Engine {
     })
   }
 
-  private checkSensors(): void {
+  /**
+   * After the world step: one walk over the awake pieces for the pile manager (rest and thaw decisions) and the sensors, reading each body's
+   * position and velocity once. The pile's freezes and thaws are applied after the walk, and sensor events are handled after it too, so a game
+   * module may spawn or remove pieces freely.
+   */
+  private observePieces(): void {
     const sensors = this.game.field().sensors
-    if (sensors.length === 0) return
+    const pile = this.pile
+    if (!pile && sensors.length === 0) return
     const events: GameEvent[] = []
+    pile?.begin()
     this.forEachActivePiece((p, b) => {
       const t = b.translation()
+      if (pile) pile.observe(p.id, t, b.linvel(), b)
       for (const s of sensors) {
         const set = this.sensorInside.get(s.id)!
         const inside = insideBox(t, s)
@@ -741,7 +766,7 @@ export class Engine {
         }
       }
     })
-    // events are handled after the walk, so a game module may spawn or remove pieces freely
+    pile?.end()
     for (const e of events) this.emit(e)
   }
 

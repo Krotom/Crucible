@@ -25,14 +25,14 @@ fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
     await page.screenshot({ path: OUT + '/toasts.png' })
   })
   await check('Q2 the same message twice becomes one toast with a counter; clicking a toast dismisses it; the kind follows the words', async () => {
-    for (let i = 0; i < 6 && (await toasts()).length; i++) { await page.click('#toasts .toast'); await sleep(80) }; eq(await toasts(), [], 'every toast can be dismissed by a click')
+    for (let i = 0; i < 8 && (await toasts()).length; i++) { await page.evaluate(() => document.querySelector('#toasts .toast')?.click()); await sleep(80) }; eq(await toasts(), [], 'every toast can be dismissed by a click')
     await say('Saved /tmp/a.png'); await sleep(60); await say('Saved /tmp/a.png'); await sleep(100)
     const t = await page.$$eval('#toasts .toast', (x) => x.map((e) => ({ text: e.textContent, cls: e.className }))); eq(t.length, 1); expect(t[0].text.includes('×2'), 'counter: ' + t[0].text); expect(t[0].cls.includes('ok'), 'saved is ok: ' + t[0].cls)
     await say('Could not open x.wpilog'); await sleep(100); expect((await page.$$eval('#toasts .toast.error', (x) => x.length)) === 1, 'error styled')
-    await page.click('#toasts .toast.error'); await sleep(100); eq(await page.$$eval('#toasts .toast.error', (x) => x.length), 0, 'dismissed by a click')
+    await page.evaluate(() => document.querySelector('#toasts .toast.error')?.click()); await sleep(100); eq(await page.$$eval('#toasts .toast.error', (x) => x.length), 0, 'dismissed by a click')
   })
   await check('Q3 toasts fade by themselves (info after about 4 s) and an error outlives an info message', async () => {
-    for (let i = 0; i < 6 && (await toasts()).length; i++) { await page.click('#toasts .toast'); await sleep(80) }
+    for (let i = 0; i < 8 && (await toasts()).length; i++) { await page.evaluate(() => document.querySelector('#toasts .toast')?.click()); await sleep(80) }
     await say('plain info'); await say('Failed: something'); await sleep(5200)
     const left = await toasts(); expect(!left.includes('plain info'), 'info faded: ' + left); expect(left.includes('Failed: something'), 'error still showing: ' + left)
     await sleep(5000); eq(await toasts(), [], 'everything faded')
@@ -162,7 +162,7 @@ fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
     await ev(() => localStorage.removeItem('crucible-lastseen')); await reload(); eq((await toasts()).filter((t) => t.includes('Updated to')).length, 0, 'first run: silent'); eq(await ev(() => localStorage.getItem('crucible-lastseen')), '1.1.0')
     await ev(() => localStorage.setItem('crucible-lastseen', '1.0.0')); await reload()
     expect((await toasts()).some((t) => t.includes('Updated to v1.1.0')), 'toast: ' + (await toasts())); eq(await page.$eval('#whatsnew', (d) => d.open), false, 'no dialog in the way')
-    await page.click('#toasts .toast'); await page.waitForSelector('#whatsnew[open]'); expect((await T('#whatsnew-body')).includes('1.1.0'), await T('#whatsnew-body')); await page.keyboard.press('Escape')
+    await page.evaluate(() => document.querySelector('#toasts .toast')?.click()); await page.waitForSelector('#whatsnew[open]'); expect((await T('#whatsnew-body')).includes('1.1.0'), await T('#whatsnew-body')); await page.keyboard.press('Escape')
     await reload(); eq((await toasts()).filter((t) => t.includes('Updated to')).length, 0, 'only once')
   })
   await check('Q21 About: What\'s new button and an update check that says what happened in words (newer, current, none yet, unreachable)', async () => {
@@ -183,6 +183,24 @@ fs.writeFileSync(LOG1, makeLog(6)); fs.writeFileSync(LOG2, makeLog(8))
     await page.keyboard.press('Escape'); await page.click('#prefs-btn'); expect(await page.isChecked('#pref-autoupdate'), 'on by default'); await page.uncheck('#pref-autoupdate'); await page.keyboard.press('Escape')
     await reload(); await page.click('#prefs-btn'); expect(!(await page.isChecked('#pref-autoupdate')), 'kept after a reload'); await page.check('#pref-autoupdate'); await page.keyboard.press('Escape')
     const r = await ev(() => window.crucibleHost.installUpdate()); expect(r.ok === false && /Check for updates first|development/.test(r.error), 'installing without a packaged app is refused: ' + JSON.stringify(r))
+  })
+  await check('Q24 the About box shows one Close button and no install button until an update is found (hidden stays hidden whatever the CSS says)', async () => {
+    await page.click('#about-btn'); await page.waitForSelector('#about[open]')
+    eq(await page.$$eval('#about button.primary', (b) => b.filter((x) => x.offsetParent !== null).map((x) => x.textContent.trim())), ['Close'], 'only Close is visible')
+    eq(await page.isVisible('#update-actions'), false, 'no install row'); eq(await page.isVisible('#update-progress'), false, 'no progress bar')
+    // every element that carries the hidden attribute in the page is really not displayed
+    const leaks = await page.$$eval('[hidden]', (els) => els.filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.id || e.className || e.tagName)); eq(leaks, [], 'hidden elements that are shown anyway')
+    await page.click('#about .primary'); await sleep(300); eq(await page.$eval('#about', (d) => d.open), false, 'Close closes it')
+  })
+  await check('Q25 a toast keeps its element while it shows: it is not rebuilt (which replayed its entrance animation every half second), and a repeat only changes its counter', async () => {
+    await page.click('[data-tab=session]'); await ev(() => { for (const t of [...document.querySelectorAll('#toasts .toast')]) t.click() }); await sleep(200)
+    await say('animation check one'); await page.waitForSelector('#toasts .toast'); await ev(() => { document.querySelector('#toasts .toast').__mark = 'same element' })
+    await sleep(1600) // several redraws of the toast layer
+    eq(await ev(() => document.querySelector('#toasts .toast').__mark), 'same element', 'the toast element survived the redraws')
+    const anims = await ev(() => document.getAnimations().filter((a) => a.animationName === 'toast-in' && a.playState === 'running').length); eq(anims, 0, 'no entrance animation is running again')
+    await say('animation check one'); await sleep(200); eq(await ev(() => document.querySelector('#toasts .toast').__mark), 'same element', 'a repeat of the same message reuses the element'); expect((await toasts())[0].includes('×2'), 'with a counter: ' + (await toasts()))
+    await say('animation check two'); await sleep(200); eq(await ev(() => document.querySelector('#toasts .toast').__mark), 'same element', 'a new toast does not touch the old one'); eq((await toasts()).length, 2)
+    await ev(() => { for (const t of [...document.querySelectorAll('#toasts .toast')]) t.click() })
   })
   await check('Q22 no console errors or page errors during any of this', async () => { eq(errors, [], 'errors') })
 

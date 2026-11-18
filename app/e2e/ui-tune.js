@@ -95,6 +95,13 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
     await page.click('[data-tab=session]'); await sleep(200)
     const r = await ev(() => { const t = document.querySelector('.tabs'); return { sw: t.scrollWidth, cw: t.clientWidth, last: document.querySelector('.tab[data-tab=tune]').getBoundingClientRect().right, side: document.querySelector('.sidebar').getBoundingClientRect().right } })
     expect(r.sw <= r.cw + 1 && r.last <= r.side, 'tabs overflow: ' + JSON.stringify(r))
+    // the page's own font (Segoe UI) is not on Linux, where the fallback is wider: the row must still fit with the widest common fallbacks
+    for (const font of ['DejaVu Sans', 'Verdana', 'Liberation Sans']) {
+      await ev((f) => { document.documentElement.style.fontFamily = f; document.body.style.fontFamily = f }, `"${font}", sans-serif`); await sleep(150)
+      const w = await ev(() => { const t = document.querySelector('.tabs'); return { sw: t.scrollWidth, cw: t.clientWidth, last: document.querySelector('.tab[data-tab=tune]').getBoundingClientRect().right, side: document.querySelector('.sidebar').getBoundingClientRect().right } })
+      expect(w.sw <= w.cw + 1 && w.last <= w.side, `tabs overflow with ${font}: ${JSON.stringify(w)}`)
+    }
+    await ev(() => { document.documentElement.style.fontFamily = ''; document.body.style.fontFamily = '' })
     for (const t of ['session', 'robot', 'topics', 'analysis', 'tune']) { await page.click(`[data-tab=${t}]`); expect(!(await page.$eval('#tab-' + t, (e) => e.hidden)), t + ' reachable') }
     await page.click('[data-tab=session]')
   })

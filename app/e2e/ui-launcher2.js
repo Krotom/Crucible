@@ -31,6 +31,9 @@ function makeProject(dir, { patched }) {
   const logLines = () => page.$$eval('#robot-log .ln', (els) => els.map((e) => e.textContent))
   await page.click('[data-tab=robot]')
   const pickStub = (result) => app.evaluate(({ dialog }, r) => { dialog.showOpenDialog = async () => r }, result)
+  // Switching the project and running Check project both go through the main process (and `java -version`): wait for the result, not for a guess of how long it takes
+  const useProject = async (dir) => { await page.selectOption('#recent-dirs', dir); await page.waitForFunction(async (d) => String((await window.crucibleHost.getRobotDir()).dir ?? '').replace(/\\/g, '/') === d.replace(/\\/g, '/'), dir, { timeout: 20000 }) }
+  const runCheck = async () => { const before = await page.textContent('#checks-sum'); await page.click('#check-project'); await page.waitForFunction((b) => { const t = document.getElementById('checks-sum').textContent; return t !== b && t.length > 0 && document.querySelectorAll('#checks li').length > 0 }, before, { timeout: 30000 }) }
   const waitRunning = () => page.waitForFunction(() => /^Running/.test(document.getElementById('run-phase').textContent), null, { timeout: 15000 })
   const stopRobot = async () => { if ((await T('#launch-robot')) === 'Stop robot') { await page.click('#launch-robot'); await page.waitForFunction(() => document.getElementById('launch-robot').textContent === 'Launch robot', null, { timeout: 10000 }); await sleep(300) } }
   const userCfg = () => { try { return JSON.parse(fs.readFileSync(userData + '/crucible.config.json', 'utf8')) } catch { return {} } }
@@ -57,13 +60,13 @@ function makeProject(dir, { patched }) {
     eq(userCfg().robotDir, patched)
   })
   await check('P4 Check project: a patched project is all green, lockstep adds its layer; the plain one lists what is missing', async () => {
-    await page.click('#check-project'); await sleep(900)
+    await runCheck()
     let rows = await page.$$eval('#checks li', (l) => l.map((x) => [x.className, x.querySelector('.mk').textContent, x.firstElementChild.nextSibling.firstChild.textContent]))
     eq(rows.map((r) => r[0]), ['ok', 'ok', 'ok', 'ok', 'ok'], 'all ok: ' + JSON.stringify(rows)); eq(rows.map((r) => r[1]).join(''), '✓✓✓✓✓')
     eq(await T('#checks-sum'), '✓ 5 of 5 checks passed'); expect(!(await page.$eval('#checks-box', (d) => d.open)), 'collapsed to one line when everything is fine')
-    await page.selectOption('#sim-mode', 'lockstep'); await page.click('#check-project'); await sleep(900)
+    await page.selectOption('#sim-mode', 'lockstep'); await runCheck()
     eq(await page.$$eval('#checks li', (l) => l.length), 6, 'lockstep row added')
-    await page.selectOption('#recent-dirs', plain); await sleep(400); await page.click('#check-project'); await sleep(900)
+    await useProject(plain); await runCheck()
     rows = await page.$$eval('#checks li', (l) => l.map((x) => [x.className, x.querySelector('.dt').textContent]))
     expect(await page.$eval('#checks-box', (d) => d.open), 'open when something needs attention'); expect(/to look at/.test(await T('#checks-sum')) && (await page.$eval('#checks-sum', (e) => e.className)) === 'fail', await T('#checks-sum'))
     expect(rows.some((r) => r[0] === 'fail' && /SimBridge\.java/.test(r[1])), 'missing library named: ' + JSON.stringify(rows)); expect(rows.some((r) => r[0] === 'fail' && /EmuTalon|lockstep/i.test(r[1])), 'lockstep layer named')
@@ -72,7 +75,7 @@ function makeProject(dir, { patched }) {
   await check('P5 launching an unpatched project still launches but says what is wrong in the log; a patched one logs no warnings', async () => {
     await page.click('#log-clear'); await page.click('#launch-robot'); await waitRunning()
     let l = await logLines(); expect(l.some((x) => x.startsWith('[check] ✗ Bridge library')), 'warns about the library: ' + l.filter((x) => x.startsWith('[')).join(' | ')); expect(l.some((x) => x.startsWith('[check] ! Bridge hook')), 'the hook is a warning when the library is missing too')
-    await stopRobot(); await page.selectOption('#recent-dirs', patched); await sleep(400); await page.click('#log-clear'); await page.click('#launch-robot'); await waitRunning()
+    await stopRobot(); await useProject(patched); await page.click('#log-clear'); await page.click('#launch-robot'); await waitRunning()
     l = await logLines(); eq(l.filter((x) => x.startsWith('[check]')), [], 'a patched project logs no check warnings')
   })
   await check('P6 extra environment: passed to the robot, the app\'s own variables win, bad lines are reported, and it survives a reload', async () => {
@@ -116,8 +119,11 @@ function makeProject(dir, { patched }) {
   })
   await check('P10 an editor that cannot be started falls back to the default app instead of failing silently', async () => {
     fs.writeFileSync(userData + '/crucible.config.json', JSON.stringify({ ...userCfg(), editor: '/nonexistent/editor {file}' }))
+    // the default app is stubbed: on a CI runner the real one is xdg-open, which starts whatever is registered for .java (vim, in a terminal) and never returns
+    await app.evaluate(({ shell }) => { globalThis.__openedPath = null; shell.openPath = async (p) => { globalThis.__openedPath = p; return '' } })
     await page.click('#robot-log a.src-link[data-file="Robot.java"]'); await sleep(2500)
     const n = await T('#notice'); expect(/opened Robot\.java:42 \(default app\)|could not open/.test(n), n)
+    const opened = await app.evaluate(() => globalThis.__openedPath); expect(typeof opened === 'string' && opened.endsWith('Robot.java'), 'the fallback asked the system to open the file: ' + opened)
   })
   await check('P11 past runs: each run is saved to a file, listed newest first, and can be put into the log split into build and robot output', async () => {
     await stopRobot(); await sleep(300)

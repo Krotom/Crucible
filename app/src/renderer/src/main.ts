@@ -496,7 +496,7 @@ function simFrame(): void {
   if (!f) return
   time = f.time
   $('time').textContent = `sim ${f.time.toFixed(2)} s`
-  simPanel.update(buildSimModel(f, { running: sim.running, simRate: sim.simRate, bridge: sim.bridge, hubs: sim.ready?.field.sensors.map((x) => ({ x: x.center[0], y: x.center[1], alliance: x.alliance })), alliance: ownAlliance }))
+  simPanel.update(buildSimModel(f, { running: sim.running, simRate: sim.simRate, perf: sim.perf && { ...sim.perf, fps }, bridge: sim.bridge, hubs: sim.ready?.field.sensors.map((x) => ({ x: x.center[0], y: x.center[1], alliance: x.alliance })), alliance: ownAlliance }))
   if ($('simhud').hidden) $('simhud').hidden = false
   plot.build(store)
 }
@@ -505,9 +505,13 @@ function simFrame(): void {
 let lastList = 0
 let lastAnalysis = 0
 let lastInspect = 0
+let fpsWindow = { t: 0, n: 0 }
+let fps: number | undefined
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
+  fpsWindow.n++
+  if (now - fpsWindow.t >= 1000) { fps = fpsWindow.t > 0 ? (fpsWindow.n * 1000) / (now - fpsWindow.t) : undefined; fpsWindow = { t: now, n: 0 } }
 
   if (sim.active) {
     simFrame()

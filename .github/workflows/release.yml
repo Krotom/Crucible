@@ -27,6 +27,7 @@ jobs:
   plan:
     name: Plan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
@@ -72,6 +73,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: app
@@ -91,6 +93,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -109,6 +112,7 @@ jobs:
     needs: [plan, checks, icons]
     if: needs.plan.outputs.skip != 'true'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -135,10 +139,30 @@ jobs:
         with:
           name: icons
           path: app/build
+      # NSIS makes the Windows installer. The Chocolatey feed times out now and then and `choco install` can still exit 0 when it installed nothing,
+      # so: restore a cached copy first, retry the install, and fail here (not later in packaging) if makensis.exe is still not there.
+      - name: Cache NSIS
+        if: matrix.name == 'windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files (x86)\NSIS
+          key: nsis-windows-v1
       - name: NSIS (Windows installer)
         if: matrix.name == 'windows'
         run: |
-          choco install nsis -y --no-progress
+          nsis="C:/Program Files (x86)/NSIS/makensis.exe"
+          if [ ! -f "$nsis" ]; then
+            for i in 1 2 3 4; do
+              choco install nsis -y --no-progress || true
+              [ -f "$nsis" ] && break
+              echo "NSIS install attempt $i did not install it, trying again"
+              sleep $((i * 20))
+            done
+          fi
+          if [ ! -f "$nsis" ]; then
+            echo "::error::makensis.exe was not installed (the Chocolatey feed may be down): re-run the failed jobs"
+            exit 1
+          fi
           echo "MAKENSIS=C:\\Program Files (x86)\\NSIS\\makensis.exe" >> "$GITHUB_ENV"
       - run: npm run package
       - uses: actions/upload-artifact@v4
@@ -167,6 +191,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.publish == 'true' && needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     env:

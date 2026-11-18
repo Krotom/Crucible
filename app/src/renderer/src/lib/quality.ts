@@ -28,24 +28,35 @@ const host = (): Host => ((window as unknown as { crucibleHost?: Host }).crucibl
 export const toasts = new ToastQueue()
 const toastActions = new Map<number, () => void>()
 
+/** The element of each toast that is showing, kept for its whole life: rebuilding them on every redraw would replay the entrance animation every half second. */
+const shown = new Map<number, { el: HTMLElement; text: HTMLElement; count: HTMLElement; n: number }>()
+
 function drawToasts(): void {
   const box = $('toasts')
   const list = toasts.visible()
-  box.textContent = ''
+  const alive = new Set(list.map((t) => t.id))
+  for (const [id, v] of shown) if (!alive.has(id)) { v.el.remove(); shown.delete(id) }
   for (const t of list) {
-    const d = document.createElement('div')
-    d.className = `toast ${t.kind}`
-    d.dataset.id = String(t.id)
-    d.textContent = t.text
-    if (t.count > 1) { const n = document.createElement('span'); n.className = 'n'; n.textContent = `×${t.count}`; d.appendChild(n) }
-    d.addEventListener('click', () => { toastActions.get(t.id)?.(); toasts.dismiss(t.id); toastActions.delete(t.id); drawToasts() })
-    box.appendChild(d)
+    let v = shown.get(t.id)
+    if (!v) {
+      const el = document.createElement('div')
+      el.className = `toast ${t.kind}`
+      el.dataset.id = String(t.id)
+      const text = document.createElement('span'); text.textContent = t.text
+      const count = document.createElement('span'); count.className = 'n'; count.hidden = true
+      el.append(text, count)
+      el.addEventListener('click', () => { toastActions.get(t.id)?.(); toasts.dismiss(t.id); toastActions.delete(t.id); drawToasts() })
+      box.appendChild(el)
+      v = { el, text, count, n: 1 }
+      shown.set(t.id, v)
+    }
+    if (t.count !== v.n) { v.n = t.count; v.count.textContent = `×${t.count}`; v.count.hidden = t.count < 2 } // only the counter changes: no new element, no new animation
   }
 }
 
 /** Shows a toast. The older code only sets the status-bar text; `setupToasts` turns every such change into a toast too. */
-export function toast(text: string, kind = kindOf(text), onClick?: () => void): void {
-  const t = toasts.push(text, kind)
+export function toast(text: string, kind = kindOf(text), onClick?: () => void, ttl?: number): void {
+  const t = toasts.push(text, kind, Date.now(), ttl)
   if (t && onClick) toastActions.set(t.id, onClick)
   drawToasts()
 }
@@ -248,7 +259,7 @@ export function setupUpdates(version: string): void {
   try { last = store()?.getItem(KEY) ?? null } catch { /* first run */ }
   try { store()?.setItem(KEY, version) } catch { /* not remembered */ }
   // an updated app announces itself with a toast (not a dialog: it must never block the first click); a first run says nothing
-  if (last && last !== version && entriesSince(last, version).length > 0) toast(`Updated to v${version}: click to see what's new`, 'info', () => showWhatsNew(version, last))
+  if (last && last !== version && entriesSince(last, version).length > 0) toast(`Updated to v${version}: click to see what's new`, 'info', () => showWhatsNew(version, last), 30_000)
   $('whatsnew-btn').addEventListener('click', () => showWhatsNew(version, null))
   const status = $('update-status'), btn = $<HTMLButtonElement>('update-btn'), actions = $('update-actions'), install = $<HTMLButtonElement>('update-install'), bar = $<HTMLProgressElement>('update-progress')
   const showResult = (r: NonNullable<Awaited<ReturnType<NonNullable<Host['checkUpdate']>>>>): void => {
@@ -297,7 +308,7 @@ export function setupUpdates(version: string): void {
     try { store()?.setItem('crucible-lastcheck', String(Date.now())) } catch { /* not remembered */ }
     if (r && r.status === 'newer') {
       showResult(r)
-      toast(`Version ${r.latest} is available: click to install it`, 'info', () => { const d = $<HTMLDialogElement>('about'); if (!d.open) d.showModal() })
+      toast(`Version ${r.latest} is available: click to install it`, 'info', () => { const d = $<HTMLDialogElement>('about'); if (!d.open) d.showModal() }, 30_000)
     }
   })()
 }

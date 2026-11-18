@@ -189,7 +189,7 @@ const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
     await post('pause', {}, token); await sleep(300); const t1 = (await call('/api/status', {}, token)).json.result.time; await sleep(500); const t2 = (await call('/api/status', {}, token)).json.result.time; eq(t1, t2, 'paused')
     await post('step', {}, token); await sleep(300); const t3 = (await call('/api/status', {}, token)).json.result.time; expect(t3 > t2 && t3 - t2 < 0.05, `one step: ${t2} -> ${t3}`)
     await post('play', {}, token); await sleep(700); expect((await call('/api/status', {}, token)).json.result.time > t3 + 0.3, 'playing again')
-    await post('reset', {}, token); await sleep(400); expect((await call('/api/status', {}, token)).json.result.time < 1, 'reset')
+    await post('pause', {}, token); await post('reset', {}, token); await sleep(400); expect((await call('/api/status', {}, token)).json.result.time < 1, 'reset')
     const stop = await post('stop', {}, token); eq(stop.json.result.simActive, false)
   })
   await check('T20 "set" changes a session control (only known ones), "preset" loads a saved preset, "attempts" lists them', async () => {

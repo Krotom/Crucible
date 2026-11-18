@@ -186,7 +186,7 @@ const alive = (pid) => { const st = sh(`ps -o stat= -p ${pid}`); return st !== '
     await page.locator('body').click({ position: { x: 4, y: 4 } })
     await page.keyboard.press('Control+Enter'); await page.waitForFunction(() => document.getElementById('start-sim').textContent === 'Stop sim', null, { timeout: 15000 }); await page.waitForFunction(() => document.querySelector('.simhud .kv')); await sleep(300)
     const t = async () => Number((await page.$$eval('.simhud .kv', (rs) => Object.fromEntries(rs.map((r) => [r.querySelector('.k').textContent, r.querySelector('.v').textContent]))))['Sim time'].replace(' s', ''))
-    await page.keyboard.press('.'); await sleep(300); eq(await t(), 0.01, 'one step = 10 ms')
+    await page.keyboard.press('.'); await page.waitForFunction(() => { const r = [...document.querySelectorAll('.simhud .kv')].find((x) => x.querySelector('.k').textContent === 'Sim time'); return r && r.querySelector('.v').textContent !== '0.00 s' }, null, { timeout: 15000 }); eq(await t(), 0.01, 'one step = 10 ms')
     await page.keyboard.press(' '); await sleep(1200); expect((await t()) > 0.5, 'Space plays'); eq(await T('#play'), 'Pause')
     await page.keyboard.press(' '); await sleep(300); eq(await T('#play'), 'Play')
     await page.keyboard.press('Shift+R'); await sleep(500); eq(await t(), 0, 'Shift+R resets')

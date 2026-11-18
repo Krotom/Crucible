@@ -14,15 +14,16 @@ export class ToastQueue {
   constructor(private max = 4, private historyMax = 100) {}
 
   /** Adds a message. The same text while it is still showing only bumps its counter and restarts its timer. Returns the toast. */
-  push(text: string, kind: ToastKind = 'info', now = Date.now()): Toast | null {
+  /** `ttl` overrides how long it shows (ms): a toast that asks the user to click needs longer than a note. */
+  push(text: string, kind: ToastKind = 'info', now = Date.now(), ttl?: number): Toast | null {
     const t = text.trim()
     if (!t) return null
     this.history.push({ text: t, kind, at: now })
     if (this.history.length > this.historyMax) this.history.shift()
     this.expire(now)
     const same = this.items.find((x) => x.text === t && x.kind === kind)
-    if (same) { same.count++; same.shownAt = now; return same }
-    const toast: Toast = { id: this.nextId++, text: t, kind, count: 1, shownAt: now, ttl: TTL[kind] }
+    if (same) { same.count++; same.shownAt = now; if (ttl) same.ttl = ttl; return same }
+    const toast: Toast = { id: this.nextId++, text: t, kind, count: 1, shownAt: now, ttl: ttl ?? TTL[kind] }
     this.items.push(toast)
     while (this.items.length > this.max) this.items.shift()
     return toast
