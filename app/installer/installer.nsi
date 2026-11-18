@@ -191,7 +191,8 @@ Function .onInit
   check:
   FindWindow $0 "Chrome_WidgetWin_1" "${PRODUCT}"
   ${If} $0 != 0
-    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(RUNNING)" IDOK check
+    ; silent (the in-app update): stop at once instead of waiting for a click nobody can see
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(RUNNING)" /SD IDCANCEL IDOK check
     Abort
   ${EndIf}
   ; guess the robot project from a previous install

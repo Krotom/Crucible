@@ -1,11 +1,11 @@
 import { generateKeyPairSync, sign } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import http from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { cannotSelfUpdate, cleanStale, downloadTo, extractArchive, fetchAndVerify, installTarget, parseChecksums, pickAsset, prepareSwap, sha256File, swapScript, verifySignature } from '../src/main/updater'
+import { cannotSelfUpdate, cleanStale, downloadTo, extractArchive, fetchAndVerify, installTarget, parseChecksums, pickAsset, winScript, prepareSwap, startSwap, sha256File, swapScript, verifySignature } from '../src/main/updater'
 import { releasesUrl } from '../src/main/update'
 import { interpretRelease, isAllowedUrl, type ReleaseAsset } from '../src/renderer/src/lib/versions'
 import { createHash } from 'node:crypto'
@@ -174,4 +174,54 @@ describe('signing scripts (run for real in a temporary tree)', () => {
     const again = spawnSync(process.execPath, [join(root, 'scripts', 'update-keys.mjs')], { cwd: root, encoding: 'utf8' }); expect(again.status).toBe(1); expect(again.stderr).toContain('exists already') // never silently replaces the key
     expect(spawnSync(process.execPath, [join(root, 'scripts', 'sign-release.mjs'), sums], { cwd: root, env: { ...process.env, UPDATE_SIGNING_KEY: '' }, encoding: 'utf8' }).status).toBe(2)
   })
+})
+
+describe('the Windows update script', () => {
+  const target = (launch: string): { kind: 'installer'; path: string; parent: string; launch: string } => ({ kind: 'installer', path: launch, parent: dir, launch })
+  const decode = (line: string): string => Buffer.from(/-EncodedCommand (\S+)/.exec(line)![1], 'base64').toString('utf16le')
+
+  it('is a PowerShell script passed as an encoded command, started by a detached cmd that gives it a console (no command line to quote; cmd broke on paths with spaces; PowerShell does not run without a console)', async () => {
+    const root = join(dir, 'BALTA Crucible', 'updates'); mkdirSync(root, { recursive: true })
+    const launch = 'C:\\Program Files\\BALTA Crucible\\BALTA Crucible.exe'
+    const plan = await prepareSwap({ platform: 'win32', target: target(launch), verified: { file: join(root, 'BALTA-Crucible-Setup-9.9.9.exe') }, pid: 4242, tmpDir: root })
+    expect(plan.command).toBe('cmd.exe'); expect(plan.verbatim).toBe(true); expect(plan.commandArgs.slice(0, 3)).toEqual(['/d', '/s', '/c'])
+    const line = plan.commandArgs[3]
+    expect(line.startsWith('"start "" /min "') && line.endsWith('"')).toBe(true) // the outer pair that /s strips, and start giving PowerShell its own console
+    expect(line).toMatch(/powershell\.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand [A-Za-z0-9+/=]+"$/)
+    const text = decode(line)
+    expect(text).toContain('4242'); expect(text).toContain(launch); expect(text).toContain('BALTA-Crucible-Setup-9.9.9.exe'); expect(text).toContain('crucible-update.log')
+    expect(text).not.toMatch(/cmd\.exe|tasklist|find\.exe/i) // nothing of the batch version is left
+    expect(readFileSync(plan.script, 'utf8')).toBe(text) // the file kept for reading is what runs
+  })
+
+  it('writes a path with an apostrophe or a space as a PowerShell string that means exactly that path', () => {
+    const s = winScript(7, "C:\\Users\\O'Neil\\My Updates\\Setup.exe", "C:\\Program Files\\App's\\app.exe", "C:\\logs\\u.log")
+    expect(s).toContain("'C:\\Users\\O''Neil\\My Updates\\Setup.exe'"); expect(s).toContain("'C:\\Program Files\\App''s\\app.exe'")
+    expect(s).toMatch(/-ArgumentList '\/S' -Wait/)
+  })
+
+  // the real thing, on Windows only: folders with spaces, a stand-in installer and a stand-in app. Both are copies of node.exe (real programs, as the NSIS installer is) that write
+  // a marker file through a NODE_OPTIONS hook. An installer that needs administrator rights is not something a test can run.
+  it.skipIf(process.platform !== 'win32')('waits for the app to exit, runs the installer silently, and starts the app again (run for real in folders with spaces)', async () => {
+    const root = join(dir, 'BALTA Crucible', 'updates'); mkdirSync(root, { recursive: true })
+    const hook = join(root, 'hook.js')
+    writeFileSync(hook, "const fs=require('fs'),path=require('path');const n=path.basename(process.execPath).toLowerCase();const d=process.env.FAKE_DIR;" +
+      "if(n.startsWith('fake setup')){fs.writeFileSync(path.join(d,'installed.txt'),JSON.stringify(process.argv.slice(1)));process.exit(0)}" +
+      "if(n.startsWith('fake app')){fs.writeFileSync(path.join(d,'started.txt'),'yes');process.exit(0)}")
+    const installer = join(root, 'Fake Setup.exe'); copyFileSync(process.execPath, installer)
+    const app = join(root, 'Fake App.exe'); copyFileSync(process.execPath, app)
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 3000)'], { stdio: 'ignore' }) // stands for the running app: the script must wait for it
+    const plan = await prepareSwap({ platform: 'win32', target: target(app), verified: { file: installer }, pid: holder.pid!, tmpDir: root })
+    const saved = { fake: process.env.FAKE_DIR, opts: process.env.NODE_OPTIONS }
+    process.env.FAKE_DIR = root; process.env.NODE_OPTIONS = '--require="' + hook.split('\\').join('/') + '"' // forward slashes: a backslash is an escape inside the quotes of NODE_OPTIONS
+    try { startSwap(plan) } finally { if (saved.fake === undefined) delete process.env.FAKE_DIR; else process.env.FAKE_DIR = saved.fake; if (saved.opts === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = saved.opts }
+    await new Promise((r) => setTimeout(r, 1200))
+    expect(existsSync(join(root, 'installed.txt')), 'the installer must not run while the app is still there').toBe(false)
+    const t0 = Date.now()
+    while (!existsSync(join(root, 'started.txt')) && Date.now() - t0 < 60_000) await new Promise((r) => setTimeout(r, 250))
+    const logText = existsSync(join(root, 'crucible-update.log')) ? readFileSync(join(root, 'crucible-update.log'), 'utf8') : '(no log written)'
+    expect(existsSync(join(root, 'started.txt')), 'the app is started again; the stand-in app exitCode=' + holder.exitCode + ', signal=' + holder.signalCode + '; the script log says: ' + logText).toBe(true)
+    expect(readFileSync(join(root, 'installed.txt'), 'utf8')).toMatch(/S"/) // it got /S
+    expect(logText).toMatch(/running the installer/); expect(logText).toMatch(/finished with exit code 0/); expect(logText).toMatch(/starting the app/)
+  }, 120_000)
 })

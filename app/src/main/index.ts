@@ -184,7 +184,7 @@ ipcMain.handle('app:installUpdate', async () => {
     const verified = await fetchAndVerify({ fetchFn: fetch, assets: r.assets, platform: process.platform, arch: process.arch, version: r.latest, dir, publicKey: UPDATE_PUBLIC_KEY, onProgress: (p) => send('update:progress', p) })
     send('update:progress', { stage: 'prepare', text: 'Preparing the update…' })
     const plan = await prepareSwap({ platform: process.platform, target, verified, pid: process.pid, tmpDir: dir })
-    send('update:progress', { stage: 'restart', text: 'Restarting to finish the update…' })
+    send('update:progress', { stage: 'restart', text: process.platform === 'win32' ? 'Restarting to finish the update… Windows will ask for permission to install: allow it (if you do not, the old version starts again).' : 'Restarting to finish the update…' })
     startSwap(plan)
     setTimeout(() => app.quit(), 600)
     return { ok: true }

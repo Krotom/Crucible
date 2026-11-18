@@ -16,6 +16,11 @@ export interface Release { version: string; title: string; items: string[] }
 
 /** Newest first. Add an entry for each release. */
 export const CHANGELOG: Release[] = [
+  { version: '1.1.2', title: 'The Windows in-app update works', items: [
+    'Windows: the in-app update quit the app and then did nothing, because the helper that runs the installer could not start. It is rebuilt (PowerShell, started so that it outlives the app and has a console), writes crucible-update.log next to the download, and starts the old version again when the install fails',
+    'Windows will ask for permission to install during an update: allow it. Copies older than 1.1.2 still have the fault: install 1.1.2 once by hand (the installer .exe of this release); updates after that work from inside the app',
+    'The silent installer stops at once, instead of waiting for a click nobody can see, when a copy of the app is still open',
+  ] },
   { version: '1.1.1', title: 'Aim fixes, robot launch and a faster 3D view', items: [
     'Robot code in lockstep now knows where it stands and which way it faces after every sim start, Reset and Start match (it kept the old position and doubled its heading), so the turret aims at the HUB from any start',
     'Shot efficiency 0.85 (was 0.70): the robot code\'s own shot tables now score from about 1.6 to 4 m in the sim. Still a guess: fit it to real shots in Tune > Calibration',

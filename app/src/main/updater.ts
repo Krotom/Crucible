@@ -152,17 +152,37 @@ ${kind === 'bundle' ? 'exec open "$LAUNCH"' : 'exec "$LAUNCH"'}
 `
 }
 
-export const WIN_SCRIPT = `@echo off
-rem args: <pid of the app> <installer> <app to start afterwards>
-:wait
-tasklist /FI "PID eq %1" 2>nul | find "%1" >nul
-if not errorlevel 1 (
-  timeout /t 1 /nobreak >nul
-  goto wait
-)
-start "" /wait "%2" /S
-start "" "%3"
-`
+/**
+ * The Windows update script (PowerShell, which every Windows has): waits for the app to exit, runs the installer silently (Windows asks the user for permission: the installer
+ * needs administrator rights) and starts the app again, the new one when the install worked and the old one when it did not. It writes crucible-update.log next to the script,
+ * because nothing of it is visible (the window is hidden). Every value is written into the script itself, so there is no command line to quote.
+ * (It used to be a batch file. cmd.exe breaks on a command line with several quoted paths, and, started without a console as it is here, its tasklist and find leave the
+ * script waiting for ever. PowerShell has neither problem.)
+ */
+export function winScript(appPid: number, installer: string, launch: string, logFile: string): string {
+  const lit = (s: string): string => "'" + s.replace(/'/g, "''") + "'"
+  return [
+    "$ErrorActionPreference = 'Continue'",
+    '$log = ' + lit(logFile),
+    'function Log($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff") + " " + $m) }',
+    'Log ("waiting for the app (pid " + ' + String(appPid) + ' + ") to exit")',
+    '$app = Get-Process -Id ' + String(appPid) + ' -ErrorAction SilentlyContinue',
+    'if ($app -and -not $app.WaitForExit(120000)) { Log "the app did not exit within 2 minutes: giving up"; exit 1 }',
+    'Log ("running the installer " + ' + lit(installer) + ')',
+    '$code = "none"',
+    'try { $setup = Start-Process -FilePath ' + lit(installer) + " -ArgumentList '/S' -Wait -PassThru; $code = $setup.ExitCode } catch { Log (\"could not run the installer: \" + $_.Exception.Message) }",
+    'Log ("the installer finished with exit code " + $code)',
+    'Log ("starting the app " + ' + lit(launch) + ')',
+    'try { Start-Process -FilePath ' + lit(launch) + ' } catch { Log ("could not start the app: " + $_.Exception.Message) }',
+    '',
+  ].join('\r\n')
+}
+
+/** The command that runs a PowerShell script text with no file and no quoting: -EncodedCommand takes the script as base64 of its UTF-16 text (and is not subject to the execution policy). */
+export function powershellCommand(script: string): { command: string; args: string[] } {
+  const exe = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  return { command: exe, args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')] }
+}
 
 /** Unpacks the downloaded archive next to the install target and returns the path of the new copy. */
 export function extractArchive(kind: 'folder' | 'bundle', archive: string, workDir: string): string {
@@ -177,15 +197,21 @@ export function extractArchive(kind: 'folder' | 'bundle', archive: string, workD
   return out
 }
 
-export interface SwapPlan { script: string; args: string[]; command: string; commandArgs: string[] }
+export interface SwapPlan { script: string; args: string[]; command: string; commandArgs: string[]; /** Windows: the arguments are one ready-made command line, passed as they are */ verbatim?: boolean }
 
 /** Everything needed to start the swap after the app has quit; nothing is changed yet. */
 export async function prepareSwap(opts: { platform: string; target: InstallTarget; verified: Verified; pid: number; tmpDir: string }): Promise<SwapPlan> {
   const { target, verified, pid, tmpDir } = opts
   if (target.kind === 'installer') {
-    const script = path.join(tmpDir, 'crucible-update.cmd')
-    await writeFile(script, WIN_SCRIPT.replace(/\n/g, '\r\n'))
-    return { script, args: [String(pid), verified.file, target.launch], command: 'cmd.exe', commandArgs: ['/d', '/c', script, String(pid), verified.file, target.launch] }
+    const script = path.join(tmpDir, 'crucible-update.ps1')
+    const text = winScript(pid, verified.file, target.launch, path.join(tmpDir, 'crucible-update.log'))
+    await writeFile(script, text) // kept next to the log, to read what ran (the plan below runs the same text)
+    const ps = powershellCommand(text)
+    // Why this shape. The helper has to outlive the app, and Node ties a child to its parent with a job object unless the child is "detached"; a detached child has NO console,
+    // and PowerShell (like cmd's tools) does not run without one. So: a detached cmd.exe, which survives, uses start to give PowerShell a console of its own (minimised, and the
+    // script hides it). The line is passed verbatim: /s makes cmd strip only the outermost pair of quotes, so the quotes round the PowerShell path stay.
+    const line = 'start "" /min "' + ps.command + '" ' + ps.args.join(' ')
+    return { script, args: [String(pid), verified.file, target.launch], command: 'cmd.exe', commandArgs: ['/d', '/s', '/c', '"' + line + '"'], verbatim: true }
   }
   const work = path.join(target.parent, `.crucible-update-${process.pid}-${Date.now()}`)
   const fresh = extractArchive(target.kind, verified.file, work)
@@ -198,7 +224,7 @@ export async function prepareSwap(opts: { platform: string; target: InstallTarge
 
 /** Starts the swap script detached, so it outlives this process. */
 export function startSwap(plan: SwapPlan): void {
-  const child = spawn(plan.command, plan.commandArgs, { detached: true, stdio: 'ignore', windowsHide: true })
+  const child = spawn(plan.command, plan.commandArgs, { detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: plan.verbatim === true })
   child.unref()
 }
 
