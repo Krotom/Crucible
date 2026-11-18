@@ -21,7 +21,7 @@ function tokenOk(given: string | undefined, token: string): boolean {
 
 export class ApiServer {
   private server: http.Server | null = null
-  constructor(private token: string, private handler: ApiHandler) {}
+  constructor(private token: string, private handler: ApiHandler, private timeoutMs = TIMEOUT_MS) {}
 
   get listening(): boolean { return this.server !== null }
   get port(): number | null { return this.server ? (this.server.address() as AddressInfo).port : null }
@@ -74,7 +74,7 @@ export class ApiServer {
 
   private async run(res: http.ServerResponse, command: { action: string }): Promise<void> {
     try {
-      const result = await Promise.race([this.handler(command), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), TIMEOUT_MS))])
+      const result = await Promise.race([this.handler(command), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), this.timeoutMs))])
       this.reply(res, 200, { ok: true, result })
     } catch (e) {
       const m = (e as Error).message

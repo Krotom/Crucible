@@ -124,7 +124,7 @@ describe('local API', () => {
   const auth = (): Record<string, string> => ({ Authorization: `Bearer ${token}` })
   beforeEach(async () => {
     token = newToken(); calls.length = 0
-    api = new ApiServer(token, async (c) => { calls.push(c); if (c.action === 'boom') throw new Error('it broke'); if (c.action === 'hang') return new Promise(() => {}); return { echo: c.action, time: 1.5 } })
+    api = new ApiServer(token, async (c) => { calls.push(c); if (c.action === 'boom') throw new Error('it broke'); if (c.action === 'hang') return new Promise(() => {}); return { echo: c.action, time: 1.5 } }, 300) // a short timeout: the test of a handler that never answers should not wait the real 8 s
     port = await api.start(0)
   })
   afterEach(async () => { await api.stop() })
@@ -145,7 +145,7 @@ describe('local API', () => {
     expect((await req({ path: '/api/nothing', headers: auth() })).status).toBe(404); expect((await req({ method: 'POST', path: '/api/status', headers: auth(), body: '{}' })).status).toBe(405); expect((await req({ path: '/api/command', headers: auth() })).status).toBe(405)
   })
   it('caps the request body', async () => { const r = await req({ method: 'POST', path: '/api/command', headers: auth(), body: JSON.stringify({ action: 'x', pad: 'a'.repeat(70 * 1024) }) }); expect(r.status).toBe(413) })
-  it('gives up on a handler that never answers (gateway timeout)', async () => { const r = await req({ method: 'POST', path: '/api/command', headers: auth(), body: '{"action":"hang"}' }); expect(r.status).toBe(504) }, 15000)
+  it('gives up on a handler that never answers (gateway timeout)', async () => { const r = await req({ method: 'POST', path: '/api/command', headers: auth(), body: '{"action":"hang"}' }); expect(r.status).toBe(504) })
   it('makes long random tokens', () => { expect(newToken()).toMatch(/^[0-9a-f]{48}$/); expect(newToken()).not.toBe(newToken()) })
 })
 
@@ -200,6 +200,6 @@ describe('CI workflow', () => {
     expect(yml).toMatch(/push:\n\s+branches: \[main\]/); expect(yml).toMatch(/pull_request:/)
   })
   it('is plain valid YAML structure: jobs with names, runs-on and steps, no tabs', () => {
-    expect(yml).not.toMatch(/\t/); expect(yml).toMatch(/^jobs:\n {2}\w+:\n {4}name:/m); expect((yml.match(/runs-on:/g) ?? []).length).toBe(2); expect(yml).toMatch(/needs: checks/)
+    expect(yml).not.toMatch(/\t/); expect(yml).toMatch(/^jobs:\n {2}\w+:\n {4}name:/m); expect((yml.match(/runs-on:/g) ?? []).length).toBe(2); expect(yml).not.toMatch(/needs: checks/) // the UI jobs run beside the unit tests, not after them
   })
 })
