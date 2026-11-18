@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { hasGradlew } from './robot'
+import { describeOwners, isRobotSim, type PortOwner } from './ports'
 
 export type CheckStatus = 'ok' | 'warn' | 'fail'
 export interface Check { id: string; label: string; status: CheckStatus; detail: string }
@@ -48,7 +49,14 @@ export function javaVersion(timeoutMs = 6000, command = 'java'): Promise<string 
   })
 }
 
-export async function preflight(dir: string | null, lockstep: boolean, java: () => Promise<string | null> = javaVersion): Promise<Check[]> {
+export interface PreflightExtra {
+  /** who holds the robot's ports right now (leave out to skip the check, e.g. while the app's own robot is running) */
+  ports?: () => Promise<PortOwner[]>
+  /** where the Java comes from, for the message */
+  javaFrom?: 'config' | 'wpilib' | 'path'
+}
+
+export async function preflight(dir: string | null, lockstep: boolean, java: () => Promise<string | null> = javaVersion, extra: PreflightExtra = {}): Promise<Check[]> {
   const checks: Check[] = []
   if (!dir) {
     checks.push({ id: 'project', label: 'Robot project', status: 'fail', detail: 'not found: choose the folder with the Choose… button (or set robotDir in crucible.config.json)' })
@@ -56,7 +64,22 @@ export async function preflight(dir: string | null, lockstep: boolean, java: () 
   }
   checks.push({ id: 'project', label: 'Robot project', status: hasGradlew(dir) ? 'ok' : 'fail', detail: hasGradlew(dir) ? dir : `no gradlew in ${dir}` })
   const v = await java()
-  checks.push(v ? { id: 'java', label: 'Java', status: 'ok', detail: v } : { id: 'java', label: 'Java', status: 'fail', detail: 'java was not found on the PATH: Gradle needs it (install a JDK, or the one that comes with WPILib)' })
+  const via = extra.javaFrom === 'wpilib' ? ' (WPILib\'s own JDK)' : extra.javaFrom === 'config' ? ' (javaHome in crucible.config.json)' : ''
+  checks.push(v ? { id: 'java', label: 'Java', status: 'ok', detail: `${v}${via}` } : { id: 'java', label: 'Java', status: 'fail', detail: extra.javaFrom === 'config' ? 'javaHome in crucible.config.json does not hold a working java' : 'java was not found: Gradle needs it (install WPILib, which brings its own JDK, or put a JDK on the PATH)' })
+
+  // the ports the robot sim opens: a robot sim that is still running from an earlier start holds them and the new one cannot listen
+  if (extra.ports) {
+    const owners = await extra.ports()
+    if (owners.length > 0) {
+      const sim = owners.every((o) => isRobotSim(o.name))
+      checks.push({
+        id: 'ports', label: 'Robot ports', status: 'fail',
+        detail: sim
+          ? `${describeOwners(owners)} still holds the robot's ports: a robot simulation from an earlier start is still running. Use "Stop the old robot" (Robot tab), or close it yourself, then start again`
+          : `${describeOwners(owners)} holds the robot's ports: close that program (it is not a robot simulation), then start again`,
+      })
+    } else checks.push({ id: 'ports', label: 'Robot ports', status: 'ok', detail: 'free' })
+  }
 
   const src = path.join(dir, 'src')
   const bridge = walk(src, (n) => n === 'SimBridge.java')
@@ -81,4 +104,4 @@ export async function preflight(dir: string | null, lockstep: boolean, java: () 
   return checks
 }
 
-export const preflightBlocks = (checks: Check[]): boolean => checks.some((c) => c.status === 'fail' && (c.id === 'project' || c.id === 'java'))
+export const preflightBlocks = (checks: Check[]): boolean => checks.some((c) => c.status === 'fail' && (c.id === 'project' || c.id === 'java' || c.id === 'ports'))

@@ -3,7 +3,9 @@ import { spawn } from 'node:child_process'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { listLogs, readLog, RunLog } from './logstore'
-import { preflight, preflightBlocks } from './preflight'
+import { javaVersion, preflight, preflightBlocks } from './preflight'
+import { chooseJava } from './javahome'
+import { freeRobotPorts, portOwners } from './ports'
 import { chooseRobotDir, findSourceFile, openInEditor, parseEnvText, readConfig, recentRobotDirs, resolveRobotDir, RobotLauncher, simulateCommand } from './robot'
 import { startStaticServer } from './static-server'
 import { RecentFiles } from './recent'
@@ -56,9 +58,11 @@ ipcMain.handle('robot:start', async (_e, lockstep?: boolean, envText?: string) =
 async function startRobot(lockstep?: boolean, envText?: string): Promise<Record<string, unknown>> {
   const dir = robotDir()
   if (!dir) return { ok: false, message: 'Robot project not found (choose the folder with Choose… on the Robot tab, or set robotDir in crucible.config.json)', checks: [] }
-  const checks = await preflight(dir, lockstep === true)
-  if (preflightBlocks(checks)) return { ok: false, message: checks.filter((c) => c.status === 'fail').map((c) => c.detail)[0] ?? 'cannot start', checks }
-  const { command, args, env } = simulateCommand(lockstep === true, parseEnvText(envText ?? '').env)
+  const java = chooseJava(readConfig(userDir()), dir)
+  const checks = await robotPreflight(dir, lockstep === true)
+  if (preflightBlocks(checks)) return { ok: false, message: checks.filter((c) => c.status === 'fail').map((c) => c.detail)[0] ?? 'cannot start', checks, portsBusy: checks.some((c) => c.id === 'ports' && c.status === 'fail') }
+  // WPILib's own JDK (or the javaHome from crucible.config.json) runs Gradle; variables the user typed on the Robot tab still win
+  const { command, args, env } = simulateCommand(lockstep === true, { ...(java.home ? { JAVA_HOME: java.home } : {}), ...parseEnvText(envText ?? '').env })
   const envProblems = parseEnvText(envText ?? '').problems
   await runLog?.close()
   runLog = new RunLog(join(userDir(), 'logs'))
@@ -73,7 +77,24 @@ async function startRobot(lockstep?: boolean, envText?: string): Promise<Record<
   return { ok: true, message: `starting robot sim in ${dir}`, checks, envProblems, logName: log.name }
 }
 
-ipcMain.handle('robot:check', async (_e, lockstep?: boolean) => preflight(robotDir(), lockstep === true))
+/** The pre-flight check with this machine's Java choice and port look-up. While the app's own robot runs, its ports are its own: not a conflict. */
+async function robotPreflight(dir: string | null, lockstep: boolean) {
+  const java = chooseJava(readConfig(userDir()), dir)
+  return preflight(dir, lockstep, () => javaVersion(6000, java.command), { javaFrom: java.source, ports: launcher?.running ? undefined : () => portOwners() })
+}
+
+ipcMain.handle('robot:check', async (_e, lockstep?: boolean) => robotPreflight(robotDir(), lockstep === true))
+
+// "Stop the old robot": a robot simulation that outlived its app holds the robot's ports. Only Java processes are stopped, and the holders are looked up here.
+ipcMain.handle('robot:freePorts', async () => {
+  if (launcher?.running) return { ok: false, message: 'The robot the app started is running: use Stop robot', stopped: 0 }
+  const r = await freeRobotPorts()
+  const pids = new Set(r.stopped.map((o) => o.pid))
+  const other = r.skipped.length > 0 ? ` Left alone (not a robot simulation): ${[...new Set(r.skipped.map((o) => `${o.name} PID ${o.pid}`))].join(', ')}.` : ''
+  if (r.still.length > 0) return { ok: false, message: `Could not stop PID ${[...new Set(r.still.map((o) => o.pid))].join(', ')}: close it yourself.${other}`, stopped: pids.size }
+  if (pids.size === 0) return { ok: r.skipped.length === 0, message: r.skipped.length === 0 ? 'The robot ports are free' : `Nothing to stop.${other}`, stopped: 0 }
+  return { ok: r.skipped.length === 0, message: `Stopped the old robot (PID ${[...pids].join(', ')}).${other}`, stopped: pids.size }
+})
 ipcMain.handle('robot:getDir', () => ({ dir: robotDir(), recent: recentRobotDirs(userDir()) }))
 ipcMain.handle('robot:setDir', (_e, dir: string) => chooseRobotDir(userDir(), dir))
 ipcMain.handle('robot:pickDir', async () => {

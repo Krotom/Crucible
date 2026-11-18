@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 contextBridge.exposeInMainWorld('crucibleHost', {
   startRobot: (lockstep?: boolean, envText?: string): Promise<unknown> => ipcRenderer.invoke('robot:start', lockstep, envText),
   checkRobot: (lockstep?: boolean): Promise<unknown> => ipcRenderer.invoke('robot:check', lockstep),
+  freeRobotPorts: (): Promise<{ ok: boolean; message: string; stopped: number }> => ipcRenderer.invoke('robot:freePorts'),
   getRobotDir: (): Promise<{ dir: string | null; recent: string[] }> => ipcRenderer.invoke('robot:getDir'),
   setRobotDir: (dir: string): Promise<unknown> => ipcRenderer.invoke('robot:setDir', dir),
   pickRobotDir: (): Promise<unknown> => ipcRenderer.invoke('robot:pickDir'),

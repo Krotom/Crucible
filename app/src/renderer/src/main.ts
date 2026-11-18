@@ -729,8 +729,9 @@ function paintScoreboard(f: RenderFrame): void {
 
 // ---- Robot tab: mode, NT host, the robot launcher and its log (the launcher is Electron only: the main process owns the robot process)
 interface PreflightCheck { id: string; label: string; status: 'ok' | 'warn' | 'fail'; detail: string }
-interface StartResult { ok: boolean; message: string; checks?: PreflightCheck[]; envProblems?: string[]; logName?: string }
+interface StartResult { ok: boolean; message: string; checks?: PreflightCheck[]; envProblems?: string[]; logName?: string; portsBusy?: boolean }
 interface CrucibleHost {
+  freeRobotPorts(): Promise<{ ok: boolean; message: string; stopped: number }>
   startRobot(lockstep?: boolean, envText?: string): Promise<StartResult>
   stopRobot(): Promise<{ ok: boolean }>
   robotStatus(): Promise<{ running: boolean }>
@@ -799,6 +800,8 @@ const refreshRobot = (): void => {
 modeEl.addEventListener('change', refreshRobot)
 
 let launching = false
+/** the last start was refused because an old robot simulation holds the robot's ports (shows the "Stop the old robot" button) */
+let portsBlocked = false
 async function launchRobot(): Promise<void> {
   if (!host || launching) return
   launching = true
@@ -819,6 +822,8 @@ async function launchRobotNow(host: CrucibleHost): Promise<void> {
   $('notice').textContent = r.message
   robotUp = r.ok
   if (!r.ok) run.launchFailed(Date.now())
+  portsBlocked = !r.ok && r.portsBusy === true
+  $<HTMLButtonElement>('free-ports').hidden = !portsBlocked
   refreshRobot()
   // the sim waits for the robot program to connect, so it can be started right away
   if (r.ok && $<HTMLInputElement>('auto-sim').checked && modeEl.value !== 'script' && !sim.active) $('start-sim').click()
@@ -896,8 +901,24 @@ function setupDesktopRobotTools(h: CrucibleHost): void {
     await refreshDir()
   })
   const checksEl = $('checks')
+  const freeBtn = $<HTMLButtonElement>('free-ports')
+  freeBtn.addEventListener('click', async () => {
+    freeBtn.disabled = true
+    try {
+      const r = await h.freeRobotPorts()
+      robotLog.system(`[${r.message}]`)
+      $('notice').textContent = r.message
+      if (r.ok) {
+        freeBtn.hidden = true
+        // the start that was refused is what the user wanted: do it now that the ports are free
+        if (portsBlocked && r.stopped > 0) { portsBlocked = false; void launchRobot() }
+      }
+    } finally { freeBtn.disabled = false }
+  })
   $('check-project').addEventListener('click', async () => {
     const list = await h.checkRobot(modeEl.value === 'lockstep')
+    portsBlocked = false // a check is not a refused start: stopping the old robot then only frees the ports
+    freeBtn.hidden = !list.some((c) => c.id === 'ports' && c.status === 'fail')
     checksEl.textContent = ''
     for (const c of list) {
       const li = document.createElement('li')
