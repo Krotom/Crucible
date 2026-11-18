@@ -7,6 +7,7 @@ import { BridgeSession } from './bridge/session'
 import { OFFSEASON } from '../robots/offseason'
 import { buildSetup } from './setup'
 import { cleanBattery, cleanFaults } from './bridge/faults'
+import { cleanVision } from './vision'
 import { anyBreak, cleanBreaks, matchBreak, NO_BREAKS } from './breaks'
 import { cleanTune } from './tuning'
 
@@ -114,6 +115,7 @@ function postFrame(): void {
       helloIssues: st.helloIssues, components: st.components, fms: bridge?.fms ?? false, rttMs: (bridge?.rtt ?? 0) * 1000, leadMs: (bridge?.lead ?? 0) * 1000,
       mechanisms: [...(engine?.mechanisms.values() ?? [])].map((m) => ({ name: m.spec.name, position: m.rotations, velocity: m.rps, volts: bridge?.lastMotorVolts.get(m.spec.id) ?? 0, amps: m.supplyAmps })),
       battery: bridge?.batteryReading ?? { volts: 12, amps: 0 },
+      vision: { enabled: bridge?.vision.enabled ?? false, ...(bridge?.visionReading ?? { tags: [], pose: null, truth: null }) },
     },
   })
 }
@@ -170,6 +172,7 @@ async function handle(m: ToWorker): Promise<void> {
           bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: lockstep ? null : 5810 }, () => {}, OFFSEASON, lockstep ? { dt: engine.dt, speed: speed } : null)
           bridge.faults = cleanFaults(m.faults)
           bridge.battery = cleanBattery(m.battery)
+          bridge.vision = cleanVision(m.vision)
           bridge.start()
           running = true
         }
@@ -200,6 +203,7 @@ async function handle(m: ToWorker): Promise<void> {
       case 'breaks': breaks = cleanBreaks(m.breaks); breakTimeDone = breaks.time !== null && engineTime() >= breaks.time; break
       case 'faults': if (bridge) bridge.faults = cleanFaults(m.faults); break
       case 'battery': if (bridge) bridge.battery = cleanBattery(m.battery); break
+      case 'vision': if (bridge) bridge.vision = cleanVision(m.vision); break
       case 'rewind': if (engine && !bridge) rewindTo(Math.max(0, engine.time - Math.max(0, m.seconds))); break
       case 'seek': if (engine && !bridge && m.time < engine.time - 1e-9) rewindTo(Math.max(0, m.time)); break
     }

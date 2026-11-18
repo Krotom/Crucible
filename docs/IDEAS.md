@@ -54,13 +54,13 @@ UI tests: `npm run e2e` (needs Electron, xvfb, Playwright; see `app/e2e/run.sh`)
 - [ ] Sensitivity report
 
 ## Robot testing
-- [ ] Built-in test scenarios
+- [x] Built-in test scenarios (Robot tab: drive forward, strafe, spin, climb the BUMP)
 - [x] Fault injection (Robot tab: brownout, latency, noise, dropped CAN ids)
 - [x] Battery model (Robot tab, live in the panel)
 - [x] Mechanism inspector graphs (volts, speed, position, current; no thermal model)
 - [x] Breakpoints on events (Analysis tab)
 - [x] Gamepad remapping and controller test (Controls dialog, G)
-- [ ] Vision simulation
+- [x] Vision simulation (app side: assumed tag layout, camera cone and rays in 3D, noisy pose estimate sent as bridge message 9; the robot-side consumer in robot-lib is not written, so only a fake robot has received it)
 
 ## Quality of life
 - [x] Keyboard shortcut sheet and shortcuts

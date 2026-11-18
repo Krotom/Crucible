@@ -12,6 +12,7 @@ import { LogView, SourceTracker } from './lib/robotlog'
 import { SimPanel } from './lib/simpanel'
 import { buildSimModel, scoreboardModel } from './lib/simmodel'
 import { CAMERA_PRESETS, ViewFx, type CameraPreset } from './lib/viewfx'
+import { VisionOverlay } from './lib/visionview'
 import { appVersion, dismissSplash, setupAbout, setupCapture, setupShortcutsDialog, setupTabs, setupTheme, showTab } from './lib/chrome'
 import { RobotRun, formatElapsed } from './lib/robotrun'
 import { MatchRecorder, eventsCsv, reportHtml } from './lib/analysis'
@@ -21,6 +22,7 @@ import { renderSweep, SweepRunner } from './lib/sweep-ui'
 import { TuneUI } from './lib/tune-ui'
 import { MechHistory, MechInspector } from './lib/mechhistory'
 import { setupControls } from './lib/controls-ui'
+import { ScenarioRun, SCENARIOS, type CheckResult, type Scenario } from './lib/scenarios'
 import { parseRunReport } from './lib/compare'
 import { storeToWpilog } from './lib/wpilogwriter'
 import type { RunReport } from '../../analysis/recorder'
@@ -34,15 +36,17 @@ const store = new DataStore()
 const refStore = new DataStore() // the reference log, drawn dashed on the plot
 const view = new SceneView($('view'))
 const fx = new ViewFx(view, $('ruler-label'))
+const visionView = new VisionOverlay(view)
 let live: Nt4Live | null = null
 let robotHalfZ = 0.12
 let robotMode = false
+let scenarioRun: ScenarioRun | null = null
 let dsEnabled = false
 let lastInput: JoystickReading | null = null
 let lastInputSent = 0
 const sim = new SimSource(
   store,
-  (r) => { analysisView.setField(r.field); robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf, r.othersHalf); fx.start(r.field, r.gameId); applyViewMenu(); sim.send({ type: 'speed', value: speed }); sendDs() },
+  (r) => { analysisView.setField(r.field); robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf, r.othersHalf); fx.start(r.field, r.gameId); visionView.start(); applyViewMenu(); sim.send({ type: 'speed', value: speed }); sendDs() },
   (m) => setStatus(`Sim error: ${m}`),
 )
 
@@ -171,7 +175,7 @@ function stopSim(): void {
   if (!sim.active) return
   sim.stop()
   view.clearSim()
-  fx.stop()
+  fx.stop(); visionView.stop()
   $('start-sim').textContent = 'Start sim'
   updateTransportEnabled()
 }
@@ -285,25 +289,33 @@ $('focus').addEventListener('click', () => view.focusRobot())
 
 // ---- simulation
 const seedValue = (): number => (Number($<HTMLInputElement>('seed').value) || 0) >>> 0
-$('start-sim').addEventListener('click', () => {
-  if (sim.active) { stopSim(); store.clear(); plot.clear(store); setStatus('No data'); return }
+/** Starts a sim from the side panels; a scenario overrides the game, the start and the mode (robot code), and plays without opponents. */
+function startSimNow(over?: { game: 'test' | 'rebuilt'; start?: { x: number; y: number; yawDeg: number } }): void {
   live?.stop(); live = null
   $('connect').textContent = 'Connect'
   plot.clear(store)
-  lockstepMode = $<HTMLSelectElement>('sim-mode').value === 'lockstep'
-  robotMode = $<HTMLSelectElement>('sim-mode').value !== 'script'
+  const modeSel = $<HTMLSelectElement>('sim-mode')
+  if (over && modeSel.value === 'script') { modeSel.value = 'robot'; modeSel.dispatchEvent(new Event('change')) }
+  lockstepMode = modeSel.value === 'lockstep'
+  robotMode = modeSel.value !== 'script'
   dsEnabled = false
   $('ds-enable').textContent = 'Enable'
   lastInput = null
   simPanel.clear()
   recorder.reset(); mechHistory.clear(); endShown = false
-  lastStart = { seed: seedValue(), game: $<HTMLSelectElement>('game-select').selectedOptions[0].textContent ?? '', mode: $<HTMLSelectElement>('sim-mode').selectedOptions[0].textContent ?? '' }
-  ownAlliance = $<HTMLSelectElement>('alliance').value === 'red' ? 'red' : 'blue'
-  sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', $<HTMLSelectElement>('game-select').value as 'test' | 'rebuilt', $<HTMLSelectElement>('opponent').value as 'none' | 'blocker' | 'cycler' | 'ally' | 'both', Number($<HTMLSelectElement>('step-dt').value), { alliance: ownAlliance, start: startOverrides(), tune: tune.params(), faults: faultsSpec(), battery: batterySpec(), breaks: breakSpec() })
+  const gameSel = $<HTMLSelectElement>('game-select')
+  const game = over?.game ?? (gameSel.value as 'test' | 'rebuilt')
+  lastStart = { seed: seedValue(), game: gameSel.querySelector<HTMLOptionElement>(`option[value="${game}"]`)?.textContent ?? '', mode: modeSel.selectedOptions[0].textContent ?? '' }
+  ownAlliance = over ? 'blue' : $<HTMLSelectElement>('alliance').value === 'red' ? 'red' : 'blue'
+  sim.start(seedValue(), lockstepMode ? 'lockstep' : robotMode ? 'robot' : 'script', $<HTMLInputElement>('host').value.trim() || '127.0.0.1', game, over ? 'none' : $<HTMLSelectElement>('opponent').value as 'none' | 'blocker' | 'cycler' | 'ally' | 'both', Number($<HTMLSelectElement>('step-dt').value), { alliance: ownAlliance, start: over ? over.start : startOverrides(), tune: tune.params(), faults: faultsSpec(), battery: batterySpec(), vision: visionSpec(), breaks: over ? undefined : breakSpec() })
   $('start-sim').textContent = 'Stop sim'
   setStatus(lockstepMode ? 'Sim: robot code, lockstep (Mode B)' : robotMode ? 'Sim: robot code via NT' : 'Sim: game-test (scripted)', true)
   playEl.textContent = 'Play'
   updateTransportEnabled()
+}
+$('start-sim').addEventListener('click', () => {
+  if (sim.active) { stopSim(); store.clear(); plot.clear(store); setStatus('No data'); return }
+  startSimNow()
 })
 function sendDs(): void {
   if (!robotMode) return
@@ -358,6 +370,7 @@ let lastStart = { seed: 42, game: '', mode: '' }
 let ownAlliance: 'blue' | 'red' = 'blue'
 sim.onFrame = (f, events) => {
   recorder.ingest(f, events)
+  scenarioFrame(f)
   if (sim.bridge) mechHistory.add(f.time, sim.bridge.mechanisms)
   fx.sampleTrail(f)
   if (recorder.phase === 'ended') {
@@ -438,7 +451,7 @@ paintCompare()
 $('an-csv').addEventListener('click', () => { void saveText(timestampName('balta-crucible-events', 'csv'), eventsCsv(recorder.feed), 'text/csv') })
 for (const id of ['an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase']) $(id).addEventListener('change', () => analysisView.render())
 function simFrame(): void {
-  if (robotMode) pumpInput()
+  if (robotMode && !scenarioRun) pumpInput() // a scenario plays the driver
   playEl.textContent = sim.running ? 'Pause' : 'Play'
   $<HTMLButtonElement>('sim-load').disabled = !sim.slots[Number(slotEl.value)]
   for (const [id, sec] of [['sim-back1', 1], ['sim-back5', 5]] as const) $<HTMLButtonElement>(id).disabled = robotMode || sim.canRewind < Math.min(sec, 0.25)
@@ -479,7 +492,7 @@ function frame(now: number): void {
 
   // scene
   if (sim.active) {
-    if (sim.latest) { view.setSimFrame(sim.latest, robotHalfZ); fx.update(sim.latest, recorder); paintScoreboard(sim.latest) }
+    if (sim.latest) { view.setSimFrame(sim.latest, robotHalfZ); fx.update(sim.latest, recorder); visionView.update(sim.bridge?.vision); paintScoreboard(sim.latest) }
     view.setComponentPoses(sim.bridge?.components ?? undefined)
   } else {
     const pose = poseSel.value ? store.valueAt(poseSel.value, time) : undefined
@@ -539,6 +552,13 @@ for (const id of ['bat-on', 'bat-open', 'bat-res']) $(id).addEventListener('chan
 for (const id of ['f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop']) $(id).addEventListener('input', () => { if (sim.active) sim.send({ type: 'faults', faults: faultsSpec() }); paintFaultNote() })
 $('f-brown-on').addEventListener('change', () => { if (sim.active) sim.send({ type: 'faults', faults: faultsSpec() }); paintFaultNote() })
 
+function visionSpec(): { enabled: boolean; noise: number } { return { enabled: $<HTMLInputElement>('vis-on').checked, noise: numOf('vis-noise', 1) } }
+function paintVisionNote(): void {
+  const v = visionSpec()
+  $('vis-note').textContent = v.enabled ? `On, error ×${v.noise}. The robot is sent what the camera sees, 20 times a second. Tag positions are assumed.` : 'Off. Tag positions are assumed (see NT_CONTRACT.md).'
+}
+for (const id of ['vis-on', 'vis-noise']) $(id).addEventListener('input', () => { if (sim.active) sim.send({ type: 'vision', vision: visionSpec() }); paintVisionNote() })
+
 function breakSpec(): { launch: boolean; capture: boolean; score: boolean; foul: boolean; phase: boolean; impact: number | null; time: number | null } {
   const on = (id: string): boolean => $<HTMLInputElement>(id).checked
   return { launch: on('bp-launch'), capture: on('bp-capture'), score: on('bp-score'), foul: on('bp-foul'), phase: on('bp-phase'), impact: on('bp-impact-on') ? numOf('bp-impact', 2) : null, time: on('bp-time-on') ? numOf('bp-time', 10) : null }
@@ -548,6 +568,89 @@ sim.onPaused = (reason, t) => {
   $('notice').textContent = `Paused: ${reason} at ${t.toFixed(2)} s`
   $('bp-last').textContent = `Paused at ${t.toFixed(2)} s: ${reason}`
 }
+
+// ---- test scenarios: a scripted driver against the robot code
+interface ScenarioOutcome { scenario: Scenario; passed: boolean; error: string; results: CheckResult[] }
+let scenarioQueue: Scenario[] = []
+let scenarioOutcomes: ScenarioOutcome[] = []
+let scenarioStarted = 0
+
+function sendDriver(d: { enabled: boolean; autonomous: boolean; axes: number[]; buttons: number }): void {
+  dsEnabled = d.enabled
+  $('ds-enable').textContent = d.enabled ? 'Disable' : 'Enable'
+  sim.send({ type: 'ds', enabled: d.enabled, autonomous: d.autonomous, test: false })
+  sim.send({ type: 'joystick', axes: d.axes, buttons: d.buttons, pov: -1 })
+}
+
+function paintScenarios(): void {
+  const running = scenarioRun !== null
+  ;($('sc-stop') as HTMLButtonElement).disabled = !running
+  for (const b of document.querySelectorAll<HTMLButtonElement>('#sc-list button, #sc-all')) b.disabled = running
+  const res = $('sc-results')
+  res.textContent = ''
+  for (const o of scenarioOutcomes) {
+    const box = document.createElement('div'); box.className = 'sc-res'; box.dataset.id = o.scenario.id
+    const head = document.createElement('div'); head.className = 'head'
+    const badge = document.createElement('span'); badge.className = `badge ${o.passed ? 'pass' : 'fail'}`; badge.textContent = o.passed ? 'PASS' : 'FAIL'
+    head.append(badge, document.createTextNode(o.scenario.name)); box.appendChild(head)
+    if (o.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = o.error; box.appendChild(e) }
+    for (const c of o.results) { const l = document.createElement('div'); l.className = `chk ${c.ok ? 'ok' : 'bad'}`; l.textContent = `${c.label}: ${c.value} (${c.need})`; box.appendChild(l) }
+    res.appendChild(box)
+  }
+}
+
+function startScenario(sc: Scenario): void {
+  scenarioRun = new ScenarioRun(sc)
+  scenarioStarted = performance.now()
+  startSimNow({ game: sc.game, start: sc.start })
+  $('sc-status').textContent = `${sc.name}: waiting for the robot program to connect…`
+  paintScenarios()
+}
+
+function finishScenario(run: ScenarioRun): void {
+  scenarioOutcomes.push({ scenario: run.scenario, passed: run.passed, error: run.error, results: run.results })
+  scenarioRun = null
+  sendDriver({ enabled: false, autonomous: false, axes: [0, 0, 0, 0, 0, 0], buttons: 0 })
+  const next = scenarioQueue.shift()
+  if (next) setTimeout(() => startScenario(next), 400)
+  else {
+    const n = scenarioOutcomes.filter((o) => o.passed).length
+    $('sc-status').textContent = `Done: ${n} of ${scenarioOutcomes.length} passed.`
+    $('notice').textContent = `Scenarios: ${n} of ${scenarioOutcomes.length} passed`
+  }
+  paintScenarios()
+}
+
+/** Called for every frame: plays the current scenario and times out a robot that never connects. */
+function scenarioFrame(f: RenderFrame): void {
+  const run = scenarioRun
+  if (!run) return
+  const b = sim.bridge
+  const out = run.update({ simTime: f.time, pose: { x: f.robot[0], y: f.robot[1], yaw: 2 * Math.atan2(f.robot[6], f.robot[3]), z: f.robot[2] }, connected: !!b && b.connected && b.frames > 0 })
+  if (out.driver) sendDriver(out.driver)
+  if (out.phase === 'running') $('sc-status').textContent = `${run.scenario.name}: running…`
+  if (out.phase === 'done') finishScenario(run)
+}
+setInterval(() => {
+  const run = scenarioRun
+  if (run && run.phase === 'waiting' && performance.now() - scenarioStarted > 30000) { run.fail('the robot program did not connect within 30 s: launch it on this tab first (Robot code mode)'); finishScenario(run) }
+}, 500)
+
+for (const sc of SCENARIOS) {
+  const row = document.createElement('div'); row.className = 'sc-item'
+  const label = document.createElement('div'); label.append(document.createTextNode(sc.name))
+  const d = document.createElement('span'); d.textContent = sc.description; label.appendChild(d)
+  const run = document.createElement('button'); run.textContent = 'Run'; run.id = `sc-run-${sc.id}`
+  run.addEventListener('click', () => { scenarioOutcomes = []; scenarioQueue = []; startScenario(sc) })
+  row.append(label, run)
+  $('sc-list').appendChild(row)
+}
+$('sc-all').addEventListener('click', () => { scenarioOutcomes = []; scenarioQueue = SCENARIOS.slice(1); startScenario(SCENARIOS[0]) })
+$('sc-stop').addEventListener('click', () => {
+  scenarioQueue = []
+  if (scenarioRun) { scenarioRun.fail('stopped'); finishScenario(scenarioRun) }
+  $('sc-status').textContent = 'Stopped.'
+})
 
 // ---- start position / alliance, view menu, camera, ruler, scoreboard
 function startOverrides(): { x?: number; y?: number; yawDeg?: number } | undefined {
@@ -804,10 +907,10 @@ $<HTMLSelectElement>('log-history').addEventListener('change', async (e) => {
 })
 
 // remembered between runs: the choices in the side panels and the log's severity toggles
-bindSettings(['bat-on', 'bat-open', 'bat-res', 'f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop', 'bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time', 'robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
+bindSettings(['bat-on', 'bat-open', 'bat-res', 'f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop', 'vis-on', 'vis-noise', 'bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time', 'robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
 for (const el of hostEls) el.value = hostEls[0].value // restored values may differ if only one was saved
 robotLog.syncLevels()
-paintFaultNote()
+paintFaultNote(); paintVisionNote()
 applyViewMenu()
 refreshRobot()
 
@@ -863,4 +966,4 @@ view.loadRobotModel().then((msg) => { $('notice').textContent = msg }).catch((e)
 requestAnimationFrame(frame)
 
 // exposed for debugging in the browser console and for automated checks
-;(window as unknown as Record<string, unknown>).crucible = { store, view, plot, sim, openLogFile, seekTo, recorder, analysisView, fx, sweep, refStore, tune, mechHistory, readInput, get time() { return time } }
+;(window as unknown as Record<string, unknown>).crucible = { store, view, plot, sim, openLogFile, seekTo, recorder, analysisView, fx, sweep, refStore, tune, mechHistory, readInput, get scenarioRun() { return scenarioRun }, get time() { return time } }

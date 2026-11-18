@@ -8,6 +8,7 @@ export const MSG_JOYSTICK = 4
 export const MSG_POSE_SEED = 5
 export const MSG_HELLO = 6 // robot to app, UTF-8 JSON
 export const MSG_STEP = 8 // app to robot (lockstep): u64 seq, f64 dt. The robot runs dt of simulated time and answers with ToApp(seq)
+export const MSG_VISION = 9 // app to robot (only when the vision simulation is on): UTF-8 JSON, see NT_CONTRACT.md
 export const MSG_STATS = 7 // robot to app: f64 average round trip us, f64 max round trip us, i64 stale ticks
 
 export const DEFAULT_WS_PORT = 5811

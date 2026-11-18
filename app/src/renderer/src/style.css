@@ -445,3 +445,17 @@ input.mini { width: 48px; padding: 1px 5px; margin: 0 3px; }
 .kb-row kbd { text-align: center; }
 .pm-row select { min-width: 0; }
 .pm-row button, .kb-row button { padding: 2px 10px; font-size: 11.5px; }
+
+/* ---------- test scenarios */
+.sc-list { display: flex; flex-direction: column; gap: 4px; }
+.sc-item { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; font-size: 12px; }
+.sc-item span { color: var(--dim); font-size: 11px; display: block; }
+.sc-results { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.sc-res { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--field); }
+.sc-res .head { display: flex; gap: 8px; align-items: center; font-weight: 650; }
+.sc-res .badge.pass { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+.sc-res .badge.fail { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
+.sc-res .chk { color: var(--dim); font-size: 11.5px; }
+.sc-res .chk.ok::before { content: '✓ '; color: var(--ok); }
+.sc-res .chk.bad::before { content: '✗ '; color: var(--danger); }
+.sc-res .err { color: var(--danger); font-size: 11.5px; }

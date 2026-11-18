@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import { it } from 'vitest'
 import { decodeFromApp, encodeToApp, type FromApp } from '../src/engine/bridge/frames'
-import { MSG_DS, MSG_HELLO, MSG_JOYSTICK, MSG_POSE_SEED, MSG_STATS, MSG_STEP, MSG_TO_APP, MSG_FROM_APP } from '../src/engine/bridge/ws-transport'
+import { MSG_DS, MSG_HELLO, MSG_JOYSTICK, MSG_POSE_SEED, MSG_STATS, MSG_STEP, MSG_TO_APP, MSG_FROM_APP, MSG_VISION } from '../src/engine/bridge/ws-transport'
 import { OFFSEASON, OFFSEASON_DRIVETRAIN } from '../src/robots/offseason'
 import { FakeRobotWs } from '../tests/helpers/fake-ws-robot'
 import { FakeNtServer } from '../tests/helpers/fake-nt-server'
@@ -37,7 +37,11 @@ class FakeRobot {
   poseSeeds = 0; steps = 0; fromApp = 0; limit = Infinity
   /** what the app sent back, newest last (bounded), and how long each answer took */
   recent: FromApp[] = []
+  /** drive the wheels from the left stick (open loop, no steering): lets the scenarios move the robot straight */
+  autoDrive = false
   latencies: number[] = []
+  /** the vision messages (bridge message 9) the app sent, parsed */
+  vision: { t: number; tags: { id: number; distance: number }[]; pose: { x: number; y: number; yaw: number; tags: number } | null }[] = []
   private sentAt = new Map<number, number>()
   private timer: ReturnType<typeof setInterval> | null = null
   sendHello = true
@@ -48,15 +52,20 @@ class FakeRobot {
   async start(): Promise<void> {
     await this.nt.start(5810); await this.ws.start(5811)
     this.ws.onConnect = () => {
+      if (this.timer) { clearInterval(this.timer); this.timer = null } // a reconnect (a restarted sim) must not leave the old frame timer running
       if (this.sendHello) this.ws.send(MSG_HELLO, new TextEncoder().encode(JSON.stringify({ protocol: 0, ...(this.lockstepHello ? { lockstep: true } : {}), devices: [{ type: 'talonfx', id: 20 }], mechanisms: [] })))
       const stats = new Uint8Array(24); new DataView(stats.buffer).setFloat64(0, 4500, true); this.ws.send(MSG_STATS, stats)
       if (!this.lockstep) this.timer = setInterval(() => { this.seq++; this.t += 0.02; this.sentAt.set(Number(this.seq), Date.now()); this.ws.send(MSG_TO_APP, this.toApp(this.seq, this.t)) }, 20)
     }
     this.ws.onMessage = (m) => {
       const v = new DataView(m.body.buffer, m.body.byteOffset, m.body.byteLength)
-      if (m.type === MSG_DS) { this.ds.push({ flags: v.getUint32(8, true), gameData: v.getUint8(14), matchTime: v.getFloat64(16, true) }); this.enabled = (v.getUint32(8, true) & 1) !== 0 }
-      else if (m.type === MSG_JOYSTICK) { const axes: number[] = []; for (let i = 0; i < 6; i++) axes.push(v.getFloat64(8 + i * 8, true)); this.joystick.push({ axes, buttons: v.getBigUint64(56, true) }) }
+      if (m.type === MSG_DS) { if (this.autoDrive && (v.getUint32(8, true) & 1) === 0) for (const mod of OFFSEASON_DRIVETRAIN.modules) this.volts[mod.driveId] = 0; this.ds.push({ flags: v.getUint32(8, true), gameData: v.getUint8(14), matchTime: v.getFloat64(16, true) }); this.enabled = (v.getUint32(8, true) & 1) !== 0 }
+      else if (m.type === MSG_JOYSTICK) {
+        const axes: number[] = []; for (let i = 0; i < 6; i++) axes.push(v.getFloat64(8 + i * 8, true)); this.joystick.push({ axes, buttons: v.getBigUint64(56, true) })
+        if (this.autoDrive) for (const mod of OFFSEASON_DRIVETRAIN.modules) this.volts[mod.driveId] = this.enabled ? -axes[1] * 12 : 0
+      }
       else if (m.type === MSG_POSE_SEED) this.poseSeeds++
+      else if (m.type === MSG_VISION) { try { this.vision.push(JSON.parse(new TextDecoder().decode(m.body))) } catch { /* counted as missing */ } }
       else if (m.type === MSG_FROM_APP) {
         this.fromApp++
         const d = decodeFromApp(m.body)
@@ -298,6 +307,50 @@ it('robot code UI e2e', async () => {
     await page.click('#play'); await sleep(1200); const t2 = await page.evaluate(() => (window as any).crucible.sim.latest.time); expect(t2 > t1 + 0.5, 'Play continues: ' + t1 + ' -> ' + t2)
     await page.click('[data-tab=session]')
   }, page)
+
+  await check('R20 scenarios: Drive forward and Climb the BUMP pass against a robot that drives on the stick; Strafe fails because this robot cannot steer, and says which checks failed', async () => {
+    live.autoDrive = true
+    await page.click('[data-tab=robot]')
+    const outcome = async (id: string): Promise<{ badge: string; checks: string[] }> => {
+      await page.click(`#sc-run-${id}`)
+      await page.waitForFunction((id: string) => document.querySelector(`#sc-results .sc-res[data-id=${id}]`), id, { timeout: 60000 })
+      return page.evaluate((id: string) => { const b = document.querySelector(`#sc-results .sc-res[data-id=${id}]`)!; return { badge: b.querySelector('.badge')!.textContent!, checks: [...b.querySelectorAll('.chk')].map((c: any) => c.className.replace('chk ', '') + ' ' + c.textContent) } }, id)
+    }
+    const fwd = await outcome('forward'); expect(fwd.badge === 'PASS' && fwd.checks.length === 3 && fwd.checks.every((c) => c.startsWith('ok')), 'forward: ' + JSON.stringify(fwd))
+    expect((await page.textContent('#sc-status'))!.startsWith('Done: 1 of 1 passed'), await page.textContent('#sc-status'))
+    expect(await page.$eval('#sc-run-forward', (b: any) => !b.disabled) && await page.$eval('#sc-stop', (b: any) => b.disabled), 'buttons usable again afterwards')
+    const bump = await outcome('bump'); expect(bump.badge === 'PASS', 'bump: ' + JSON.stringify(bump))
+    const strafe = await outcome('strafe'); expect(strafe.badge === 'FAIL' && strafe.checks.some((c) => c.startsWith('bad moved left')), 'strafe fails on "moved left": ' + JSON.stringify(strafe))
+    live.autoDrive = false; for (const mod of OFFSEASON_DRIVETRAIN.modules) live.volts[mod.driveId] = 0
+  }, page)
+  await check('R21 a scenario takes the keyboard away from the driver while it runs, and Stop ends it, disabling the robot', async () => {
+    live.autoDrive = true
+    await page.click('#sc-run-forward'); await page.waitForFunction(() => (window as any).crucible.scenarioRun && (window as any).crucible.scenarioRun.phase === 'running', null, { timeout: 30000 })
+    live.joystick.length = 0; await page.locator('body').click({ position: { x: 4, y: 4 } }); await page.keyboard.down('d'); await sleep(500); await page.keyboard.up('d')
+    expect(!live.joystick.some((j) => j.axes[0] !== 0), 'the D key did not reach the robot during a scenario')
+    await page.click('#sc-stop'); await sleep(600)
+    const last = live.ds[live.ds.length - 1]; expect(!(last.flags & 1), 'the robot is disabled after Stop'); expect((await page.textContent('#sc-status'))!.includes('Stopped'), await page.textContent('#sc-status'))
+    expect(await page.evaluate(() => (window as any).crucible.scenarioRun) === null, 'no scenario left running'); expect((await page.$$eval('#sc-results .sc-res .err', (e: any[]) => e.map((x) => x.textContent))).includes('stopped'), 'the stopped scenario is listed as failed with the reason')
+    live.autoDrive = false
+  }, page)
+  await check('R22 vision camera: off sends nothing; on sends the tags in view and a pose estimate that follows the robot; error 0 is exact; off again stops', async () => {
+    await page.click('#sim-reset'); await sleep(500)
+    await page.click('[data-tab=robot]')
+    live.vision.length = 0; await sleep(700); expect(live.vision.length === 0, 'nothing is sent while the camera is off: ' + live.vision.length)
+    await page.check('#vis-on'); await page.fill('#vis-noise', '0'); await sleep(1200)
+    expect(live.vision.length >= 5, 'vision messages arrive: ' + live.vision.length)
+    const last = live.vision[live.vision.length - 1]
+    expect(last.tags.length > 0 && last.pose !== null, 'the robot sees tags from its start position: ' + JSON.stringify(last))
+    const truth = await page.evaluate(() => { const r = (window as any).crucible.sim.latest.robot; return { x: r[0], y: r[1] } })
+    expect(Math.hypot(last.pose!.x - truth.x, last.pose!.y - truth.y) < 0.05, `exact estimate at error 0: ${JSON.stringify(last.pose)} vs ${JSON.stringify(truth)}`)
+    expect((await page.textContent('#vis-note'))!.startsWith('On'), await page.textContent('#vis-note'))
+    await page.click('[data-tab=session]'); const row = await page.evaluate(() => [...document.querySelectorAll('#simhud *')].map((e) => e.textContent).filter((t) => /tags? ·/.test(t || '')).length); expect(row > 0, 'the panel shows a Vision row')
+    await page.click('[data-tab=robot]'); await page.fill('#vis-noise', '3'); await sleep(1000)
+    const noisy = live.vision.slice(-8).filter((v) => v.pose); const off = noisy.map((v) => Math.hypot(v.pose!.x - truth.x, v.pose!.y - truth.y)); expect(Math.max(...off) > 0.005, 'estimates are noisy at error 3: ' + off.join(','))
+    await page.uncheck('#vis-on'); await sleep(400); const n = live.vision.length; await sleep(600); expect(live.vision.length === n, 'stopped sending after turning it off')
+    await page.click('[data-tab=session]')
+  }, page)
+  await page.click('[data-tab=session]').catch(() => {})
 
   // ---------- stop
   await check('R15 Stop sim hides the panel and DS controls, then lockstep mode starts clean', async () => {

@@ -156,6 +156,11 @@ dropdown paces it (`max` is as fast as it goes). Vision is off in this mode (the
 - **Calibration.** `npm run calibrate -- example` writes synthetic example files; `-- shots shots.csv` fits launch efficiency and backspin to measured shots, `-- drive accel.csv [--volts 12] [--mass]` fits tire friction (and mass) to a measured acceleration;
   `--apply` writes the fitted values into `robots/offseason/robot.yaml`. The reports say when a parameter is not pinned down by the data. File formats: `src/calibration/data.ts`. Nothing has been fitted to real data yet.
 
+## Test scenarios and the vision camera
+
+Robot tab, **Test scenarios**: a scripted driver (forward, strafe, spin, climb the BUMP) plays sticks against your robot code and checks where the robot ends up; each run starts a fresh sim, takes the keyboard away from you and shows which checks passed.
+Robot tab, **Vision camera**: a simulated AprilTag camera on the robot. The 3D view shows every tag (green when seen), the view cone, rays to the seen tags and the reported pose (amber, joined to the true position so the error shows); the panel gets a Vision row. The robot code is sent the tags and a noisy pose over bridge message 9 (see `docs/NT_CONTRACT.md` section 15). The tag layout is assumed, and the robot library does not read the message yet.
+
 ## Brand
 
 The name is BALTA Crucible. The images (emblem, wordmark, icons) are built from the BALTA Robotics logo file by `tools/build-brand-assets.mjs`; colors are gold #cb8e00, silver #dcdcdc, black #010101. The theme button switches dark and light

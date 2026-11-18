@@ -312,3 +312,13 @@ ready), and a debounced feeder jam check (the 40 A threshold tripped on the star
 - **Known gaps:** `ClosedLoopError` is the profile reference minus the measurement (my reading of Phoenix; not checked); the robot accepts one app at a time (a stray Crucible window on port 5811 steals the connection); only the drive script has been shown repeatable (shooting and ball
   handling are not yet); the UI buttons are wall-clock timed.
 
+## 15. Vision simulation (app side only)
+
+- **Switch:** Robot tab, Vision camera, "Simulate a tag camera" (off by default; real-time and lockstep modes). Nothing is sent while it is off.
+- **Message type 9, app to robot, UTF-8 JSON**, one per 50 ms of simulated time (sent next to the FromApp frame):
+  `{ "t": simTime, "tags": [{ "id", "distance", "bearingDeg", "elevationDeg", "viewAngleDeg" }], "pose": { "x", "y", "yaw", "tags", "stdXY", "stdYawDeg" } | null }`.
+  `tags` are the AprilTags the camera sees, nearest first; bearing is left-positive from the camera axis. `pose` is the robot pose the vision pipeline would report (field metres and radians) with noise, or null with no tags in view.
+- **Camera:** 0.30 m ahead of the centre, 0.55 m up, pitched up 15 degrees, 70 by 55 degree field of view, 0.4 to 6 m range. A tag is seen when it is in range, inside the view and its face points at the camera (within about 72 degrees).
+- **Pose error:** standard deviation 1 cm + 1 cm per metre squared of mean tag distance, yaw 1 degree + 0.5 degree per metre, divided by the square root of the number of tags, times the Error slider (0 exact, 1 typical, up to 3).
+- **Assumed, not official:** the tag layout (four tags around each HUB, three on each alliance wall, ids 1 to 14) and the camera mounting. Both are in `src/engine/vision.ts` (`TAGS`, `DEFAULT_CAMERA`) to be replaced with the real ones.
+- **Not built:** the Java side. `robot-lib` does not read message 9 yet, so a robot program ignores it; only the test fake robot parses it. Feeding it to a pose estimator (`addVisionMeasurement`) is the next step.

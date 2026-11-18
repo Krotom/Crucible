@@ -7,12 +7,13 @@ import type { Engine } from '../engine'
 import { checkAgainstHello, type RobotDefinition } from '../../robots/definition'
 import { decodeStruct } from '../../renderer/src/lib/structs'
 import { Nt4Raw } from './nt4raw'
+import { DEFAULT_CAMERA, detectTags, estimatePose, NO_VISION, type Detection, type PoseEstimate, type VisionSettings } from '../vision'
 import { applyFaults, batteryVoltage, DEFAULT_BATTERY, NO_FAULTS, Noise, type BatteryModel, type Faults } from './faults'
 import {
   decodeToApp, encodeDs, encodeFromApp, encodeJoystick, encodePoseSeed, encodeStep, type DsState, type FromApp, type JoystickState, type ToApp,
 } from './frames'
 import {
-  DEFAULT_WS_PORT, MSG_DS, MSG_FROM_APP, MSG_HELLO, MSG_JOYSTICK, MSG_POSE_SEED, MSG_STATS, MSG_STEP, MSG_TO_APP, WsTransport,
+  DEFAULT_WS_PORT, MSG_DS, MSG_FROM_APP, MSG_HELLO, MSG_JOYSTICK, MSG_POSE_SEED, MSG_STATS, MSG_STEP, MSG_TO_APP, MSG_VISION, WsTransport,
 } from './ws-transport'
 
 const SEED_DELAY_FRAMES = 20
@@ -87,6 +88,11 @@ export class BridgeSession {
   faults: Faults = { ...NO_FAULTS }
   battery: BatteryModel = { ...DEFAULT_BATTERY }
   private noise = new Noise(1)
+  /** the simulated camera: off by default; on, the robot is sent the tags it sees and a noisy pose estimate about 20 times per simulated second */
+  vision: VisionSettings = { ...NO_VISION }
+  private visionAt = -1
+  /** what the camera saw last, for the panel and the 3D view */
+  visionReading: { tags: Detection[]; pose: PoseEstimate | null; truth: { x: number; y: number; yaw: number } | null } = { tags: [], pose: null, truth: null }
   /** the battery voltage and current the robot was last told about, for the panel */
   batteryReading = { volts: 12, amps: 0 }
   private ds: DsState = { counter: 0n, gameData: '', enabled: false, autonomous: false, test: false, estop: false, dsAttached: true, alliance: 1, station: 1, matchTime: 0 }
@@ -224,9 +230,23 @@ export class BridgeSession {
     const volts = this.battery.enabled ? batteryVoltage(this.battery, amps) : frame.batteryVolts
     const out = applyFaults({ ...frame, batteryVolts: volts }, this.faults, this.noise)
     this.batteryReading = { volts: out.batteryVolts, amps }
+    this.sendVision()
     const bytes = encodeFromApp(out)
     if (delayable && this.faults.latencyMs > 0) setTimeout(() => this.ws.send(MSG_FROM_APP, bytes), this.faults.latencyMs)
     else this.ws.send(MSG_FROM_APP, bytes)
+  }
+
+  /** One vision message per 50 ms of simulated time: { t, tags: [{ id, distance, bearingDeg, elevationDeg, viewAngleDeg }], pose: { x, y, yaw, tags, stdXY, stdYawDeg } | null }. */
+  private sendVision(): void {
+    if (!this.vision.enabled) { if (this.visionReading.truth) this.visionReading = { tags: [], pose: null, truth: null }; return }
+    const t = this.engine.time
+    if (this.visionAt >= 0 && t >= this.visionAt && t - this.visionAt < 0.05) return
+    this.visionAt = t
+    const truth = this.engine.robotGroundPose()
+    const tags = detectTags(truth, DEFAULT_CAMERA)
+    const pose = estimatePose(truth, tags, this.noise, this.vision.noise)
+    this.visionReading = { tags, pose, truth }
+    this.ws.send(MSG_VISION, new TextEncoder().encode(JSON.stringify({ t, tags, pose })))
   }
 
   private sendStep(): void {

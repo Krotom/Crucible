@@ -4,6 +4,7 @@ import SimWorker from '../../../engine/worker?worker'
 import type { BridgeInfo, FromWorker, ToWorker, UiEvent, WorkerReady } from '../../../engine/protocol'
 import type { RenderFrame } from '../../../engine/types'
 import type { BatteryModel, Faults } from '../../../engine/bridge/faults'
+import type { VisionSettings } from '../../../engine/vision'
 import type { BreakSpec } from '../../../engine/breaks'
 import type { TuneParams } from '../../../engine/tuning'
 import type { DataStore } from './store'
@@ -33,7 +34,7 @@ export class SimSource {
 
   get active(): boolean { return this.worker !== null }
 
-  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent: 'none' | 'blocker' | 'cycler' | 'ally' | 'both' = 'none', stepDt = 0.002, extra: { alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; breaks?: Partial<BreakSpec> } = {}): void {
+  start(seed: number, mode: 'script' | 'robot' | 'lockstep' = 'script', host = '127.0.0.1', game: 'test' | 'rebuilt' = 'test', opponent: 'none' | 'blocker' | 'cycler' | 'ally' | 'both' = 'none', stepDt = 0.002, extra: { alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; vision?: Partial<VisionSettings>; breaks?: Partial<BreakSpec> } = {}): void {
     this.stop()
     this.store.startLive('Sim')
     this.lastPushed = -1

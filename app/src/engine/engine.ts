@@ -188,6 +188,11 @@ export class Engine {
   dispose(): void { this.world?.free() }
 
   /** The alliance the simulated robot plays for. */
+  /** The robot's ground position and heading right now (field frame). */
+  robotGroundPose(): { x: number; y: number; yaw: number } {
+    const t = this.robot.translation(), q = this.robot.rotation()
+    return { x: t.x, y: t.y, yaw: 2 * Math.atan2(q.z, q.w) }
+  }
   get robotAlliance(): Alliance { return this.robotSpec.alliance ?? 'blue' }
 
   /** The Game Data string the field system would send the robot now. */

@@ -92,6 +92,7 @@ export function buildSimModel(f: RenderFrame, info: SimInfo): PanelModel {
         { id: 'rtt', label: 'Round trip', value: `${b.rttMs.toFixed(1)} ms`, hint: 'Time for one exchange with the robot program' },
         { id: 'lead', label: 'Lead', value: `${b.leadMs.toFixed(1)} ms`, hint: 'How far the simulation runs ahead of the robot' },
         ...(b.battery ? [{ id: 'battery', label: 'Battery', value: `${b.battery.volts.toFixed(1)} V · ${b.battery.amps.toFixed(0)} A`, tone: (b.battery.volts < 7 ? 'bad' : b.battery.volts < 9 ? 'warn' : undefined) as Tone | undefined, hint: 'The battery voltage the robot code was told and the current the motors draw (turn the battery model on in the Robot tab to see it sag)' }] : []),
+        ...(b.vision?.enabled ? [{ id: 'vision', label: 'Vision', value: b.vision.pose ? `${b.vision.tags.length} tag${b.vision.tags.length === 1 ? '' : 's'} · ±${(b.vision.pose.stdXY * 100).toFixed(0)} cm` : 'no tags in view', tone: (b.vision.pose ? 'ok' : 'warn') as Tone, hint: 'The simulated camera: how many AprilTags it sees and the expected error of the pose estimate sent to the robot code (Robot tab, Vision camera)' }] : []),
         { id: 'frames', label: 'Frames', value: String(b.frames) },
       )
     }

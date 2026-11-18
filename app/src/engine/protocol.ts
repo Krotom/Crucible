@@ -1,11 +1,12 @@
 // Messages between the renderer and the physics worker.
 import type { BatteryModel, Faults } from './bridge/faults'
+import type { Detection, PoseEstimate, VisionSettings } from './vision'
 import type { BreakSpec } from './breaks'
 import type { TuneParams } from './tuning'
 import type { FieldDefinition, PieceSpec, RenderFrame } from './types'
 
 export type ToWorker =
-  | { type: 'init'; seed: number; mode: 'script' | 'robot' | 'lockstep'; host?: string; game?: 'test' | 'rebuilt'; opponent?: 'none' | 'blocker' | 'cycler' | 'ally' | 'both'; stepDt?: number; alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; breaks?: Partial<BreakSpec> }
+  | { type: 'init'; seed: number; mode: 'script' | 'robot' | 'lockstep'; host?: string; game?: 'test' | 'rebuilt'; opponent?: 'none' | 'blocker' | 'cycler' | 'ally' | 'both'; stepDt?: number; alliance?: 'blue' | 'red'; start?: { x?: number; y?: number; yawDeg?: number }; tune?: TuneParams; faults?: Partial<Faults>; battery?: Partial<BatteryModel>; vision?: Partial<VisionSettings>; breaks?: Partial<BreakSpec> }
   | { type: 'match'; run: boolean }
   /** seconds >= 0 sets the lead by hand; a negative value turns the automatic lead (follow the measured round trip) back on */
   | { type: 'lead'; seconds: number }
@@ -22,6 +23,8 @@ export type ToWorker =
   /** pause the run when something happens (see breaks.ts) */
   | { type: 'breaks'; breaks: Partial<BreakSpec> }
   | { type: 'battery'; battery: Partial<BatteryModel> }
+  /** the simulated AprilTag camera (robot-code modes) */
+  | { type: 'vision'; vision: Partial<VisionSettings> }
   | { type: 'save'; slot?: number }
   | { type: 'load'; slot?: number }
   /** go back this many simulated seconds (scripted sims only: the robot program cannot be rewound) */
@@ -52,6 +55,8 @@ export type UiEvent =
   | { t: number; kind: 'sensor'; sensor: string; alliance: 'blue' | 'red' | 'none'; x: number; y: number; id: number; enter: boolean }
   | { t: number; kind: 'score'; alliance: 'blue' | 'red' | 'none'; points: number; reason: string }
 
+export interface VisionInfo { enabled: boolean; tags: Detection[]; pose: PoseEstimate | null; truth: { x: number; y: number; yaw: number } | null }
+
 export interface BridgeInfo {
   connected: boolean
   frames: number
@@ -66,6 +71,8 @@ export interface BridgeInfo {
   mechanisms: { name: string; position: number; velocity: number; volts: number; amps: number }[]
   /** the battery voltage the robot was last told and the current drawn */
   battery: { volts: number; amps: number }
+  /** the simulated camera: what it sees now, the pose it reports, and where the robot really is */
+  vision: VisionInfo
   fms: boolean
 }
 

@@ -149,6 +149,18 @@
             <label class="field"><span>Noise</span><input id="f-noise" type="range" min="0" max="5" step="0.5" value="0" title="sensor noise on rotor, CANcoder and Pigeon readings" /></label>
             <label class="field"><span>Drop CAN</span><input id="f-drop" placeholder="e.g. 8, 37" spellcheck="false" title="CAN ids that stop answering (the robot gets no state for them)" /></label>
             <p id="f-note" class="hint"></p>
+            <h4 class="sub">Vision camera</h4>
+            <label class="check" title="A robot-mounted camera that sees AprilTags. The robot code is sent the tags it sees and a noisy pose estimate (bridge message 9)."><input id="vis-on" type="checkbox" />Simulate a tag camera</label>
+            <label class="field"><span>Error</span><input id="vis-noise" type="range" min="0" max="3" step="0.25" value="1" title="scale of the pose-estimate error: 0 = exact, 1 = typical, 3 = poor" /></label>
+            <p id="vis-note" class="hint">Off. Tag positions are assumed (see NT_CONTRACT.md).</p>
+          </div>
+          <div class="card" id="scenario-card">
+            <h3>Test scenarios</h3>
+            <p class="hint">A scripted driver plays sticks against your robot code and checks where the robot ends up. Launch the robot first; each run starts a fresh sim.</p>
+            <div id="sc-list" class="sc-list"></div>
+            <div class="btnrow"><button id="sc-all" class="wide">Run all</button><button id="sc-stop" disabled>Stop</button></div>
+            <div id="sc-status" class="dimtext"></div>
+            <div id="sc-results" class="sc-results"></div>
           </div>
           <div class="card" id="inspector-card">
             <h3>Mechanism inspector</h3>
