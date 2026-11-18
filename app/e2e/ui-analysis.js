@@ -4,7 +4,7 @@ const { check, expect, eq, sleep, summary, launch } = require('./lib')
 const SP = process.env.SP
 const OUT = SP + '/e2e/out'; fs.mkdirSync(OUT, { recursive: true })
 ;(async () => {
-  const { app, page, errors } = await launch()
+  const { app, page, errors } = await launch({}, { popup: true })
   const T = (id) => page.textContent(id)
   const rec = (fn, arg) => page.evaluate(fn, arg)
   const startSim = async (game = 'test', seed = '42') => {

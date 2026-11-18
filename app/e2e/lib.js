@@ -52,6 +52,8 @@ exports.launch = async (extraEnv = {}, opts = {}) => {
   page.on('console', (m) => { if (m.type() === 'error' && !/404/.test(m.text())) errors.push('console: ' + m.text()) })
   await page.waitForSelector('#start-sim', { timeout: 30000 })
   await page.waitForFunction(() => !!window.crucible, null, { timeout: 60000 }) // the page's script sets this last; a slow runner shows the controls long before
+  // The match-summary popup is modal: a sim that runs to its end on a slow machine would open it and block every later click. Suites that test the popup ask for it.
+  if (!opts.popup) await page.evaluate(() => { const c = document.getElementById('an-popup'); if (c && c.checked) { c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })) } })
   exports.setPage(page)
   return { app, page, errors, userData }
 }

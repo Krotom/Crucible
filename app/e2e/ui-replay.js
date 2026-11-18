@@ -31,6 +31,7 @@ fs.writeFileSync(OUT + '/ref.wpilog', makeLog(10))
     expect(!(await page.$eval('#sim-back1', (b) => b.disabled)), 'enabled with history')
     await press('#sim-back1'); const t1 = await simT(); expect(Math.abs(t1 - (t0 - 1)) < 0.011, `back 1 s: ${t0} -> ${t1}`)
     await press('#sim-back5'); const t2 = await simT(); expect(Math.abs(t2 - (t1 - 5)) < 0.011, `back 5 s: ${t1} -> ${t2}`)
+    for (let i = 0; i < 12 && (await simT()) >= 5; i++) await press('#sim-back5') // a late pause can leave the time well past 8 s: go back until less than 5 s are left
     await press('#sim-back5'); expect((await simT()) >= 0 && (await simT()) < 0.011, 'clamped at the start: ' + (await simT()))
     expect(await page.$eval('#sim-back1', (b) => b.disabled), 'disabled again at 0')
   })
@@ -44,7 +45,7 @@ fs.writeFileSync(OUT + '/ref.wpilog', makeLog(10))
   await check('R3 analysis follows a rewind: events after the moment disappear and come back once, not twice', async () => {
     await startSim(); await runTo(7)
     const feed = () => ev(() => crucible.recorder.feed.filter((f) => f.text === 'Phase: Teleop').length)
-    eq(await feed(), 1, 'teleop phase seen once'); await press('#sim-back5'); await press('#sim-back1')
+    eq(await feed(), 1, 'teleop phase seen once'); for (let i = 0; i < 12 && (await simT()) >= 5; i++) await press('#sim-back5') // teleop starts at 5 s: go back until before it, however late the pause landed
     expect((await simT()) < 5, 'rewound before teleop: ' + (await simT())); eq(await feed(), 0, 'the later event is forgotten'); await runTo(7); eq(await feed(), 1, 'it comes back once')
   })
   await check('R4 clicking the timeline rewinds to that moment; clicking ahead of the sim is refused with a hint', async () => {
