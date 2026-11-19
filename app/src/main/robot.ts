@@ -107,7 +107,10 @@ export function resolveRobotDir(appRoot: string, configDirs: string[] = []): str
 export function simulateCommand(lockstep = false, extraEnv: Record<string, string> = {}): { command: string; args: string[]; env: Record<string, string> } {
   // lockstep (Mode B): the robot's clock and Talon/swerve emulation run under the app's control (docs/NT_CONTRACT.md section 14).
   // The variables the bridge needs are set last, so extra variables can never switch it off.
-  const env: Record<string, string> = { ...extraEnv, CRUCIBLE_BRIDGE: '1', ...(lockstep ? { CRUCIBLE_MODE: 'lockstep' } : {}) }
+  // The robot's JVM gets a 1 GB heap cap: without one it may grow to a quarter of the computer's memory (4 GB on 16 GB) before it
+  // collects garbage, and the sim allocates constantly. JVMs started with their own -Xmx (Gradle's) are not affected; a variable
+  // set by the user (Robot tab environment) wins.
+  const env: Record<string, string> = { JAVA_TOOL_OPTIONS: '-Xmx1g', ...extraEnv, CRUCIBLE_BRIDGE: '1', ...(lockstep ? { CRUCIBLE_MODE: 'lockstep' } : {}) }
   return process.platform === 'win32'
     ? { command: 'cmd.exe', args: ['/c', '.\\gradlew.bat', 'simulateJava', '--no-daemon', '--console=plain'], env }
     : { command: './gradlew', args: ['simulateJava', '--no-daemon', '--console=plain'], env }
