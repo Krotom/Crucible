@@ -101,8 +101,8 @@ ballHandling:
     axis: [-0.137, -0.1364]     # CAD: turret ring gear center
     exitForward: 0.15
     exitHeight: 0.62
-    wheelRadius: 0.0286
-    efficiency: 0.82            # GUESS: fitted so that Burak's generated tables (ShooterCalc rps + HoodTable rotations) score from about 2 to 4 m in the sim (0.85 overshot them; it was fitted to the older Constants.RPMMaps). Not measured: fit it to real shots (Tune > Calibration)
+    wheelRadius: 0.0508         # GUESS: a 4 in wheel (the shot calculator's default); the old 0.0286 only worked because the code fed the motor-side table value as flywheel speed. Ask Burak or measure
+    efficiency: 0.93            # GUESS: the exit speed over the wheel surface speed, fitted so the generated tables (motor rps, divided by the 2:1 gear) score from 2 to 8 m in the sim; high because the calculator also counts the feeder's push. Fit it to real shots (Tune > Calibration)
     elevationAtHoodZeroDeg: 15  # Burak's HoodTable: launch angle = 15 deg + 360 deg per mechanism rotation (the table is in true mechanism rotations)
     hoodDegPerRotation: -360    # negative: more rotation = flatter in the formula below, so -360 gives 15 + 360*rot. The robot's Mechanism3d draws the hood at 10 deg/rotation, a visual placeholder
     backspin: 0.2
