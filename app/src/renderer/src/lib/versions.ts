@@ -16,6 +16,12 @@ export interface Release { version: string; title: string; items: string[] }
 
 /** Newest first. Add an entry for each release. */
 export const CHANGELOG: Release[] = [
+  { version: '1.1.3', title: 'Hood scale, turret model in lockstep, 80 FUEL', items: [
+    'The robot model\'s turret, hood and intake now move in lockstep runs too (the app did not read their poses there, so the turret stayed in its CAD rest pose and looked at the wrong place)',
+    'Hood scale follows Burak\'s generated HoodTable: launch angle = 15 degrees + 360 degrees per hood rotation (the sim used 80 - 10 per rotation, which sent every shot almost straight up). Robot code that still uses the older 0.5 to 3.0 rotation hood table will now aim too flat: it needs that table converted',
+    'Shot efficiency 0.78 (was 0.85): the generated shooter table needs a slightly slower exit speed. Still a guess: fit it to real shots in Tune > Calibration',
+    'The robot holds up to 80 FUEL (the revolver is modelled as a hopper) instead of 3',
+  ] },
   { version: '1.1.2', title: 'The Windows in-app update works', items: [
     'Windows: the in-app update quit the app and then did nothing, because the helper that runs the installer could not start. It is rebuilt (PowerShell, started so that it outlives the app and has a console), writes crucible-update.log next to the download, and starts the old version again when the install fails',
     'Windows will ask for permission to install during an update: allow it. Copies older than 1.1.2 still have the fault: install 1.1.2 once by hand (the installer .exe of this release); updates after that work from inside the app',

@@ -184,7 +184,7 @@ async function handle(m: ToWorker): Promise<void> {
         watchEngine(engine)
         remember()
         if (m.mode !== 'script') {
-          bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: lockstep ? null : 5810 }, () => {}, OFFSEASON, lockstep ? { dt: engine.dt, speed: speed } : null)
+          bridge = new BridgeSession(engine, m.host ?? '127.0.0.1', { ws: 5811, nt: 5810 }, () => {}, OFFSEASON, lockstep ? { dt: engine.dt, speed: speed } : null)
           bridge.faults = cleanFaults(m.faults)
           bridge.battery = cleanBattery(m.battery)
           bridge.vision = cleanVision(m.vision)
