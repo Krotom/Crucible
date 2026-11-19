@@ -58,6 +58,7 @@ mechanisms:
 ballHandling:
   piece: ball
   preload: 3                    # GUESS: FUEL loaded before the match (the rules allow up to 8)
+  capacity: 80                  # GUESS: the most FUEL the robot holds at once (the revolver is modelled as a hopper that stores them); replace with the real number
   intake:
     driver: intakeDriver
     metersPerRotation: 0.0785   # CAD: 10-tooth pinion, 25 mm pitch diameter
@@ -82,6 +83,7 @@ ballHandling:
         - { driver: indexer,      direction: -1, radius: 0.0254 }
     - name: revolver
       length: 0.40
+      hopper: true              # stores FUEL in bulk: the intake roller fills it, the indexer empties it onto the feeder one at a time
       drivers:
         - { driver: indexer, direction: -1, radius: 0.0254 }
     - name: feeder

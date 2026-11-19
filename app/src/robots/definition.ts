@@ -141,6 +141,7 @@ function parseBalls(b: Obj, names: Set<string>): BallHandlingSpec {
   return {
     piece: str(b, 'piece', 'ballHandling'),
     preload: b.preload === undefined ? undefined : num(b, 'preload', 'ballHandling'),
+    capacity: b.capacity === undefined ? undefined : num(b, 'capacity', 'ballHandling'),
     intake: {
       driver: mech(i, 'driver', w, names), metersPerRotation: num(i, 'metersPerRotation', w), travel: num(i, 'travel', w),
       slideAxis: vec3(i.slideAxis, `${w}.slideAxis`),
@@ -156,6 +157,7 @@ function parseBalls(b: Obj, names: Set<string>): BallHandlingSpec {
       return {
         name: str(o, 'name', ww),
         length: num(o, 'length', ww),
+        ...(o.hopper === true ? { hopper: true } : {}),
         drivers: drivers.map((d, j) => { const dd = obj(d, `${ww}.drivers[${j}]`); const w2 = `${ww}.drivers[${j}]`; return { driver: mech(dd, 'driver', w2, names), direction: sign(dd, 'direction', w2), radius: num(dd, 'radius', w2) } }),
       }
     }),

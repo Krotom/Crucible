@@ -147,9 +147,9 @@ describe('intake capture', () => {
     const [cx, cy] = boxCenter(e)
     for (let i = 0; i < 4; i++) e.spawn({ spec: 'ball', position: [cx, cy + (i - 1.5) * 0.16, 0.1] })
     e.run(0.02)
-    expect(e.ballSystem!.held.length).toBe(1) // the others wait until the first has moved on
+    expect(e.ballSystem!.count).toBe(1) // the others wait until the first has moved on
     e.run(1.5)
-    expect(e.ballSystem!.held.length).toBeGreaterThanOrEqual(2)
+    expect(e.ballSystem!.count).toBeGreaterThanOrEqual(2)
   })
 })
 
@@ -160,17 +160,16 @@ describe('stages and beam breaks', () => {
     const [cx, cy] = boxCenter(e)
     e.spawn({ spec: 'ball', position: [cx, cy, 0.1] })
     e.run(0.05)
-    expect(e.ballSystem!.held.length).toBe(1)
+    expect(e.ballSystem!.count).toBe(1)
     return e
   }
 
-  it('rides the intake roller to the indexer entrance and waits there', async () => {
+  it('rides the intake roller into the hopper (the revolver) and waits there', async () => {
     const e = await withHeldBall()
     e.run(1)
-    const s = e.ballSystem!.held[0]
-    expect(s).toBeGreaterThan(0.29)
-    expect(s).toBeLessThan(0.45)
-    expect(e.ballSystem!.beams[0]).toBe(true) // the beam at the indexer entrance sees it
+    expect(e.ballSystem!.held.length).toBe(0) // out of the single file
+    expect(e.ballSystem!.stored).toBe(1) // and in the hopper
+    expect(e.ballSystem!.beams[0]).toBe(true) // the beam at the revolver entrance sees a hopper that is not empty
     expect(e.ballSystem!.beams[1]).toBe(false)
   })
 
@@ -261,8 +260,62 @@ describe('stages and beam breaks', () => {
     e.run(1)
     const h = e.hash()
     e.restore(snap)
-    expect(e.ballSystem!.held.length).toBe(1)
+    expect(e.ballSystem!.count).toBe(1)
     e.setMotorVolts(ID.indexer, -9)
+    e.run(1)
+    expect(e.hash()).toBe(h)
+  })
+})
+
+describe('the hopper: the robot holds up to its capacity', () => {
+  /** drops one ball at the intake mouth every 0.2 s, `n` times, with the roller running */
+  async function fillWith(n: number, indexer = 0, feeder = 0): Promise<Engine> {
+    const e = await make()
+    intakeOn(e)
+    e.setMotorVolts(ID.indexer, indexer); e.setMotorVolts(ID.feeder, feeder)
+    const [cx, cy] = boxCenter(e)
+    for (let i = 0; i < n; i++) { e.spawn({ spec: 'ball', position: [cx, cy, 0.1] }); e.run(0.2) }
+    e.run(1)
+    return e
+  }
+
+  it('the capacity is 80 (not the 3 that fit in the intake stage), and a full robot takes no more', async () => {
+    expect(OFFSEASON.balls!.capacity).toBe(80)
+    const e = await fillWith(90)
+    expect(e.ballSystem!.count).toBe(80)
+    expect(e.getFrame().held.length).toBe(80) // the panel's "Holding" count
+    expect(e.ballSystem!.held.length).toBeLessThanOrEqual(3) // only the intake queue is a single file: the rest is in the hopper
+    expect(e.ballSystem!.stored).toBeGreaterThan(70)
+    expect(e.pieceCount).toBeGreaterThanOrEqual(10) // the ten that did not fit lie on the floor (the world kept them)
+  }, 60_000)
+
+  it('the indexer empties the hopper onto the feeder one piece at a time, up to the exit', async () => {
+    const e = await fillWith(10)
+    expect(e.ballSystem!.count).toBe(10)
+    const before = e.ballSystem!.stored
+    e.setMotorVolts(ID.intakeRoller, 0)
+    e.setMotorVolts(ID.indexer, -9)
+    e.setMotorVolts(ID.feeder, 7)
+    e.run(3)
+    // the feed queue holds what fits between the hopper and the exit (two), the rest is still in the hopper; nothing is lost and nothing is launched (no flywheel)
+    expect(e.ballSystem!.count).toBe(10)
+    expect(e.ballSystem!.shots).toBe(0)
+    expect(e.ballSystem!.held.filter((s) => s >= 0.69).length).toBe(2)
+    expect(e.ballSystem!.stored).toBeLessThan(before)
+    expect(e.ballSystem!.beams[2]).toBe(true)
+  }, 60_000)
+
+  it('the preload goes to the exit first and the rest into the hopper, and a snapshot keeps the hopper', async () => {
+    const e = await Engine.create({ game: game(), robot: { ...ROBOT, balls: { ...OFFSEASON.balls!, preload: 8 } }, seed: 1 })
+    expect(e.ballSystem!.count).toBe(8)
+    expect(e.ballSystem!.held.length).toBe(2); expect(e.ballSystem!.stored).toBe(6)
+    const snap = e.snapshot()
+    e.setMotorVolts(ID.indexer, -9); e.setMotorVolts(ID.feeder, 7)
+    e.run(1)
+    const h = e.hash()
+    e.restore(snap)
+    expect(e.ballSystem!.stored).toBe(6)
+    e.setMotorVolts(ID.indexer, -9); e.setMotorVolts(ID.feeder, 7)
     e.run(1)
     expect(e.hash()).toBe(h)
   })

@@ -938,7 +938,7 @@ export class Engine {
     if (this.contact.count > 0) { h.add(this.contact.count); h.add(this.contact.peak) }
     this.drivetrain?.hashInto((x) => h.add(x))
     for (const m of this.mechanisms.values()) { h.add(m.angle); h.add(m.speed) }
-    if (this.ballSystem) { for (const s of this.ballSystem.held) h.add(s); h.add(this.ballSystem.shots); h.add(this.ballSystem.captured) }
+    if (this.ballSystem) { for (const s of this.ballSystem.held) h.add(s); h.add(this.ballSystem.stored); h.add(this.ballSystem.shots); h.add(this.ballSystem.captured) }
     for (const p of this.pieces) { h.add(p.id); addBody(this.world.getRigidBody(p.handle)) }
     return h.digest()
   }
@@ -991,7 +991,7 @@ export class Engine {
       pieceSpecIndex: spec,
       status: this.game.status ? this.game.status(this.gameState, this.time) : {},
       hash: withHash ? (this.lastHash = this.hash()) : this.lastHash,
-      held: this.ballSystem ? [...this.ballSystem.held] : [],
+      held: this.ballSystem ? this.ballSystem.heldPositions() : [],
       beams: this.ballSystem ? [...this.ballSystem.beams] : [],
       capture: this.ballSystem ? this.ballSystem.captureBox() : null,
       shots: this.ballSystem?.shots ?? 0,

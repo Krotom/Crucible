@@ -19,7 +19,10 @@ export interface BallHost {
   emit(e: GameEvent): void
 }
 
-export interface BallSnapshot { held: number[]; shots: number; captured: number }
+export interface BallSnapshot { held: number[]; shots: number; captured: number; /** pieces in the hopper (absent in older snapshots) */ stored?: number }
+
+/** a stage must carry a piece at least this fast (m/s) to push it into the hopper or out of it */
+const HOPPER_MIN_SPEED = 0.05
 
 function clamp(x: number, lo: number, hi: number): number { return Math.min(hi, Math.max(lo, x)) }
 
@@ -35,6 +38,12 @@ export class BallSystem {
   /** minimum distance between held pieces' centers */
   private spacing: number
   private captureActive = false
+  /** pieces in the hopper stage (if the robot has one): counted, not positioned */
+  stored = 0
+  private hopperIdx = -1
+  private hopperStart = 0
+  private hopperEnd = 0
+  private capacity: number
 
   /** Changes the shooter's efficiency and backspin while it runs (the next shot uses them). */
   tuneShooter(efficiency?: number, backspin?: number): void {
@@ -49,20 +58,41 @@ export class BallSystem {
     this.radius = host.pieceRadius(spec.piece)
     this.spacing = 2 * this.radius
     this.beams = spec.beams.map(() => false)
+    this.hopperIdx = spec.stages.findIndex((s) => s.hopper === true)
+    if (this.hopperIdx >= 0) { this.hopperStart = this.stageStart[this.hopperIdx]; this.hopperEnd = this.hopperStart + spec.stages[this.hopperIdx].length }
+    this.capacity = spec.capacity ?? Infinity
   }
 
   reset(): void {
     // the preload waits at the end of the path, as pieces loaded by hand before the match
-    const n = this.spec.preload ?? 0
-    this.held = Array.from({ length: n }, (_, i) => this.pathLength - (n - 1 - i) * this.spacing)
+    const n = Math.min(this.spec.preload ?? 0, this.capacity)
+    this.stored = 0
+    if (this.hopperIdx < 0) this.held = Array.from({ length: n }, (_, i) => this.pathLength - (n - 1 - i) * this.spacing)
+    else {
+      // what fits between the hopper and the exit waits at the exit, the rest of the preload lies in the hopper
+      const fit = Math.floor((this.pathLength - this.hopperEnd) / this.spacing + 1e-9) + 1
+      const inFront = Math.min(n, fit)
+      this.held = Array.from({ length: inFront }, (_, i) => this.pathLength - (inFront - 1 - i) * this.spacing)
+      this.stored = n - inFront
+    }
     this.shots = 0
     this.captured = 0
     this.updateBeams()
   }
 
-  save(): BallSnapshot { return { held: [...this.held], shots: this.shots, captured: this.captured } }
+  save(): BallSnapshot { return { held: [...this.held], shots: this.shots, captured: this.captured, stored: this.stored } }
 
-  load(s: BallSnapshot): void { this.held = [...s.held]; this.shots = s.shots; this.captured = s.captured; this.updateBeams() }
+  load(s: BallSnapshot): void { this.held = [...s.held]; this.shots = s.shots; this.captured = s.captured; this.stored = s.stored ?? 0; this.updateBeams() }
+
+  /** Everything the robot holds: the queue and the hopper. */
+  get count(): number { return this.held.length + this.stored }
+
+  /** Positions of everything held, ascending, for the frame: the hopper's pieces are given the middle of the hopper stage. */
+  heldPositions(): number[] {
+    if (this.hopperIdx < 0) return [...this.held]
+    const mid = (this.hopperStart + this.hopperEnd) / 2
+    return [...this.held.filter((s) => s <= this.hopperStart + 1e-9), ...Array.from({ length: this.stored }, () => mid), ...this.held.filter((s) => s >= this.hopperEnd - 1e-9)]
+  }
 
   step(): void {
     this.moveStages()
@@ -102,6 +132,7 @@ export class BallSystem {
     const box = this.captureBox()
     this.captureActive = box.active
     if (!box.active) return
+    if (this.count >= this.capacity) return // full
     // there must be room at the mouth
     if (this.held.length > 0 && this.held[0] < this.spacing - 1e-9) return
     const p = this.host.robotPose()
@@ -140,7 +171,38 @@ export class BallSystem {
     return v
   }
 
+  /**
+   * With a hopper the path is in two parts, each a single file: the intake queue (from the mouth to the hopper's entrance) and the feed queue (from the hopper's
+   * exit to the shooter). Between them the hopper stores pieces without positions. The front piece of the intake queue is pushed into the hopper while its stage
+   * moves forward; the hopper's own drive puts one piece at a time onto the feed queue when there is room for it.
+   */
+  private moveWithHopper(): void {
+    const dt = this.host.dt
+    const hs = this.hopperStart
+    const he = this.hopperEnd
+    const a = this.held.filter((s) => s <= hs + 1e-9)
+    const b = this.held.filter((s) => s >= he - 1e-9)
+    const na = a.map((s) => s + this.surfaceSpeed(Math.min(s, hs - 1e-9)) * dt)
+    if (na.length > 0) {
+      na[na.length - 1] = clamp(na[na.length - 1], 0, hs)
+      for (let i = na.length - 2; i >= 0; i--) na[i] = Math.min(na[i], na[i + 1] - this.spacing)
+      if (na[0] < 0) na[0] = 0
+      for (let i = 1; i < na.length; i++) na[i] = Math.max(na[i], na[i - 1] + this.spacing)
+      if (na[na.length - 1] >= hs - 1e-9 && this.surfaceSpeed(hs - 1e-9) > HOPPER_MIN_SPEED) { na.pop(); this.stored++ }
+    }
+    const nb = b.map((s) => s + this.surfaceSpeed(Math.min(s, this.pathLength - 1e-9)) * dt)
+    if (nb.length > 0) {
+      nb[nb.length - 1] = clamp(nb[nb.length - 1], he, this.pathLength)
+      for (let i = nb.length - 2; i >= 0; i--) nb[i] = Math.min(nb[i], nb[i + 1] - this.spacing)
+      if (nb[0] < he) nb[0] = he
+      for (let i = 1; i < nb.length; i++) nb[i] = Math.max(nb[i], nb[i - 1] + this.spacing)
+    }
+    if (this.stored > 0 && this.surfaceSpeed((hs + he) / 2) > HOPPER_MIN_SPEED && (nb.length === 0 || nb[0] >= he + this.spacing - 1e-9)) { nb.unshift(he); this.stored-- }
+    this.held = [...na, ...nb]
+  }
+
   private moveStages(): void {
+    if (this.hopperIdx >= 0) { this.moveWithHopper(); return }
     const n = this.held.length
     if (n === 0) return
     const dt = this.host.dt
@@ -155,7 +217,7 @@ export class BallSystem {
   }
 
   private updateBeams(): void {
-    this.beams = this.spec.beams.map((b) => this.held.some((s) => Math.abs(s - b.position) < this.radius))
+    this.beams = this.spec.beams.map((b) => this.held.some((s) => Math.abs(s - b.position) < this.radius) || (this.hopperIdx >= 0 && this.stored > 0 && Math.abs(b.position - this.hopperStart) < 1e-6))
   }
 
   // ---------------------------------------------------------------- shooter

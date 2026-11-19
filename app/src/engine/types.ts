@@ -164,7 +164,9 @@ export interface BallHandlingSpec {
    * Stages from the intake mouth to the shooter. A piece in a stage rides at the summed surface speed of the stage's drivers (a
    * stage can be moved by more than one roller: the intake roller while intaking, the indexer while shooting).
    */
-  stages: { name: string; length: number; drivers: { driver: string; direction: 1 | -1; radius: number }[] }[]
+  stages: { name: string; length: number; drivers: { driver: string; direction: 1 | -1; radius: number }[]; /** a hopper: the stage stores pieces in bulk (a drum or a bin) instead of in a single file; the roller before it fills it and its own drivers empty it onto the next stage one piece at a time */ hopper?: boolean }[]
+  /** The most pieces the robot holds at once (a hopper stage makes room for them; without one the queue's length is the limit). */
+  capacity?: number
   /** Pieces held at match start (the preload), queued at the front of the path. */
   preload?: number
   /** Beam breaks at positions along the stage path (m from the intake mouth); true while a piece overlaps them. */
