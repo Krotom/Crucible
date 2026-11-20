@@ -22,16 +22,30 @@ class LogSeries implements Series {
   }
 }
 
-const LIVE_CAP = 60000
+// Samples kept per topic: a robot publishes about 400 topics at up to 100 Hz, and every sample of a struct or array is an object, so the old
+// 60000 (10 minutes) let the page grow past 2 GB.
+const LIVE_CAP = 15000
+const LIVE_TRIM = 2000
+
+function sameValue(a: Value, b: Value): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a.length !== b.length || a.length > 64) return false
+  for (let i = 0; i < a.length; i++) if ((a as ArrayLike<unknown>)[i] !== (b as ArrayLike<unknown>)[i]) return false
+  return true
+}
 
 export class LiveSeries implements Series {
   times: number[] = []
   private values: Value[] = []
   constructor(public name: string, public type: string) {}
   push(t: number, v: Value): void {
+    const n = this.times.length
+    // a run of equal values is kept as its first and last sample only (the last one's time moves on): the plot draws the same steps, and a
+    // topic the robot republishes unchanged every cycle costs two samples instead of thousands
+    if (n >= 2 && sameValue(this.values[n - 1], v) && sameValue(this.values[n - 2], v)) { this.times[n - 1] = t; return }
     this.times.push(t)
     this.values.push(v)
-    if (this.times.length > LIVE_CAP + 5000) { this.times.splice(0, 5000); this.values.splice(0, 5000) }
+    if (this.times.length > LIVE_CAP + LIVE_TRIM) { this.times.splice(0, LIVE_TRIM); this.values.splice(0, LIVE_TRIM) }
   }
   get(i: number): Value { return this.values[i] }
 }

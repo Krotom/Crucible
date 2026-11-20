@@ -16,6 +16,12 @@ export interface Release { version: string; title: string; items: string[] }
 
 /** Newest first. Add an entry for each release. */
 export const CHANGELOG: Release[] = [
+  { version: '1.1.4', title: 'Memory use, two-wheel shooter, hood zero 10.33', items: [
+    'Much less memory: the live data keeps 15,000 samples per topic instead of 60,000 and stores a run of equal values as two samples (a robot with about 400 topics took the page past 2 GB), and the robot trail in the 3D view no longer leaves a graphics buffer behind at every update',
+    'The robot program\'s Java heap is capped at 1 GB (a variable set on the Robot tab still wins)',
+    'The shooter is modelled as the flywheel plus the two small top wheels (the ball leaves at the mean of their surface speeds: effective radius 0.0494 m, efficiency 0.96, backspin 0.114). Still a guess: fit it to real shots in Tune > Calibration',
+    'The launch angle at hood zero is 10.33 degrees (was 15) and the ball leaves the shooter at 0.60 m. Robot code with a generated HoodTable needs 0.013 rotations added to every row (or a re-export with hood zero 10.33), or its shots fly about 5 degrees flatter',
+  ] },
   { version: '1.1.3', title: 'Hood scale, turret model in lockstep, 80 FUEL', items: [
     'The robot model\'s turret, hood and intake now move in lockstep runs too (the app did not read their poses there, so the turret stayed in its CAD rest pose and looked at the wrong place)',
     'Hood scale follows Burak\'s generated HoodTable: launch angle = 15 degrees + 360 degrees per hood rotation (the sim used 80 - 10 per rotation, which sent every shot almost straight up). Robot code that still uses the older 0.5 to 3.0 rotation hood table will now aim too flat: it needs that table converted',

@@ -42,7 +42,9 @@ export class ViewFx {
   private field: FieldDefinition | null = null
   private rules = new THREE.Group()
   private trail: THREE.Line
-  private trailPts: number[] = []
+  /** the trail's points, one buffer for good: replacing the attribute every sample left each old graphics buffer allocated on the GPU */
+  private trailBuf = new Float32Array(TRAIL_MAX * 3)
+  private trailN = 0
   private lastTrail = -Infinity
   private arcs = new Map<string, THREE.Line>()
   private markers = new Map<string, THREE.Mesh>()
@@ -55,7 +57,12 @@ export class ViewFx {
   show = { rules: false, trail: false, arcs: true }
 
   constructor(private view: SceneView, private label: HTMLElement) {
-    this.trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xe6a50a, transparent: true, opacity: 0.85 }))
+    const trailGeo = new THREE.BufferGeometry()
+    const trailAttr = new THREE.BufferAttribute(this.trailBuf, 3)
+    trailAttr.setUsage(THREE.DynamicDrawUsage)
+    trailGeo.setAttribute('position', trailAttr)
+    trailGeo.setDrawRange(0, 0)
+    this.trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0xe6a50a, transparent: true, opacity: 0.85 }))
     this.trail.frustumCulled = false
     this.trail.visible = false
     this.group.add(this.rules, this.trail, this.rulerGroup)
@@ -166,19 +173,21 @@ export class ViewFx {
     if (f.time < this.lastTrail - 1e-9) this.clearTrail()
     if (f.time - this.lastTrail < TRAIL_EVERY) return
     this.lastTrail = f.time
-    this.trailPts.push(f.robot[0], f.robot[1], 0.03)
-    if (this.trailPts.length > TRAIL_MAX * 3) this.trailPts.splice(0, this.trailPts.length - TRAIL_MAX * 3)
-    this.trail.geometry.setAttribute('position', new THREE.Float32BufferAttribute(this.trailPts, 3))
-    this.trail.geometry.setDrawRange(0, this.trailPts.length / 3)
+    if (this.trailN === TRAIL_MAX) { this.trailBuf.copyWithin(0, 3); this.trailN-- }
+    const o = this.trailN * 3
+    this.trailBuf[o] = f.robot[0]; this.trailBuf[o + 1] = f.robot[1]; this.trailBuf[o + 2] = 0.03
+    this.trailN++
+    this.trail.geometry.getAttribute('position').needsUpdate = true
+    this.trail.geometry.setDrawRange(0, this.trailN)
   }
 
   private clearTrail(): void {
-    this.trailPts = []
+    this.trailN = 0
     this.lastTrail = -Infinity
-    this.trail.geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3))
+    this.trail.geometry.setDrawRange(0, 0)
   }
 
-  get trailLength(): number { return this.trailPts.length / 3 }
+  get trailLength(): number { return this.trailN }
 
   private updateShots(f: RenderFrame, rec: MatchRecorder): void {
     const live = new Set<string>()
