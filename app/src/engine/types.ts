@@ -189,6 +189,8 @@ export interface BallHandlingSpec {
     /** the last stage must push at least this fast, m/s, and the flywheel must turn at least this fast, rps */
     minFeedSpeed: number
     minFlywheelRps: number
+    /** share of the flywheel's energy loss that ends up as the piece's kinetic energy (0 or absent: a shot does not slow the flywheel) */
+    energyEfficiency?: number
   }
 }
 

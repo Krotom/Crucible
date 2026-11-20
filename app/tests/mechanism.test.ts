@@ -4,7 +4,8 @@ import { MechanismModel } from '../src/engine/mechanism'
 import { MOTORS } from '../src/engine/motors'
 import { OFFSEASON } from '../src/robots/offseason'
 
-const spec = (name: string) => OFFSEASON.mechanisms.find((m) => m.name === name)!
+// the robot definition gives some mechanisms a friction voltage (the code's kS); these tests compare with frictionless references, so they take it out
+const spec = (name: string) => ({ ...OFFSEASON.mechanisms.find((m) => m.name === name)!, frictionVolts: 0 })
 
 describe('mechanism model', () => {
   it('reaches the motor free speed through the gearbox with no load', () => {

@@ -37,14 +37,14 @@ swerve:
 
 # Mechanisms driven by a single (lead) Talon. motor/count/gearRatio are checked against what the robot code registers;
 # inertia values are the robot code's own guesses (GUESS) until measured from the CAD. Optional per mechanism:
-#   frictionVolts: voltage deadband standing in for friction (default 0, like the old DCMotorSim)
+#   frictionVolts: voltage deadband standing in for friction (default 0, like the old DCMotorSim). Set to the robot code's kS (turret, shooter, feeder, hood): the code tuned its feedforward against the real mechanism's friction, and without it here the flywheel ran 3% above its target
 #   limits: { min, max }  hard stops in mechanism rotations (default none, like the old DCMotorSim)
 mechanisms:
-  - { id: 8,  name: turret,        motor: krakenX60, count: 1, gearRatio: 46.5,    inertia: 0.1 }
-  - { id: 37, name: shooter,       motor: krakenX60, count: 3, gearRatio: 2.0,     inertia: 0.01 }
-  - { id: 38, name: feeder,        motor: krakenX60, count: 1, gearRatio: 2.0,     inertia: 0.003 }
+  - { id: 8,  name: turret,        motor: krakenX60, count: 1, gearRatio: 46.5,    inertia: 0.1, frictionVolts: 0.1 }
+  - { id: 37, name: shooter,       motor: krakenX60, count: 3, gearRatio: 2.0,     inertia: 0.01, frictionVolts: 0.25 }
+  - { id: 38, name: feeder,        motor: krakenX60, count: 1, gearRatio: 2.0,     inertia: 0.003, frictionVolts: 0.25 }
   - { id: 39, name: indexer,       motor: krakenX60, count: 1, gearRatio: 1.0,     inertia: 0.002 }
-  - { id: 40, name: hood,          motor: krakenX44, count: 1, gearRatio: 16.40625, inertia: 0.02 }
+  - { id: 40, name: hood,          motor: krakenX44, count: 1, gearRatio: 16.40625, inertia: 0.02, frictionVolts: 0.1 }
   # Intake slide: 0.0785 m of rack travel per driver rotation, 0.293 m of travel = 3.73 rotations (CAD). Left without
   # hard stops because the robot code's open setpoint (10 rot) is beyond the travel; add limits: { min: 0, max: 3.73 } when
   # the setpoints are corrected.
@@ -108,5 +108,6 @@ ballHandling:
     elevationAtHoodZeroDeg: 10.33  # the user's choice (Burak's figure for the hood zero angle; not measured as a launch angle: the hood plates read level at the lowest position). Burak's generated HoodTable assumes 15, so its shots fly about 4.7 deg flatter here; add 0.013 rotations to every HoodTable row (or re-export with zero 10.33) to match
     hoodDegPerRotation: -360    # negative: more rotation = flatter in the formula below, so -360 gives 10.33 + 360*rot (the table is in true mechanism rotations). The robot's Mechanism3d draws the hood at 10 deg/rotation, a visual placeholder
     backspin: 0.115             # about the no-slip value from the two surface speeds, (v_fly - v_top) / (v_fly + v_top) = 0.114, rounded to the Tune slider step (0.005); changing it moves a 4-11 m shot by under 0.2 m
+    energyEfficiency: 0.6       # GUESS: the piece takes this share of the energy the flywheel loses per shot (the rest is squeeze, slip and spin); with the flywheel inertia (0.01) it gives the speed drop per ball and so the recovery time between shots
     minFeedSpeed: 0.5
     minFlywheelRps: 5

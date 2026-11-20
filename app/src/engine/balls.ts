@@ -14,6 +14,7 @@ export interface BallHost {
   /** Calls cb for every piece whose collider overlaps the oriented box (found with the broadphase, asleep or not). */
   piecesInBox(center: Vec3, yaw: number, half: Vec3, cb: (id: number, spec: string, position: Vec3, velocity: Vec3) => void): void
   pieceRadius(spec: string): number
+  pieceMass(spec: string): number
   removePiece(id: number): void
   spawn(s: PieceSpawn): number
   emit(e: GameEvent): void
@@ -254,6 +255,15 @@ export class BallSystem {
     const w = (sh.backspin * speed) / this.radius
     const angularVelocity: Vec3 = [w * shd, -w * ch, 0]
     const pieceId = this.host.spawn({ spec: this.spec.piece, position, velocity, angularVelocity })
+    // the piece's kinetic energy comes out of the flywheel: it slows down by a little at every shot and the Talon winds it back up, which is what spaces
+    // the shots out (the robot code feeds only while the flywheel is within its tolerance)
+    if (sh.energyEfficiency && sh.energyEfficiency > 0) {
+      const j = wheel.spec.inertia
+      const draw = (0.5 * this.host.pieceMass(this.spec.piece) * speed * speed) / sh.energyEfficiency
+      const w = Math.abs(wheel.speed)
+      const w2 = Math.sqrt(Math.max(0, w * w - (2 * draw) / j))
+      wheel.speed = Math.sign(wheel.speed || 1) * w2
+    }
     this.held.pop()
     this.shots++
     this.host.emit({ type: 'piece-launched', spec: this.spec.piece, speed, position, velocity, pieceId })

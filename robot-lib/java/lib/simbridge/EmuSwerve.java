@@ -167,6 +167,11 @@ public final class EmuSwerve implements SimBridge.LockstepDevice {
     @Override
     public synchronized void seedPose(double x, double y, double yawRad) { resetPose(new Pose2d(x, y, Rotation2d.fromRadians(yawRad))); }
 
+    @Override
+    public synchronized void visionPose(double x, double y, double yawRad, double stdXY, double stdYawRad) {
+        addVisionMeasurement(new Pose2d(x, y, Rotation2d.fromRadians(yawRad)), Timer.getFPGATimestamp(), VecBuilder.fill(stdXY, stdXY, stdYawRad));
+    }
+
     /** Before the Talons compute their voltages for the next step: turn the standing request into module targets and controls. */
     @Override
     public synchronized void step(double dt) {

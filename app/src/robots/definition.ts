@@ -167,6 +167,7 @@ function parseBalls(b: Obj, names: Set<string>): BallHandlingSpec {
       axis: [axis[0] as number, axis[1] as number], exitForward: num(sh, 'exitForward', s), exitHeight: num(sh, 'exitHeight', s),
       wheelRadius: num(sh, 'wheelRadius', s), efficiency: num(sh, 'efficiency', s), elevationAtHoodZeroDeg: num(sh, 'elevationAtHoodZeroDeg', s),
       hoodDegPerRotation: num(sh, 'hoodDegPerRotation', s), backspin: num(sh, 'backspin', s), minFeedSpeed: num(sh, 'minFeedSpeed', s), minFlywheelRps: num(sh, 'minFlywheelRps', s),
+      ...(typeof sh.energyEfficiency === 'number' ? { energyEfficiency: sh.energyEfficiency } : {}),
     },
   }
 }

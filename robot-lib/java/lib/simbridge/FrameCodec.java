@@ -23,6 +23,7 @@ public final class FrameCodec {
     public static final int MSG_POSE_SEED = 5;
     public static final int MSG_HELLO = 6; // robot to app, UTF-8 JSON
     public static final int MSG_STEP = 8; // app to robot (lockstep): u64 seq, f64 dt; the robot runs dt of simulated time and answers with ToApp(seq)
+    public static final int MSG_VISION = 9; // app to robot, UTF-8 JSON: { t, tags, pose: { x, y, yaw, tags, stdXY, stdYawDeg } | null } (NT_CONTRACT section 15)
     public static final int MSG_STATS = 7; // robot to app: f64 average round trip us, f64 max round trip us, i64 stale ticks
 
     public static final int TO_APP_HEADER_BYTES = 36;

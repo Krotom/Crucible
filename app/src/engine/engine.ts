@@ -193,6 +193,9 @@ export class Engine {
     const t = this.robot.translation(), q = this.robot.rotation()
     return { x: t.x, y: t.y, yaw: 2 * Math.atan2(q.z, q.w) }
   }
+  /** Moves the robot's start pose; it takes effect at the next reset() (a sweep puts the robot at many places in one run). */
+  setStart(start: { x: number; y: number; yaw: number }): void { this.robotSpec = { ...this.robotSpec, start } }
+
   get robotAlliance(): Alliance { return this.robotSpec.alliance ?? 'blue' }
 
   /** The Game Data string the field system would send the robot now. */
@@ -400,6 +403,7 @@ export class Engine {
         })
       },
       pieceRadius: (spec) => this.pieceSpecs[this.specByName.get(spec)!].radius,
+      pieceMass: (spec) => this.pieceSpecs[this.specByName.get(spec)!].mass,
       removePiece: (id) => this.removePiece(id),
       spawn: (s) => this.spawn(s),
       emit: (e) => this.emit(e),

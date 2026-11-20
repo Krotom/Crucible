@@ -16,6 +16,14 @@ export interface Release { version: string; title: string; items: string[] }
 
 /** Newest first. Add an entry for each release. */
 export const CHANGELOG: Release[] = [
+  { version: '1.1.6', title: 'FUEL inside the robot, a more realistic flywheel, and the aim sweep', items: [
+    'Held FUEL is drawn inside the robot in the 3D view: the pieces moving through the intake and feeder, and the hopper\'s pieces as a pile on the tray',
+    'Each shot takes the ball\'s kinetic energy out of the flywheel (shooter energyEfficiency 0.6, a guess), so it slows a little at every shot and the robot code feeds the next one when it has recovered: shots no longer come out at 28 per second',
+    'Mechanisms with a friction voltage: the turret, shooter, feeder and hood use the robot code\'s own kS as friction. Without it the flywheel ran 3% above its target, which put shots over the HUB',
+    'npm run sweep: the real robot code in lockstep shoots at the HUB from a grid of places, standing and driving, and writes the score rate by distance and speed to runs/sweep/latest.md',
+    'The robot library copy is refreshed (it reads the app\'s pose message)',
+    'Needs the robot code of the OffSeasonCode protonme branch (commit 882eee7 or later): its shot tables come from tools/shot_tables.js and match the sim; the old calculator tables do not',
+  ] },
   { version: '1.1.5', title: 'CRITICAL BUGFIX: the robot code\'s position no longer drifts from the physics', items: [
     'CRITICAL: the robot code\'s position (odometry) kept counting wheel turns while the robot was held by a wall, the HUB or another robot, so it ran away from the physics (8 s against the HUB: 26.6 m against 3.6 m). Turret aim, shot tables and shoot on the move all work from that position, so they aimed at the wrong place. The app now sends the robot its exact pose about every 50 ms with the camera off, and the simulated camera\'s noisy pose with it on, and the robot library applies it as a vision measurement (needs the robot library of the OffSeasonCode combined branch: older robot code ignores the message and drifts as before)',
     'Why it matters for your results: shots, aim and shoot-on-the-move tests made on 1.1.4 or earlier were made with a position that could be metres wrong',

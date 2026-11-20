@@ -103,6 +103,9 @@ public final class SimBridge {
 
         void seedPose(double x, double y, double yawRad);
 
+        /** A pose from the app's simulated vision (or its exact pose when the camera is off): corrects the pose estimator like a vision measurement. */
+        default void visionPose(double x, double y, double yawRad, double stdXY, double stdYawRad) {}
+
         /** Before the Talons compute their voltages for the next step of dt seconds. */
         void step(double dt);
     }
@@ -332,6 +335,7 @@ public final class SimBridge {
                 case FrameCodec.MSG_DS -> applyDs(FrameCodec.decodeDs(body));
                 case FrameCodec.MSG_JOYSTICK -> applyJoystick(FrameCodec.decodeJoystick(body));
                 case FrameCodec.MSG_POSE_SEED -> applySeed(FrameCodec.decodePoseSeed(body));
+                case FrameCodec.MSG_VISION -> applyVision(body);
                 default -> { /* unknown message types are ignored */ }
             }
         } catch (RuntimeException e) {
@@ -457,6 +461,27 @@ public final class SimBridge {
         lastSeedCounter = seed.counter();
         if (lockstepDevice != null) { lockstepDevice.seedPose(seed.x(), seed.y(), seed.yawRad()); return; }
         drivetrain.resetPose(new Pose2d(seed.x(), seed.y(), Rotation2d.fromRadians(seed.yawRad())));
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /**
+     * The app's pose for the robot (NT_CONTRACT section 15): from the simulated tag camera, or the exact pose when the camera is off. The wheels
+     * keep turning when the robot is held by a wall, so the odometry alone runs away from the physics; this corrects the estimator the way a
+     * vision pipeline would on the real robot.
+     */
+    private void applyVision(byte[] body) {
+        if (lockstepDevice == null && drivetrain == null) return;
+        com.fasterxml.jackson.databind.JsonNode pose;
+        try { pose = JSON.readTree(body).path("pose"); } catch (IOException e) { return; }
+        if (!pose.isObject()) return;
+        double x = pose.path("x").asDouble(Double.NaN), y = pose.path("y").asDouble(Double.NaN), yaw = pose.path("yaw").asDouble(Double.NaN);
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(yaw)) return;
+        double stdXY = Math.max(0.005, pose.path("stdXY").asDouble(0.05));
+        double stdYaw = Math.max(Math.toRadians(0.25), Math.toRadians(pose.path("stdYawDeg").asDouble(2.0)));
+        if (lockstepDevice != null) { lockstepDevice.visionPose(x, y, yaw, stdXY, stdYaw); return; }
+        drivetrain.addVisionMeasurement(new Pose2d(x, y, Rotation2d.fromRadians(yaw)), com.ctre.phoenix6.Utils.getCurrentTimeSeconds(),
+                edu.wpi.first.math.VecBuilder.fill(stdXY, stdXY, stdYaw));
     }
 
     private static AllianceStationID allianceStation(int alliance, int station) {
