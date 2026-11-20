@@ -349,10 +349,12 @@ it('robot code UI e2e', async () => {
     expect(await page.evaluate(() => (window as any).crucible.scenarioRun) === null, 'no scenario left running'); expect((await page.$$eval('#sc-results .sc-res .err', (e: any[]) => e.map((x) => x.textContent))).includes('stopped'), 'the stopped scenario is listed as failed with the reason')
     live.autoDrive = false
   }, page)
-  await check('R22 vision camera: off sends nothing; on sends the tags in view and a pose estimate that follows the robot; error 0 is exact; off again stops', async () => {
+  await check('R22 vision camera: off sends the exact pose and no tags; on sends the tags in view and a pose estimate that follows the robot; error 0 is exact; off again goes back to the exact pose', async () => {
     await page.click('#sim-reset'); await sleep(500)
     await page.click('[data-tab=robot]')
-    live.vision.length = 0; await sleep(700); expect(live.vision.length === 0, 'nothing is sent while the camera is off: ' + live.vision.length)
+    live.vision.length = 0; await sleep(700)
+    const t0 = await page.evaluate(() => { const r = (window as any).crucible.sim.latest.robot; return { x: r[0], y: r[1] } })
+    expect(live.vision.length > 0 && live.vision.every((v) => v.tags.length === 0 && v.pose !== null && Math.hypot(v.pose!.x - t0.x, v.pose!.y - t0.y) < 0.05), 'the camera off still sends the exact pose, with no tags: ' + JSON.stringify(live.vision.slice(-1)))
     await page.check('#vis-on'); await page.fill('#vis-noise', '0'); await sleep(1200)
     expect(live.vision.length >= 5, 'vision messages arrive: ' + live.vision.length)
     const last = live.vision[live.vision.length - 1]
@@ -363,7 +365,7 @@ it('robot code UI e2e', async () => {
     await page.click('[data-tab=session]'); const row = await page.evaluate(() => [...document.querySelectorAll('#simhud *')].map((e) => e.textContent).filter((t) => /tags? ·/.test(t || '')).length); expect(row > 0, 'the panel shows a Vision row')
     await page.click('[data-tab=robot]'); await page.fill('#vis-noise', '3'); await sleep(1000)
     const noisy = live.vision.slice(-8).filter((v) => v.pose); const off = noisy.map((v) => Math.hypot(v.pose!.x - truth.x, v.pose!.y - truth.y)); expect(Math.max(...off) > 0.005, 'estimates are noisy at error 3: ' + off.join(','))
-    await page.uncheck('#vis-on'); await sleep(400); const n = live.vision.length; await sleep(600); expect(live.vision.length === n, 'stopped sending after turning it off')
+    await page.uncheck('#vis-on'); await sleep(400); live.vision.length = 0; await sleep(600); expect(live.vision.length > 0 && live.vision.every((v) => v.tags.length === 0), 'back to the exact pose without tags after turning it off: ' + live.vision.length)
     await page.click('[data-tab=session]')
   }, page)
   await page.click('[data-tab=session]').catch(() => {})
