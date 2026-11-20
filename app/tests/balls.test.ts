@@ -203,7 +203,7 @@ describe('stages and beam breaks', () => {
     const e = await make(events)
     const sh = OFFSEASON.balls!.shooter
     e.ballSystem!.held = [0.95] // a piece waiting at the exit
-    // turret 30 degrees left, hood at 0.1 rotations (15 + 360 * 0.1 = 51 degrees of elevation), flywheel 40 rps
+    // turret 30 degrees left, hood at 0.1 rotations (10.33 + 360 * 0.1 = 46.33 degrees of elevation), flywheel 40 rps
     e.mechanisms.get(ID.turret)!.angle = (30 * Math.PI) / 180
     e.mechanisms.get(ID.hood)!.angle = 0.1 * 2 * Math.PI
     const fly = e.mechanisms.get(ID.shooter)!
@@ -224,7 +224,7 @@ describe('stages and beam breaks', () => {
     // heading 30 degrees left of the robot's +X, elevation 15 + 36 = 51 degrees
     const horizontal = Math.hypot(s.velocity[0], s.velocity[1])
     expect((Math.atan2(s.velocity[1], s.velocity[0]) * 180) / Math.PI).toBeCloseTo(30, 0)
-    expect((Math.atan2(s.velocity[2], horizontal) * 180) / Math.PI).toBeCloseTo(51, 0)
+    expect((Math.atan2(s.velocity[2], horizontal) * 180) / Math.PI).toBeCloseTo(46.33, 0)
     // backspin: the Magnus force on this spin points up (w x v has a positive z component)
     const w = s.angularVelocity
     expect(w[0] * s.velocity[1] - w[1] * s.velocity[0]).toBeGreaterThan(0)
