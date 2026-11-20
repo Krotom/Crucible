@@ -2,7 +2,7 @@
 
 How the robot process and the app talk. Sections 1 to 8 are the original design; sections 9 to 15 record what each milestone actually built and where it differs (read those for the real layouts: the transport became a local WebSocket on port 5811 in M4, with NetworkTables kept for the component poses). Protocol version: **0**.
 
-**Message types on the WebSocket (section numbers in brackets):** 1 `ToApp` robot to app (3, 10), 2 `FromApp` app to robot (3, 10), 3 Control / Driver Station incl. Game Data (4, 12), 4 joystick (4), 5 pose seed (10), 6 hello, UTF-8 JSON (10), 7 stats, round trip (10), 8 Step, lockstep (14), 9 vision, UTF-8 JSON (15, only when the vision camera is on; the robot library does not read it yet).
+**Message types on the WebSocket (section numbers in brackets):** 1 `ToApp` robot to app (3, 10), 2 `FromApp` app to robot (3, 10), 3 Control / Driver Station incl. Game Data (4, 12), 4 joystick (4), 5 pose seed (10), 6 hello, UTF-8 JSON (10), 7 stats, round trip (10), 8 Step, lockstep (14), 9 vision, UTF-8 JSON (15; with the camera off it carries the exact pose).
 
 ## 1. Principles
 
@@ -314,11 +314,11 @@ ready), and a debounced feeder jam check (the 40 A threshold tripped on the star
 
 ## 15. Vision simulation (app side only)
 
-- **Switch:** Robot tab, Vision camera, "Simulate a tag camera" (off by default; real-time and lockstep modes). Nothing is sent while it is off.
+- **Switch:** Robot tab, Vision camera, "Simulate a tag camera" (off by default; real-time and lockstep modes). **While it is off the app still sends the robot its exact pose** (`tags` empty, `pose` with stdXY 0.01 m and stdYawDeg 0.5), so the robot's odometry, which follows the wheels and keeps counting when the robot is held by a wall or another robot, cannot run away from the physics.
 - **Message type 9, app to robot, UTF-8 JSON**, one per 50 ms of simulated time (sent next to the FromApp frame):
   `{ "t": simTime, "tags": [{ "id", "distance", "bearingDeg", "elevationDeg", "viewAngleDeg" }], "pose": { "x", "y", "yaw", "tags", "stdXY", "stdYawDeg" } | null }`.
   `tags` are the AprilTags the camera sees, nearest first; bearing is left-positive from the camera axis. `pose` is the robot pose the vision pipeline would report (field metres and radians) with noise, or null with no tags in view.
 - **Camera:** 0.30 m ahead of the centre, 0.55 m up, pitched up 15 degrees, 70 by 55 degree field of view, 0.4 to 6 m range. A tag is seen when it is in range, inside the view and its face points at the camera (within about 72 degrees).
 - **Pose error:** standard deviation 1 cm + 1 cm per metre squared of mean tag distance, yaw 1 degree + 0.5 degree per metre, divided by the square root of the number of tags, times the Error slider (0 exact, 1 typical, up to 3).
 - **Assumed, not official:** the tag layout (four tags around each HUB, three on each alliance wall, ids 1 to 14) and the camera mounting. Both are in `src/engine/vision.ts` (`TAGS`, `DEFAULT_CAMERA`) to be replaced with the real ones.
-- **Not built:** the Java side. `robot-lib` does not read message 9 yet, so a robot program ignores it; only the test fake robot parses it. Feeding it to a pose estimator (`addVisionMeasurement`) is the next step.
+- **Robot side:** `SimBridge` reads message 9 and calls `addVisionMeasurement` on the pose estimator (`EmuSwerve.visionPose` in lockstep, the CTRE drivetrain in real-time mode) with the message's standard deviations, stamped with the current time. Measured on the OffSeason robot pushing into the HUB for 8 s: without it the robot code's pose ended at x 26.6 m while the physics held 3.6 m; with it the two agreed to 1 mm.

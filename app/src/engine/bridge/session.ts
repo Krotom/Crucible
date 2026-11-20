@@ -250,7 +250,17 @@ export class BridgeSession {
 
   /** One vision message per 50 ms of simulated time: { t, tags: [{ id, distance, bearingDeg, elevationDeg, viewAngleDeg }], pose: { x, y, yaw, tags, stdXY, stdYawDeg } | null }. */
   private sendVision(): void {
-    if (!this.vision.enabled) { if (this.visionReading.truth) this.visionReading = { tags: [], pose: null, truth: null }; return }
+    if (!this.vision.enabled) {
+      if (this.visionReading.truth) this.visionReading = { tags: [], pose: null, truth: null }
+      // camera off: the robot is told its exact pose (a perfect localisation). Its odometry follows the wheels, which keep turning when the robot
+      // is held by a wall or another robot, so without this the robot code's pose runs away from the physics and its aim goes with it.
+      const te = this.engine.time
+      if (this.visionAt >= 0 && te >= this.visionAt && te - this.visionAt < 0.05) return
+      this.visionAt = te
+      const exact = this.engine.robotGroundPose()
+      this.ws.send(MSG_VISION, new TextEncoder().encode(JSON.stringify({ t: te, tags: [], pose: { x: exact.x, y: exact.y, yaw: exact.yaw, tags: 0, stdXY: 0.01, stdYawDeg: 0.5 } })))
+      return
+    }
     const t = this.engine.time
     if (this.visionAt >= 0 && t >= this.visionAt && t - this.visionAt < 0.05) return
     this.visionAt = t

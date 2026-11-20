@@ -16,6 +16,10 @@ export interface Release { version: string; title: string; items: string[] }
 
 /** Newest first. Add an entry for each release. */
 export const CHANGELOG: Release[] = [
+  { version: '1.1.5', title: 'CRITICAL BUGFIX: the robot code\'s position no longer drifts from the physics', items: [
+    'CRITICAL: the robot code\'s position (odometry) kept counting wheel turns while the robot was held by a wall, the HUB or another robot, so it ran away from the physics (8 s against the HUB: 26.6 m against 3.6 m). Turret aim, shot tables and shoot on the move all work from that position, so they aimed at the wrong place. The app now sends the robot its exact pose about every 50 ms with the camera off, and the simulated camera\'s noisy pose with it on, and the robot library applies it as a vision measurement (needs the robot library of the OffSeasonCode combined branch: older robot code ignores the message and drifts as before)',
+    'Why it matters for your results: shots, aim and shoot-on-the-move tests made on 1.1.4 or earlier were made with a position that could be metres wrong',
+  ] },
   { version: '1.1.4', title: 'Memory use, two-wheel shooter, hood zero 10.33', items: [
     'Much less memory: the live data keeps 15,000 samples per topic instead of 60,000 and stores a run of equal values as two samples (a robot with about 400 topics took the page past 2 GB), and the robot trail in the 3D view no longer leaves a graphics buffer behind at every update',
     'The robot program\'s Java heap is capped at 1 GB (a variable set on the Robot tab still wins)',

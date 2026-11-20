@@ -57,7 +57,7 @@ Mode A (real time) is enough for driver practice, tuning and most testing; add M
 
 ## Vision (optional, not read yet)
 
-With the app's vision camera switched on (Robot tab), the app sends the robot a message (bridge type 9: the AprilTags the simulated camera sees and a noisy robot pose, see NT_CONTRACT section 15). The robot library does not read it yet, so nothing changes in your code until a reader is added (the natural place is an `addVisionMeasurement` call on the drivetrain's pose estimator).
+The app sends the robot a message about every 50 ms of simulated time (bridge type 9, see NT_CONTRACT section 15): with the vision camera switched on (Robot tab) the AprilTags the simulated camera sees and a noisy robot pose, with it off the exact pose. The robot library reads it and calls `addVisionMeasurement` on the drivetrain's pose estimator (`EmuSwerve.visionPose` in lockstep), so odometry that keeps counting while the robot is held by a wall cannot run away from the physics.
 
 ## If something does not work
 
