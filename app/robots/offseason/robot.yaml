@@ -107,6 +107,6 @@ ballHandling:
     efficiency: 0.96            # GUESS, fitted not measured: exit speed over the mean surface speed, set so ball speeds equal the earlier fit (0.86 on 0.055 m) that scored the generated tables (motor rps / 2:1 gear) from 2 to 5 m. Above the usual 0.75-0.85 for a real two-wheel shooter: the tables may ask for more speed than the hardware gives. Fit it to real shots (Tune > Calibration)
     elevationAtHoodZeroDeg: 10.33  # the user's choice (Burak's figure for the hood zero angle; not measured as a launch angle: the hood plates read level at the lowest position). Burak's generated HoodTable assumes 15, so its shots fly about 4.7 deg flatter here; add 0.013 rotations to every HoodTable row (or re-export with zero 10.33) to match
     hoodDegPerRotation: -360    # negative: more rotation = flatter in the formula below, so -360 gives 10.33 + 360*rot (the table is in true mechanism rotations). The robot's Mechanism3d draws the hood at 10 deg/rotation, a visual placeholder
-    backspin: 0.114             # no-slip value from the two surface speeds: (v_fly - v_top) / (v_fly + v_top) = 0.114; changing it moves a 4-11 m shot by under 0.2 m
+    backspin: 0.115             # about the no-slip value from the two surface speeds, (v_fly - v_top) / (v_fly + v_top) = 0.114, rounded to the Tune slider step (0.005); changing it moves a 4-11 m shot by under 0.2 m
     minFeedSpeed: 0.5
     minFlywheelRps: 5
