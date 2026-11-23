@@ -204,9 +204,18 @@ async function handle(m: ToWorker): Promise<void> {
         break
       case 'lead': if (bridge) { bridge.autoLead = m.seconds < 0; if (m.seconds >= 0) bridge.lead = m.seconds } break
       case 'ds': bridge?.setDs({ enabled: m.enabled, autonomous: m.autonomous, test: m.test }); break
+      case 'diag': {
+        const mem = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory
+        post({ type: 'diag', info: { heapUsedMB: mem ? Math.round(mem.usedJSHeapSize / 1048576) : null, heapTotalMB: mem ? Math.round(mem.totalJSHeapSize / 1048576) : null, frames: frameCount, running, speed, engineTime: engine ? +engine.time.toFixed(1) : null, ring: ring.length, bridgeFrames: bridge?.status.frames ?? null, bridgeSkipped: bridge?.status.skipped ?? null, pending: pendingEvents.length } })
+        break
+      }
       case 'joystick': bridge?.setJoystick(m.axes, BigInt(m.buttons), m.pov); break
       case 'speed': speed = m.value; if (bridge?.isLockstep) bridge.speed = m.value; postFrame(); break
-      case 'step': if (engine && !bridge) { for (let i = 0; i < m.steps; i++) engine.step(); remember(); forceHash = true; postFrame() } break
+      // lockstep: the robot's clock is ours, so a step is a run that pauses itself after that much simulated time (every exchange in between is a full robot cycle)
+      case 'step':
+        if (engine && bridge?.isLockstep) { const until = engine.time + m.steps * engine.dt - 1e-9; bridge.at(until, () => { bridge!.paused = true; post({ type: 'paused', reason: 'step', time: engineTime() }) }); bridge.paused = false }
+        else if (engine && !bridge) { for (let i = 0; i < m.steps; i++) engine.step(); remember(); forceHash = true; postFrame() }
+        break
       case 'reset': if (engine) { engine.reset(m.seed); ring = []; remember(); breakTimeDone = breaks.time !== null && engine.time >= breaks.time; pendingEvents = []; budget = 0; bridge?.seedPose(); forceHash = true; postFrame() } break
       case 'save': if (engine) { slots[Math.min(SLOTS - 1, Math.max(0, m.slot ?? 0))] = engine.snapshot(); postFrame() } break
       case 'load': {

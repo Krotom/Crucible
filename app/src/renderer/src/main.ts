@@ -9,6 +9,7 @@ import { DataStore } from './lib/store'
 import { isNumericType, type Value } from './lib/structs'
 import { parseWpilog } from './lib/wpilog'
 import { LogView, SourceTracker } from './lib/robotlog'
+import { installDiag } from './lib/diag'
 import { SimPanel } from './lib/simpanel'
 import { buildSimModel, scoreboardModel } from './lib/simmodel'
 import { CAMERA_PRESETS, ViewFx, type CameraPreset } from './lib/viewfx'
@@ -169,7 +170,7 @@ function updateTransportEnabled(): void {
   $<HTMLButtonElement>('play').disabled = !(isLog || isSim)
   $('sim-buttons').hidden = !isSim
   $('ds-controls').hidden = !(isSim && robotMode)
-  $<HTMLButtonElement>('sim-step').disabled = robotMode
+  $<HTMLButtonElement>('sim-step').disabled = robotMode && !lockstepMode // the robot program cannot be stepped in real time, but in lockstep the app owns its clock
   $<HTMLButtonElement>('ruler-btn').disabled = !isSim
   if (!isSim && fx.rulerActive) { fx.setRuler(false); $('ruler-btn').classList.remove('on'); $('ruler-btn').textContent = 'Ruler' }
   applyViewMenu()
@@ -993,7 +994,7 @@ async function apiCommand(c: { action: string; [k: string]: unknown }): Promise<
     case 'reset': if (!sim.active) throw new Error('no sim is running: use "start"'); $('sim-reset').click(); return apiStatus()
     case 'play': if (!sim.active) throw new Error('no sim is running: use "start"'); sim.send({ type: 'run', running: true }); return apiStatus()
     case 'pause': if (!sim.active) throw new Error('no sim is running: use "start"'); sim.send({ type: 'run', running: false }); return apiStatus()
-    case 'step': if (!sim.active) throw new Error('no sim is running: use "start"'); if (robotMode) throw new Error('stepping needs the scripted robot'); sim.send({ type: 'run', running: false }); $('sim-step').click(); return apiStatus()
+    case 'step': if (!sim.active) throw new Error('no sim is running: use "start"'); if (robotMode && !lockstepMode) throw new Error('stepping needs the scripted robot or lockstep'); sim.send({ type: 'run', running: false }); $('sim-step').click(); return apiStatus()
     case 'preset': { if (typeof c.name !== 'string') throw new Error('"preset" needs a "name"'); const m = loadPreset(c.name); if (m.startsWith('No preset')) throw new Error(m); return { message: m } }
     case 'set': {
       if (typeof c.id !== 'string' || !PRESET_IDS.includes(c.id)) throw new Error(`"set" needs an "id" from: ${PRESET_IDS.join(', ')}`)
@@ -1015,7 +1016,7 @@ const shortcutsDialog = { open: () => {} }
 const controls = setupControls((t) => { $('notice').textContent = t })
 const actions: Record<string, () => void> = {
   play: togglePlay,
-  step: () => { if (sim.active && !robotMode) $('sim-step').click() },
+  step: () => { if (sim.active && (!robotMode || lockstepMode)) $('sim-step').click() },
   'toggle-sim': () => $('start-sim').click(),
   reset: () => { if (sim.active) $('sim-reset').click() },
   'tab-session': () => showTab('session'),
@@ -1104,3 +1105,5 @@ requestAnimationFrame(frame)
 
 // exposed for debugging in the browser console and for automated checks
 ;(window as unknown as Record<string, unknown>).crucible = { store, view, plot, sim, openLogFile, seekTo, recorder, analysisView, fx, sweep, refStore, tune, mechHistory, readInput, get scenarioRun() { return scenarioRun }, get time() { return time } }
+// memory diagnostics: a snapshot on request (the main process asks every few seconds with --diag), and a record of what the user does
+installDiag({ store, view, plot, sim, recorder, fx, robotLog } as unknown as Parameters<typeof installDiag>[0])

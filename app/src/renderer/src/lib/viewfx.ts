@@ -191,7 +191,13 @@ export class ViewFx {
 
   private updateShots(f: RenderFrame, rec: MatchRecorder): void {
     const live = new Set<string>()
-    for (const s of rec.shots) {
+    // only the newest MARKERS_MAX shots get a landing marker. (The old code made a marker for every shot, removed the oldest beyond the cap, and made
+    // them again on the next frame: once there were more shots than the cap every frame built and dropped hundreds of geometries without freeing their
+    // graphics memory, which is where 7 GB came from.)
+    const recentFrom = Math.max(0, rec.shots.length - MARKERS_MAX)
+    const markerKeys = new Set<string>()
+    for (let i = 0; i < rec.shots.length; i++) {
+      const s = rec.shots[i]
       const key = `${s.id}@${s.t}`
       const color = COLORS[s.result]
       const age = f.time - s.t
@@ -209,7 +215,8 @@ export class ViewFx {
         mat.color.setHex(color)
         mat.opacity = Math.max(0.15, 1 - age / ARC_SHOW)
       }
-      if (s.result !== 'pending') {
+      if (i >= recentFrom && s.result !== 'pending') {
+        markerKeys.add(key)
         let m = this.markers.get(key)
         if (!m) {
           m = new THREE.Mesh(new THREE.CircleGeometry(0.16, 20), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, depthWrite: false }))
@@ -221,10 +228,9 @@ export class ViewFx {
         ;(m.material as THREE.MeshBasicMaterial).color.setHex(color)
       }
     }
-    for (const [k, l] of this.arcs) if (!live.has(k)) { this.group.remove(l); l.geometry.dispose(); this.arcs.delete(k) }
-    const keys = new Set(rec.shots.map((s) => `${s.id}@${s.t}`))
-    for (const [k, m] of this.markers) if (!keys.has(k)) { this.group.remove(m); this.markers.delete(k) }
-    while (this.markers.size > MARKERS_MAX) { const k = this.markers.keys().next().value as string; this.group.remove(this.markers.get(k)!); this.markers.delete(k) }
+    // what leaves the scene is disposed: three.js keeps a geometry's graphics buffers until dispose() is called, however unreachable the mesh is
+    for (const [k, l] of this.arcs) if (!live.has(k)) { this.group.remove(l); l.geometry.dispose(); (l.material as THREE.Material).dispose(); this.arcs.delete(k) }
+    for (const [k, m] of this.markers) if (!markerKeys.has(k)) { this.group.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); this.markers.delete(k) }
   }
 
   get arcCount(): number { return this.arcs.size }

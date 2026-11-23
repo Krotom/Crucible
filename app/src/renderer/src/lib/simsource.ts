@@ -57,9 +57,14 @@ export class SimSource {
 
   send(m: ToWorker): void { this.worker?.postMessage(m) }
 
+  /** the physics worker's last answer to requestDiag (memory diagnostics only) */
+  workerDiag: Record<string, unknown> | null = null
+  requestDiag(): void { this.send({ type: 'diag' }) }
+
   private onMessage(m: FromWorker): void {
     if (m.type === 'ready') { this.ready = m; this.onReady(m); return }
     if (m.type === 'error') { this.onError(m.message); return }
+    if (m.type === 'diag') { this.workerDiag = m.info; return }
     if (m.type === 'paused') { this.onPaused?.(m.reason, m.time); return }
     const f = m.frame
     this.latest = f

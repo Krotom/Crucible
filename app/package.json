@@ -1,7 +1,7 @@
 {
   "name": "crucible",
   "productName": "BALTA Crucible",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "private": true,
   "description": "BALTA Crucible: physics simulation and analysis for FRC robot code",
   "author": "BALTA Robotics",
@@ -11,6 +11,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "app": "node scripts/launch.mjs",
+    "diag": "node scripts/launch.mjs --diag",
     "web": "vite --config vite.web.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",

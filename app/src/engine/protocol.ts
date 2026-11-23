@@ -25,6 +25,8 @@ export type ToWorker =
   | { type: 'battery'; battery: Partial<BatteryModel> }
   /** the simulated AprilTag camera (robot-code modes) */
   | { type: 'vision'; vision: Partial<VisionSettings> }
+  /** ask for the worker's own numbers (memory diagnostics, see renderer/src/lib/diag.ts) */
+  | { type: 'diag' }
   | { type: 'save'; slot?: number }
   | { type: 'load'; slot?: number }
   /** go back this many simulated seconds (scripted sims only: the robot program cannot be rewound) */
@@ -80,5 +82,6 @@ export type FromWorker =
   | WorkerReady
   | { type: 'frame'; frame: RenderFrame; running: boolean; speed: number; hasSnapshot: boolean; slots: boolean[]; canRewind: number; simRate: number; perf?: { stepMs: number; worstMs: number; dtMs: number }; bridge?: BridgeInfo; events: UiEvent[] }
   | { type: 'error'; message: string }
+  | { type: 'diag'; info: Record<string, unknown> }
   /** a breakpoint stopped the run */
   | { type: 'paused'; reason: string; time: number }

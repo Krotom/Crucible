@@ -1,4 +1,4 @@
-// Starts BALTA Crucible as a desktop app: node scripts/launch.mjs   (npm run app)
+// Starts BALTA Crucible as a desktop app: node scripts/launch.mjs   (npm run app); add --diag to write the memory diagnostics log (npm run diag)
 // If the built app is missing or older than the sources it builds first (a few seconds), then starts Electron on the build. Problems are written to
 // %LOCALAPPDATA%\BALTA Crucible\launch.log and the exit code is non-zero, so the shortcut's wrapper can tell the user.
 import { spawn, spawnSync } from 'node:child_process'
@@ -44,7 +44,10 @@ try {
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ELECTRON_RENDERER_URL
-  const child = spawn(electron, ['.'], { cwd: root, env, detached: true, stdio: 'ignore', windowsHide: false })
+  // --diag: the memory diagnostics log (see src/main/diag.ts), written to the same settings folder the installed app uses, so the robot folder and options carry over
+  const diag = process.argv.includes('--diag')
+  const args = ['.', ...(diag ? ['--diag', `--user-data-dir=${path.join(process.env.APPDATA ?? os.homedir(), 'BALTA Crucible')}`] : [])]
+  const child = spawn(electron, args, { cwd: root, env, detached: true, stdio: 'ignore', windowsHide: false })
   child.unref()
   log(`started (pid ${child.pid})`)
 } catch (e) {

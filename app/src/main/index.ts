@@ -16,6 +16,7 @@ import type { UpdateResult } from '../renderer/src/lib/versions'
 import { ApiServer, API_PORT, newToken, type ApiHandler } from './api'
 import { writeProjectReport } from './projectfiles'
 import { PLUGIN_FILE } from '../engine/plugin'
+import { diagWanted, startDiag } from './diag'
 
 let win: BrowserWindow | null = null
 let launcher: RobotLauncher | null = null
@@ -244,6 +245,7 @@ app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(
 app.whenReady().then(() => {
   if (!gotLock) return
   void createWindow()
+  if (diagWanted()) { const d = startDiag(() => win); console.log(`diagnostics log: ${d.file}`); app.on('before-quit', () => d.stop()) }
   void applyApi() // an API that was left on starts with the app
   if (app.isPackaged) void cleanStale(installTarget(process.platform, process.execPath)) // the leftovers of an interrupted update
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })

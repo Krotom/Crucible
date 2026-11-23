@@ -12,48 +12,6 @@ THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
 export const FIELD_LENGTH = 16.541 // m, placeholder until the game module supplies the real field (M6)
 export const FIELD_WIDTH = 8.069
 
-/** The most FUEL drawn inside the robot at once. */
-const HELD_MAX = 160
-
-// The path of a held piece in the robot's frame (x forward, y left, z up, metres): in at the intake mouth, up to the hopper tray, out along the feeder to the
-// turret. Positions are the CAD's: the tray sits on the turret ring (axis -0.137, -0.136; tray top about 0.48 m), the intake mouth is the open intake.
-const HELD_PATH: { s: number; p: [number, number, number] }[] = [
-  { s: 0, p: [0.45, 0, 0.12] }, { s: 0.3, p: [0.1, 0, 0.14] }, { s: 0.5, p: [-0.137, -0.136, 0.55] }, { s: 0.7, p: [-0.137, -0.136, 0.55] }, { s: 0.95, p: [-0.137, -0.136, 0.6] },
-]
-const HOPPER_CENTRE: [number, number, number] = [-0.137, -0.136, 0.55]
-
-function heldPoint(s: number): [number, number, number] {
-  const a = HELD_PATH
-  if (s <= a[0].s) return a[0].p
-  for (let i = 1; i < a.length; i++) {
-    if (s <= a[i].s) {
-      const f = (s - a[i - 1].s) / (a[i].s - a[i - 1].s || 1)
-      return [a[i - 1].p[0] + f * (a[i].p[0] - a[i - 1].p[0]), a[i - 1].p[1] + f * (a[i].p[1] - a[i - 1].p[1]), a[i - 1].p[2] + f * (a[i].p[2] - a[i - 1].p[2])]
-    }
-  }
-  return a[a.length - 1].p
-}
-
-/** Slot i of the hopper pile: hexagonal layers inside a disk, each layer a little above the last, every other layer shifted so the pieces nest. */
-let pileCache: { r: number; slots: [number, number][] } | null = null
-function pileSlot(i: number, r: number): [number, number, number] {
-  if (!pileCache || pileCache.r !== r) {
-    const slots: [number, number][] = []
-    const d = r * 2.1
-    for (let b = -4; b <= 4; b++) for (let a = -4; a <= 4; a++) {
-      const x = d * (a + b / 2), y = d * (b * 0.866)
-      if (Math.hypot(x, y) <= 0.24) slots.push([x, y])
-    }
-    slots.sort((p, q) => Math.hypot(p[0], p[1]) - Math.hypot(q[0], q[1]))
-    pileCache = { r, slots }
-  }
-  const per = pileCache.slots.length
-  const layer = Math.floor(i / per)
-  const [x, y] = pileCache.slots[i % per]
-  const shift = layer % 2 === 1 ? r * 0.6 : 0
-  return [HOPPER_CENTRE[0] + x + shift, HOPPER_CENTRE[1] + y, HOPPER_CENTRE[2] + layer * r * 1.7]
-}
-
 export class SceneView {
   readonly renderer: THREE.WebGLRenderer
   readonly scene = new THREE.Scene()
@@ -63,8 +21,6 @@ export class SceneView {
   private robot = new THREE.Group()
   private simGroup: THREE.Group | null = null
   private pieceMeshes: THREE.InstancedMesh[] = []
-  /** the FUEL held inside the robot (drawn in the robot's own frame, so it moves with it): queue pieces along the stage path, the hopper as a pile */
-  private heldMesh: THREE.InstancedMesh | null = null
   private otherMeshes: THREE.Group[] = []
   private otherHalfZ: number[] = []
   private robotBox: THREE.LineSegments | null = null
@@ -210,14 +166,6 @@ export class SceneView {
       g.add(im)
       this.pieceMeshes.push(im)
     }
-    if (pieces.length > 0) {
-      const spec = pieces[0]
-      this.heldMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(spec.radius, 16, 12), new THREE.MeshStandardMaterial({ color: spec.color, roughness: 0.6 }), HELD_MAX)
-      this.heldMesh.count = 0
-      this.heldMesh.frustumCulled = false
-      this.robot.add(this.heldMesh)
-      this.heldRadius = spec.radius
-    }
     // other robots: red boxes with a nose mark on the front
     this.otherHalfZ = othersHalf.map((h) => h[2])
     this.otherMeshes = othersHalf.map((h) => {
@@ -253,7 +201,6 @@ export class SceneView {
   clearSim(): void {
     if (this.simGroup) { this.scene.remove(this.simGroup); this.simGroup = null }
     this.pieceMeshes = []
-    if (this.heldMesh) { this.robot.remove(this.heldMesh); this.heldMesh.geometry.dispose(); this.heldMesh = null }
     this.otherMeshes = []
     this.sensorObjs = []
     if (this.robotBox) { this.robot.remove(this.robotBox); this.robotBox = null }
@@ -294,34 +241,6 @@ export class SceneView {
       im.setMatrixAt(counts[k]++, m)
     }
     this.pieceMeshes.forEach((im, k) => { im.count = counts[k]; im.instanceMatrix.needsUpdate = true })
-    this.drawHeld(f.held)
-  }
-
-  private heldRadius = 0.075
-
-  /** Draws the FUEL inside the robot. `held` is each piece's position along the stage path (m from the intake mouth); the hopper's pieces all share one value and are drawn as a pile. */
-  private drawHeld(held: number[]): void {
-    const im = this.heldMesh
-    if (!im) return
-    const mult = new Map<number, number>()
-    for (const s of held) { const k = Math.round(s * 1e4); mult.set(k, (mult.get(k) ?? 0) + 1) }
-    const m = new THREE.Matrix4()
-    let n = 0
-    let stored = 0
-    for (const s of held) {
-      if (n >= HELD_MAX) break
-      if ((mult.get(Math.round(s * 1e4)) ?? 0) >= 2) { stored++; continue }
-      const p = heldPoint(s)
-      m.makeTranslation(p[0], p[1], p[2])
-      im.setMatrixAt(n++, m)
-    }
-    for (let i = 0; i < stored && n < HELD_MAX; i++) {
-      const p = pileSlot(i, this.heldRadius)
-      m.makeTranslation(p[0], p[1], p[2])
-      im.setMatrixAt(n++, m)
-    }
-    im.count = n
-    im.instanceMatrix.needsUpdate = true
   }
 
   /** Moves the orbit target onto the robot, keeping the current viewing offset. */
