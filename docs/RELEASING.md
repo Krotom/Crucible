@@ -28,7 +28,7 @@ Only the publish job has write permission. Nothing is published when any earlier
 
 | File | Contents |
 |---|---|
-| `BALTA-Crucible-Setup-<version>.exe` | NSIS installer: the app on its own Electron runtime, shortcuts, the robot integration tool, English and Turkish. Silent install: `/S`, optional `/ROBOT=<project> /PATCH=1 /D=<folder>` |
+| `BALTA-Crucible-Setup-<version>.exe` | NSIS installer: the app on its own Electron runtime, shortcuts, the robot integration tool, English and Turkish. The in-app update runs it with `/UPDATE` (progress window only, no wizard pages, closes itself). Silent install: `/S`, optional `/ROBOT=<project> /PATCH=1 /D=<folder>` |
 | `BALTA-Crucible-<version>-linux-x64.tar.gz` | A folder with the Electron runtime, the app, a launcher (`BALTA-Crucible`), a `.desktop` file, the icon and the robot integration tool |
 | `BALTA-Crucible-<version>-mac-arm64.zip` / `-mac-x64.zip` | `BALTA Crucible.app` (signed ad hoc) |
 | `SHA256SUMS.txt` (+ `.sig`) | SHA-256 of every file above |

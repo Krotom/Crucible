@@ -197,12 +197,12 @@ describe('the Windows update script', () => {
   it('writes a path with an apostrophe or a space as a PowerShell string that means exactly that path', () => {
     const s = winScript(7, "C:\\Users\\O'Neil\\My Updates\\Setup.exe", "C:\\Program Files\\App's\\app.exe", "C:\\logs\\u.log")
     expect(s).toContain("'C:\\Users\\O''Neil\\My Updates\\Setup.exe'"); expect(s).toContain("'C:\\Program Files\\App''s\\app.exe'")
-    expect(s).toMatch(/-ArgumentList '\/S' -Wait/)
+    expect(s).toMatch(/-ArgumentList '\/UPDATE' -Wait/)
   })
 
   // the real thing, on Windows only: folders with spaces, a stand-in installer and a stand-in app. Both are copies of node.exe (real programs, as the NSIS installer is) that write
   // a marker file through a NODE_OPTIONS hook. An installer that needs administrator rights is not something a test can run.
-  it.skipIf(process.platform !== 'win32')('waits for the app to exit, runs the installer silently, and starts the app again (run for real in folders with spaces)', async () => {
+  it.skipIf(process.platform !== 'win32')('waits for the app to exit, runs the installer with /UPDATE, and starts the app again (run for real in folders with spaces)', async () => {
     const root = join(dir, 'BALTA Crucible', 'updates'); mkdirSync(root, { recursive: true })
     const hook = join(root, 'hook.js')
     writeFileSync(hook, "const fs=require('fs'),path=require('path');const n=path.basename(process.execPath).toLowerCase();const d=process.env.FAKE_DIR;" +
@@ -221,7 +221,7 @@ describe('the Windows update script', () => {
     while (!existsSync(join(root, 'started.txt')) && Date.now() - t0 < 60_000) await new Promise((r) => setTimeout(r, 250))
     const logText = existsSync(join(root, 'crucible-update.log')) ? readFileSync(join(root, 'crucible-update.log'), 'utf8') : '(no log written)'
     expect(existsSync(join(root, 'started.txt')), 'the app is started again; the stand-in app exitCode=' + holder.exitCode + ', signal=' + holder.signalCode + '; the script log says: ' + logText).toBe(true)
-    expect(readFileSync(join(root, 'installed.txt'), 'utf8')).toMatch(/S"/) // it got /S
+    expect(readFileSync(join(root, 'installed.txt'), 'utf8')).toMatch(/UPDATE"/) // it got /UPDATE
     expect(logText).toMatch(/running the installer/); expect(logText).toMatch(/finished with exit code 0/); expect(logText).toMatch(/starting the app/)
   }, 120_000)
 })

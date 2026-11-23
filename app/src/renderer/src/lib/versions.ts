@@ -20,6 +20,7 @@ export const CHANGELOG: Release[] = [
     'Fixed the memory growth (7 GB in ten minutes of shooting): once there were more than 150 shots, every frame rebuilt the landing markers of the older ones and dropped them without freeing their graphics buffers. Only the newest 150 shots get a marker now, and markers and shot arcs free their graphics memory when they leave the scene',
     'The FUEL drawn inside the robot (1.1.6) is removed',
     'Step works in lockstep: it runs 10 ms of simulated time (every robot cycle in between) and pauses again',
+    'The Windows in-app update is still automatic but no longer silent: the installer shows its progress window (no wizard pages, it keeps the install folder and closes itself when it is done, and the new app starts)',
     'npm run diag starts the app with a memory diagnostics log (diag-*.jsonl in the logs folder of the app\'s settings folder: process memory, the 3D view\'s object counts, what the controls were set to, and what you clicked); node scripts/diag-report.mjs summarises it',
   ] },
   { version: '1.1.6', title: 'FUEL inside the robot, a more realistic flywheel, and the aim sweep', items: [

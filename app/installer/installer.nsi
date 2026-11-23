@@ -48,12 +48,18 @@ ${StrRep}
 !define MUI_FINISHPAGE_RUN_TEXT "$(RUN_NOW)"
 !define MUI_FINISHPAGE_NOREBOOTSUPPORT
 
+; /UPDATE (the in-app update): the same installer, but only its progress page is shown: every other page is skipped, the install folder stays where it was, and the
+; window closes itself when the files are in. Without it the install is the full wizard; with /S nothing is shown at all.
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfUpdating
 !insertmacro MUI_PAGE_WELCOME
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfUpdating
 !insertmacro MUI_PAGE_DIRECTORY
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfUpdating
 !insertmacro MUI_PAGE_COMPONENTS
 Page custom RobotPageCreate RobotPageLeave
 Page custom PatchPageCreate PatchPageLeave
 !insertmacro MUI_PAGE_INSTFILES
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfUpdating
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_WELCOME
@@ -111,6 +117,7 @@ LangString PATCH_FAIL ${LANG_TURKISH} "Yama aracı bir sorun bildirdi (ayrıntı
 LangString RUNNING ${LANG_ENGLISH} "BALTA Crucible is running. Close it and press OK to continue."
 LangString RUNNING ${LANG_TURKISH} "BALTA Crucible çalışıyor. Kapatın ve devam etmek için Tamam'a basın."
 
+Var Updating
 Var RobotDir
 Var RobotEdit
 Var RobotBrowse
@@ -119,7 +126,16 @@ Var RadioPatch
 Var RadioSkip
 
 ; ---------------------------------------------------------------- robot project page
+Function SkipIfUpdating
+  ${If} $Updating == 1
+    Abort
+  ${EndIf}
+FunctionEnd
+
 Function RobotPageCreate
+  ${If} $Updating == 1
+    Abort
+  ${EndIf}
   !insertmacro MUI_HEADER_TEXT "$(ROBOT_TITLE)" "$(ROBOT_SUB)"
   nsDialogs::Create 1018
   Pop $0
@@ -155,6 +171,9 @@ FunctionEnd
 
 ; ---------------------------------------------------------------- "Patch a project?" page
 Function PatchPageCreate
+  ${If} $Updating == 1
+    Abort
+  ${EndIf}
   !insertmacro MUI_HEADER_TEXT "$(PATCH_TITLE)" "$(PATCH_SUB)"
   nsDialogs::Create 1018
   Pop $0
@@ -199,6 +218,13 @@ Function .onInit
   ReadRegStr $RobotDir HKCU "Software\${PRODUCT}" "RobotDir"
   ; command line (also for silent installs): /ROBOT=<project folder> and /PATCH=1 to patch it; /D=<install folder> must come last
   ${GetParameters} $0
+  StrCpy $Updating 0
+  ClearErrors
+  ${GetOptions} $0 "/UPDATE" $1
+  ${IfNot} ${Errors}
+    StrCpy $Updating 1
+    SetAutoClose true
+  ${EndIf}
   ${GetOptions} $0 "/ROBOT=" $1
   ${If} $1 != ""
     StrCpy $RobotDir $1

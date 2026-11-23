@@ -1,5 +1,5 @@
 // Self-update. The app asks the GitHub releases of its repository for the newest version, downloads the file for this platform, checks it, and swaps itself:
-//   Windows: runs the NSIS installer silently (it upgrades in place), after the app has quit, and starts the new app afterwards
+//   Windows: runs the NSIS installer with only its progress window (/UPDATE; it upgrades in place), after the app has quit, and starts the new app afterwards
 //   Linux:   replaces the unpacked folder with the new one
 //   macOS:   replaces BALTA Crucible.app with the new one
 // The swap is done by a small script that waits for this process to exit, so the files are never replaced under a running app, and that puts the old
@@ -153,9 +153,9 @@ ${kind === 'bundle' ? 'exec open "$LAUNCH"' : 'exec "$LAUNCH"'}
 }
 
 /**
- * The Windows update script (PowerShell, which every Windows has): waits for the app to exit, runs the installer silently (Windows asks the user for permission: the installer
+ * The Windows update script (PowerShell, which every Windows has): waits for the app to exit, runs the installer with only its progress window showing, /UPDATE (Windows asks the user for permission: the installer
  * needs administrator rights) and starts the app again, the new one when the install worked and the old one when it did not. It writes crucible-update.log next to the script,
- * because nothing of it is visible (the window is hidden). Every value is written into the script itself, so there is no command line to quote.
+ * because the script itself has no window (the installer shows its own progress). Every value is written into the script itself, so there is no command line to quote.
  * (It used to be a batch file. cmd.exe breaks on a command line with several quoted paths, and, started without a console as it is here, its tasklist and find leave the
  * script waiting for ever. PowerShell has neither problem.)
  */
@@ -170,7 +170,7 @@ export function winScript(appPid: number, installer: string, launch: string, log
     'if ($app -and -not $app.WaitForExit(120000)) { Log "the app did not exit within 2 minutes: giving up"; exit 1 }',
     'Log ("running the installer " + ' + lit(installer) + ')',
     '$code = "none"',
-    'try { $setup = Start-Process -FilePath ' + lit(installer) + " -ArgumentList '/S' -Wait -PassThru; $code = $setup.ExitCode } catch { Log (\"could not run the installer: \" + $_.Exception.Message) }",
+    'try { $setup = Start-Process -FilePath ' + lit(installer) + " -ArgumentList '/UPDATE' -Wait -PassThru; $code = $setup.ExitCode } catch { Log (\"could not run the installer: \" + $_.Exception.Message) }",
     'Log ("the installer finished with exit code " + $code)',
     'Log ("starting the app " + ' + lit(launch) + ')',
     'try { Start-Process -FilePath ' + lit(launch) + ' } catch { Log ("could not start the app: " + $_.Exception.Message) }',
