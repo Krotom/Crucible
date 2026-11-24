@@ -20,6 +20,8 @@ const HUB_Y = FIELD_WIDTH / 2
 const HUB_HEIGHT = HUB_RIM // ASSUMED: the overall height is only in the drawings; the body is modeled up to the rim
 const SENSOR_Z = HUB_RIM - 0.23 // ASSUMED: the depth of the sensor array below the opening
 const GUARDRAIL_H = 20 * IN // 0.508 m (5.2)
+/** TRENCH (5.6): 65.65 in wide, 47.0 in deep, 40.25 in tall; 50.34 in wide and 22.25 in tall clear under each arm. Four of them, between each guardrail and the BUMP beside the HUB. */
+const TRENCH = { width: 65.65 * IN, depth: 47.0 * IN, height: 40.25 * IN, clearWidth: 50.34 * IN, clearHeight: 22.25 * IN }
 const BUMP = { width: 73 * IN, depth: 44.4 * IN, height: 6.513 * IN } // 5.5
 const DEPOT = { width: 42 * IN, depth: 27 * IN } // 5.7
 const DEPOT_OFFSET = 2.0 // ASSUMED: the depot centre's distance from the near field edge (the drawings give the real one)
@@ -146,6 +148,21 @@ function fieldDefinition(): { colliders: BoxSpec[]; sensors: SensorSpec[] } {
       { label: `hub ${a} right`, center: [hx, HUB_Y - o, hz], half: [HUB_BASE / 2, wall / 2, hz], friction: 0.5, restitution: 0.8 },
     )
     sensors.push({ id: `hub-${a}`, center: [hx, HUB_Y, SENSOR_Z], half: [HUB_OPENING / 2 - 0.05, HUB_OPENING / 2 - 0.05, 0.08], alliance: a })
+    // two TRENCHES, one on each side of the field at the HUB's x: a post at each end (the guardrail's and the BUMP's) and an arm across the top that robots drive under
+    // (the arm is above the robot's collision box, which is only bumper high, so it is a robotPass body: FUEL hits it, robots do not). ASSUMED: the drawings give the exact
+    // position; here the trench sits flush against the guardrail, centred on the HUB's x like the BUMPS, and slightly overlaps the BUMP's outer edge.
+    for (const side of [-1, 1]) {
+      const post = (TRENCH.width - TRENCH.clearWidth) / 2
+      const edge = HUB_Y + side * FIELD_WIDTH / 2 // the guardrail's inner face
+      const inner = edge - side * TRENCH.width // the BUMP end
+      const th = TRENCH.height
+      const label = `trench ${a} ${side > 0 ? 'left' : 'right'}`
+      colliders.push(
+        { label: `${label} post (guardrail)`, center: [hx, edge - side * post / 2, th / 2], half: [TRENCH.depth / 2, post / 2, th / 2], friction: 0.5, restitution: 0.6 },
+        { label: `${label} post (bump)`, center: [hx, inner + side * post / 2, th / 2], half: [TRENCH.depth / 2, post / 2, th / 2], friction: 0.5, restitution: 0.6 },
+        { label: `${label} arm`, center: [hx, (edge + inner) / 2, (TRENCH.clearHeight + th) / 2], half: [TRENCH.depth / 2, TRENCH.width / 2, (th - TRENCH.clearHeight) / 2], friction: 0.5, restitution: 0.6, robotPass: true },
+      )
+    }
     // two BUMPS beside the HUB: a ridge with ramps; pieces collide with the hull, the robot's tires follow bumpHeight() (terrain below)
     for (const side of [-1, 1]) {
       const cy = HUB_Y + side * (HUB_BASE / 2 + BUMP.width / 2)
@@ -347,4 +364,4 @@ export function gameDataChar(state: Record<string, unknown>, time: number): stri
   return s.firstInactive === 'red' ? 'R' : 'B'
 }
 
-export { BUMP, MINOR, HUB_X, HUB_Y, HUB_OPENING, HUB_RIM, CENTER_LINE, ALLIANCE_ZONE_DEPTH }
+export { BUMP, TRENCH, MINOR, HUB_X, HUB_Y, HUB_OPENING, HUB_RIM, CENTER_LINE, ALLIANCE_ZONE_DEPTH }

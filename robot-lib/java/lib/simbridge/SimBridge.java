@@ -463,6 +463,9 @@ public final class SimBridge {
         drivetrain.resetPose(new Pose2d(seed.x(), seed.y(), Rotation2d.fromRadians(seed.yawRad())));
     }
 
+    /** real time: the exact pose from the app corrects the pose estimator only when it is further than this (m) from it */
+    private static final double EXACT_POSE_DRIFT = 0.25;
+
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
     /**
@@ -480,8 +483,15 @@ public final class SimBridge {
         double stdXY = Math.max(0.005, pose.path("stdXY").asDouble(0.05));
         double stdYaw = Math.max(Math.toRadians(0.25), Math.toRadians(pose.path("stdYawDeg").asDouble(2.0)));
         if (lockstepDevice != null) { lockstepDevice.visionPose(x, y, yaw, stdXY, stdYaw); return; }
-        drivetrain.addVisionMeasurement(new Pose2d(x, y, Rotation2d.fromRadians(yaw)), com.ctre.phoenix6.Utils.getCurrentTimeSeconds(),
-                edu.wpi.first.math.VecBuilder.fill(stdXY, stdXY, stdYaw));
+        Pose2d appPose = new Pose2d(x, y, Rotation2d.fromRadians(yaw));
+        // Real time: the app's pose is as old as its message (tens of milliseconds, 10 cm at 2 m/s), and pulling the estimator to it at every message makes the pose,
+        // and the turret's aim with it, saw-tooth. The odometry is good to a few centimetres while the wheels grip, so the exact pose (no tags in the message) only steps
+        // in once the two have drifted apart, as when a wall holds the robot. A camera estimate (tags in the message) is a measurement and always goes in.
+        if (pose.path("tags").asInt(-1) == 0) {
+            Pose2d estimate = drivetrain.getState().Pose;
+            if (estimate != null && estimate.getTranslation().getDistance(appPose.getTranslation()) < EXACT_POSE_DRIFT) return;
+        }
+        drivetrain.addVisionMeasurement(appPose, com.ctre.phoenix6.Utils.getCurrentTimeSeconds(), edu.wpi.first.math.VecBuilder.fill(stdXY, stdXY, stdYaw));
     }
 
     private static AllianceStationID allianceStation(int alliance, int station) {

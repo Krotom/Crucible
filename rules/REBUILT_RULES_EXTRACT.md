@@ -131,6 +131,8 @@ Your robot's mass guess of 52 kg is at the limit; bumpers and battery add to it.
 
 ## 8. Proposed scope for `game-rebuilt` (please edit)
 
+**TRENCH in the sim:** four, one at each HUB x on each side, flush against the guardrail (position ASSUMED): a post at each end and an arm (22.25 in clearance, 40.25 in tall) that FUEL hits and robots drive under (the robot collision box is only bumper high).
+
 **Will model (v1):**
 - The field as colliders: guardrails, alliance walls, both TOWER walls, 4 BUMPS (15 degree ramps), 4 TRENCH posts and rails, 2 DEPOTS, HUB bodies with the top opening and the back net, OUTPOST faces.
 - 504 FUEL staged as in 6.3.4 (neutral zone pile, 24 per DEPOT, 24 per CHUTE as a queue the human player releases, up to 8 preloaded per robot); the engine's ball budget (S3: a few hundred active, the rest asleep) fits.
@@ -166,6 +168,6 @@ rolls over (the robot climbs them, M7: the floor height under the tires tilts th
 
 **Assumed (not in the manual text I could read):** HUB body height = the 72 in rim and the sensor plane 0.23 m below it; the opening as a square of 1.06 m; HUB center x = 4.625 m (see section 2); processed FUEL reappears after
 0.5 to 1.5 s at one of four exits on the neutral-zone face, 1.2 to 2.0 m/s outward; DEPOT positions (against each alliance wall, centred 2.0 m from the near field edge: blue on the +y side at y = 6.07 m, red at the point-symmetric spot at y = 2.0 m; an earlier version had them the other way round); BUMP ramp shape (a ridge with the manual's width, depth and height, not exactly 15 degrees);
-no TRENCH, TOWER, OUTPOST or DRIVER STATION geometry yet; the two CHUTES (24 FUEL each) and other robots' preloads are not modeled.
+no TOWER, OUTPOST or DRIVER STATION geometry yet; the two CHUTES (24 FUEL each) and other robots' preloads are not modeled.
 
 **Performance setting (updated):** the live app now stages the manual's full **408** FUEL in the neutral zone (plus 48 in the DEPOTS and the robot's preload of 3, loaded from `robots/offseason/robot.yaml`). It stays real time because resting FUEL is frozen until something moves near it, CCD runs only on fast pieces, and the default physics step is 2 ms (1.6x real time in the worst case, the robot plowing through the whole pile; 1 ms is 0.8x, 5 ms is 4x). Measurements, sources and the other ideas are in `docs/PERFORMANCE.md`.
