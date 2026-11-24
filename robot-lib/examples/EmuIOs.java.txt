@@ -8,20 +8,20 @@ import frc.robot.Constants.IndexerConstants;
 import frc.robot.subsystems.intake.roller.RollerConstants;
 import frc.robot.Constants.ShooterConstants;
 import frc.robot.Constants.TurretConstants;
-import frc.robot.subsystems.feeder.FeederConfig;
-import frc.robot.subsystems.feeder.FeederIOInterface;
-import frc.robot.subsystems.hood.HoodConfig;
-import frc.robot.subsystems.hood.HoodIOInterface;
-import frc.robot.subsystems.indexer.IndexerConfig;
-import frc.robot.subsystems.indexer.IndexerIOInterface;
-import frc.robot.subsystems.intake.driver.DriverConfig;
-import frc.robot.subsystems.intake.driver.DriverIOInterface;
-import frc.robot.subsystems.intake.roller.RollerConfig;
-import frc.robot.subsystems.intake.roller.RollerIOInterface;
-import frc.robot.subsystems.shooter.ShooterConfig;
-import frc.robot.subsystems.shooter.ShooterIOInterface;
-import frc.robot.subsystems.turret.TurretConfig;
-import frc.robot.subsystems.turret.TurretIOInterface;
+import frc.robot.io.feeder.FeederConfig;
+import frc.robot.io.feeder.FeederIOInterface;
+import frc.robot.io.hood.HoodConfig;
+import frc.robot.io.hood.HoodIOInterface;
+import frc.robot.io.indexer.IndexerConfig;
+import frc.robot.io.indexer.IndexerIOInterface;
+import frc.robot.io.intake.DriverConfig;
+import frc.robot.io.intake.DriverIOInterface;
+import frc.robot.io.intake.RollerConfig;
+import frc.robot.io.intake.RollerIOInterface;
+import frc.robot.io.shooter.ShooterConfig;
+import frc.robot.io.shooter.ShooterIOInterface;
+import frc.robot.io.turret.TurretConfig;
+import frc.robot.io.turret.TurretIOInterface;
 
 /**
  * The mechanism IOs for lockstep (Mode B): the same interfaces the real and Phoenix-sim IOs implement, behind an {@link EmuTalon} instead of a
