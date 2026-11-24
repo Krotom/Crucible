@@ -44,9 +44,14 @@ describe('scoreboard model', () => {
   const phases = [{ name: 'auto', duration: 20 }, { name: 'delay', duration: 3 }, { name: 'shift1', duration: 137 }, { name: 'ended', duration: Infinity }]
   it('counts the match clock down and reads the HUB status', () => {
     const m = scoreboardModel(frame(), phases)
-    expect(m).toEqual({ blue: 7, red: 3, clock: '2:27', phase: 'Shift 1', hubs: { blue: 'active', red: 'inactive' } })
+    expect(m).toEqual({ blue: 7, red: 3, clock: '2:27', phase: 'Shift 1', hubs: { blue: 'active', red: 'inactive' }, shotsIn: null, shotsFired: 0 })
     expect(scoreboardModel(frame({ time: 0 }), phases).clock).toBe('2:40')
     expect(scoreboardModel(frame({ time: 999 }), phases).clock).toBe('0:00')
+  })
+  it('shows the successful shots of the robot next to the score', () => {
+    const m = scoreboardModel(frame({ shots: 9 }), phases, 6)
+    expect(m.shotsIn).toBe(6)
+    expect(m.shotsFired).toBe(9)
   })
   it('has no HUB info when the game does not report it', () => {
     expect(scoreboardModel(frame({ status: {} }), phases).hubs).toBeNull()

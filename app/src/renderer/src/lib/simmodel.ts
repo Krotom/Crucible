@@ -24,6 +24,8 @@ export interface SimInfo {
   /** the scoring volumes of the field and the robot's alliance, for the distance to its HUB */
   hubs?: { x: number; y: number; alliance: string }[]
   alliance?: 'blue' | 'red'
+  /** the robot's launches that went into a HUB so far */
+  scoredShots?: number
 }
 
 const PHASE_NAMES: Record<string, string> = {
@@ -91,6 +93,7 @@ export function buildSimModel(f: RenderFrame, info: SimInfo): PanelModel {
         { id: 'intake', label: 'Intake', value: f.capture.active ? 'on' : 'off', tone: f.capture.active ? 'ok' : 'dim' },
         { id: 'caught', label: 'Caught', value: String(f.captured), hint: 'Pieces picked up so far' },
         { id: 'shots', label: 'Shots', value: String(f.shots), hint: 'Pieces launched so far' },
+        ...(info.scoredShots !== undefined ? [{ id: 'shotsin', label: 'Shots in', value: `${info.scoredShots} of ${f.shots}`, tone: (info.scoredShots > 0 ? 'ok' : undefined) as Tone | undefined, hint: 'Launches that went into a HUB so far: the total of successful shots, apart from the match score (which counts points)' }] : []),
       ],
     })
   }
@@ -139,10 +142,14 @@ export interface ScoreboardModel {
   phase: string
   /** which HUBs score right now, when the game reports it */
   hubs: { blue: 'active' | 'inactive'; red: 'active' | 'inactive' } | null
+  /** the robot's launches that went into a HUB so far, or null when not given */
+  shotsIn: number | null
+  /** the robot's launches so far */
+  shotsFired: number
 }
 
 /** The big scoreboard overlay: scores, the match clock counting down, the phase and the HUB status. */
-export function scoreboardModel(f: RenderFrame, phases: { name: string; duration: number }[]): ScoreboardModel {
+export function scoreboardModel(f: RenderFrame, phases: { name: string; duration: number }[], scoredShots?: number): ScoreboardModel {
   const total = phases.filter((p) => Number.isFinite(p.duration)).reduce((a, p) => a + p.duration, 0)
   const left = Math.max(0, total - f.time)
   const m = /blue (\w+).*?red (\w+)/i.exec(f.status.hubs ?? '')
@@ -151,5 +158,6 @@ export function scoreboardModel(f: RenderFrame, phases: { name: string; duration
     blue: f.scores.blue, red: f.scores.red, phase: phaseLabel(f.phase),
     clock: `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`,
     hubs: m ? { blue: st(m[1]), red: st(m[2]) } : null,
+    shotsIn: scoredShots ?? null, shotsFired: f.shots,
   }
 }

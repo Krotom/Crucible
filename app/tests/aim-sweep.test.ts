@@ -56,8 +56,15 @@ interface TrialResult extends Trial {
   maxPoseError: number | null
   endPoseError: number | null
   fedBalls: number
+  /** SWEEP_CROSS=1: where each ball crossed the HUB opening height going down, relative to the HUB centre (field x, y), m */
+  cross?: [number, number][]
 }
 
+/** the HUB opening height, m (rebuilt.ts) */
+const HUB_OPENING_Z = 1.83
+const DIR = process.env.SWEEP_DIR ?? 'tangent'
+/** drive axes [left X, left Y] for a speed in m/s along the chosen direction (the robot code negates both: -LY is forward = +x at yaw 0) */
+const driveAxes = (speed: number): [number, number] => { const k = Math.min(1, speed / 4.0); return DIR === 'toward' ? [0, -k] : DIR === 'away' ? [0, k] : [-k, 0] }
 const SHOOT_SECONDS = 6
 const SETTLE = 1.5
 /** seconds a moving trial drives before it shoots */
@@ -80,7 +87,10 @@ function startOf(t: Trial): { x: number; y: number; yaw: number } {
   const a = (t.bearing * Math.PI) / 180
   // a moving trial strafes towards +y: start that far back so the robot has reached its speed and is about at the nominal place when the shooting starts
   const run = t.speed > 0 ? -t.speed * (MOVE_RUN_UP + 0.5) : 0
-  return { x: HUB_X + t.dist * Math.cos(a), y: HUB_Y + t.dist * Math.sin(a) + run, yaw: (t.yawDeg * Math.PI) / 180 }
+  // SWEEP_DIR: tangent (default, along +y), toward (along +x, at the HUB from behind) or away (along -x)
+  const dx = DIR === 'toward' ? run : DIR === 'away' ? -run : 0
+  const dy = DIR === 'tangent' ? run : 0
+  return { x: HUB_X + t.dist * Math.cos(a) + dx, y: HUB_Y + t.dist * Math.sin(a) + dy, yaw: (t.yawDeg * Math.PI) / 180 }
 }
 
 describe.skipIf(!run)('aim sweep with the real robot code', () => {
@@ -125,6 +135,8 @@ describe.skipIf(!run)('aim sweep with the real robot code', () => {
         rec.attach()
         const dirs: { t: number; azErr: number; elev: number }[] = []
         const trace = process.env.SWEEP_TRACE === '1' && index === 0
+        const cross = process.env.SWEEP_CROSS === '1'
+        const tracking = trace || cross
         const tracks = new Map<number, [number, number, number, number][]>()
         const flywheel: [number, number][] = []
         const robotPath: [number, number, number, number][] = []
@@ -134,7 +146,7 @@ describe.skipIf(!run)('aim sweep with the real robot code', () => {
           let d = ((az - to) * 180) / Math.PI
           while (d > 180) d -= 360
           while (d < -180) d += 360
-          if (trace) tracks.set(e.pieceId, [])
+          if (tracking) tracks.set(e.pieceId, [])
           dirs.push({ t, azErr: d, elev: (Math.atan2(e.velocity[2], Math.hypot(e.velocity[0], e.velocity[1])) * 180) / Math.PI })
         })
         let maxErr = 0
@@ -148,27 +160,37 @@ describe.skipIf(!run)('aim sweep with the real robot code', () => {
         const end = SETTLE + SHOOT_SECONDS
         session.setJoystick([0, 0, 0, 0, 0, 0], 2n, -1) // B held: idle, whatever state the last trial left the robot in
         // moving trials start strafing right after the idle press, so they are at speed when SETTLE comes
-        session.at(SETTLE - MOVE_RUN_UP, () => session!.setJoystick([tr.speed > 0 ? -Math.min(1, tr.speed / 4.0) : 0, 0, 0, 0, 0, 0], 0n, -1))
+        session.at(SETTLE - MOVE_RUN_UP, () => session!.setJoystick([...(tr.speed > 0 ? driveAxes(tr.speed) : [0, 0]), 0, 0, 0, 0], 0n, -1))
         session.at(SETTLE, () => {
           // RT = "shooting" (axis 3), LT = "shooting on the move" (axis 2); the sideways speed is the strafe axis (left stick X, negated by the robot code)
-          const strafe = tr.speed > 0 ? -Math.min(1, tr.speed / 4.0) : 0
-          session!.setJoystick([strafe, 0, tr.speed > 0 ? 1 : 0, tr.speed > 0 ? 0 : 1, 0, 0], 0n, -1)
+          const [ax, ay] = tr.speed > 0 ? driveAxes(tr.speed) : [0, 0]
+          session!.setJoystick([ax, ay, tr.speed > 0 ? 1 : 0, tr.speed > 0 ? 0 : 1, 0, 0], 0n, -1)
         })
         for (let t = 0.25; t <= end + 1e-9; t += 0.25) session.at(t, sampleError)
         if (trace) for (let t = 0.2; t <= end; t += 0.1) session.at(t, () => { const f = engine.getFrame(); robotPath.push([+engine.time.toFixed(2), +f.robot[0].toFixed(3), +f.robot[1].toFixed(3), +f.robotSpeed.toFixed(2)]) })
         if (trace) for (let t = SETTLE - 0.5; t <= end; t += 0.02) session.at(t, () => { const m = engine.mechanisms.get(37); if (m) flywheel.push([+engine.time.toFixed(3), +m.rps.toFixed(3)]) })
-        if (trace) for (let t = SETTLE; t <= end; t += 0.04) session.at(t, () => { for (const [id, tr] of tracks) { const st = engine.pieceState(id); if (st) tr.push([+engine.time.toFixed(3), +st.position[0].toFixed(3), +st.position[1].toFixed(3), +st.position[2].toFixed(3)]) } })
+        if (tracking) for (let t = SETTLE; t <= end; t += cross ? 0.02 : 0.04) session.at(t, () => { for (const [id, tr] of tracks) { const st = engine.pieceState(id); if (st) tr.push([+engine.time.toFixed(3), +st.position[0].toFixed(3), +st.position[1].toFixed(3), +st.position[2].toFixed(3)]) } })
         session.at(end, () => session!.setJoystick([0, 0, 0, 0, 0, 0], 0n, -1))
         await until(() => engine.time >= end + 0.05, 300_000, `trial ${index + 1} to finish`)
         rec.stop()
         stopObs()
         const rep = rec.report()
         const launches: Launch[] = rep.launches
+        const crossings: [number, number][] = []
+        if (cross) {
+          for (const pts of tracks.values()) {
+            for (let i = 1; i < pts.length; i++) {
+              const a = pts[i - 1], b = pts[i]
+              if (a[3] >= HUB_OPENING_Z && b[3] < HUB_OPENING_Z && a[3] > b[3]) { const u = (a[3] - HUB_OPENING_Z) / (a[3] - b[3]); crossings.push([+(a[1] + u * (b[1] - a[1]) - HUB_X).toFixed(3), +(a[2] + u * (b[2] - a[2]) - HUB_Y).toFixed(3)]); break }
+            }
+          }
+        }
         results.push({
           ...tr, shots: rep.shots, scored: rep.scoredShots,
           launchDist: launches.map((l) => Math.hypot(l.x - HUB_X, l.y - HUB_Y)),
           launches: launches.map((l, i) => ({ t: +l.t.toFixed(3), speed: +l.speed.toFixed(2), scored: l.scored, azErr: +(dirs[i]?.azErr ?? NaN).toFixed(2), elev: +(dirs[i]?.elev ?? NaN).toFixed(1) })),
           maxPoseError: est ? maxErr : null, endPoseError: est ? endErr : null, fedBalls: rep.captures.length,
+          ...(cross ? { cross: crossings } : {}),
         })
         if (trace) {
           const series: Record<string, [number, unknown][]> = {}
@@ -176,7 +198,8 @@ describe.skipIf(!run)('aim sweep with the real robot code', () => {
           fs.writeFileSync(path.join(outDir, 'trace.json'), JSON.stringify({ tracks: [...tracks.values()], flywheel, series, robotPath }))
         }
         const r = results[results.length - 1]
-        console.log(`trial ${index + 1}/${trials.length}: d ${tr.dist} m, bearing ${tr.bearing}, yaw ${tr.yawDeg}, v ${tr.speed}: ${r.scored}/${r.shots} scored, pose error max ${r.maxPoseError?.toFixed(2)} m`)
+        const cr = r.cross && r.cross.length ? ` | crossing mean (${(r.cross.reduce((a, c) => a + c[0], 0) / r.cross.length).toFixed(2)}, ${(r.cross.reduce((a, c) => a + c[1], 0) / r.cross.length).toFixed(2)}) of ${r.cross.length}` : ''
+        console.log(`trial ${index + 1}/${trials.length}: d ${tr.dist} m, bearing ${tr.bearing}, yaw ${tr.yawDeg}, v ${tr.speed}: ${r.scored}/${r.shots} scored, pose error max ${r.maxPoseError?.toFixed(2)} m${cr}`)
         fs.writeFileSync(path.join(outDir, 'latest.json'), JSON.stringify(results, null, 1))
       }
       fs.writeFileSync(path.join(outDir, 'latest.md'), report(results))

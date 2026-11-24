@@ -79,6 +79,13 @@ export class MatchRecorder {
   private lastPath = -Infinity
   private distance = 0
 
+  /** FUEL the robot launched that went into a HUB so far (the total of successful shots; the match score counts points). */
+  get scoredShots(): number {
+    let n = 0
+    for (const s of this.shots) if (s.result === 'scored') n++
+    return n
+  }
+
   reset(): void {
     this.feed = []; this.scores = []; this.timeline = []; this.shots = []; this.path = []; this.impacts = []; this.phases = []
     this.pickups = 0; this.topSpeed = 0; this.maxZ = 0; this.time = 0; this.phase = 'none'; this.status = {}; this.captureTimes = []

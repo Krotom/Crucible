@@ -322,6 +322,8 @@ kbd { font: 600 11.5px ui-monospace, 'Cascadia Mono', Consolas, monospace; paddi
 .sb-mid b { font: 700 26px/1 ui-monospace, 'Cascadia Mono', Consolas, monospace; font-variant-numeric: tabular-nums; }
 .sb-mid span { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-hi); }
 .sb-hubs { display: flex; gap: 6px; }
+.sb-shots { font-size: 11px; letter-spacing: 0.08em; color: var(--dim); font-variant-numeric: tabular-nums; }
+.sb-shots:empty { display: none; }
 .sb-hub { font-size: 10px; padding: 0 7px; border-radius: 999px; border: 1px solid var(--line-strong); }
 .sb-hub.blue { color: var(--blue); }
 .sb-hub.red { color: var(--red); }

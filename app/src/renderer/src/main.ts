@@ -497,7 +497,7 @@ function simFrame(): void {
   if (!f) return
   time = f.time
   $('time').textContent = `sim ${f.time.toFixed(2)} s`
-  simPanel.update(buildSimModel(f, { running: sim.running, simRate: sim.simRate, perf: sim.perf && { ...sim.perf, fps }, bridge: sim.bridge, hubs: sim.ready?.field.sensors.map((x) => ({ x: x.center[0], y: x.center[1], alliance: x.alliance })), alliance: ownAlliance }))
+  simPanel.update(buildSimModel(f, { running: sim.running, simRate: sim.simRate, perf: sim.perf && { ...sim.perf, fps }, bridge: sim.bridge, hubs: sim.ready?.field.sensors.map((x) => ({ x: x.center[0], y: x.center[1], alliance: x.alliance })), alliance: ownAlliance, scoredShots: recorder.scoredShots }))
   if ($('simhud').hidden) $('simhud').hidden = false
   plot.build(store)
 }
@@ -721,7 +721,8 @@ for (const id of ['vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail'
 $('ruler-btn').addEventListener('click', () => { fx.setRuler(!fx.rulerActive); $('ruler-btn').classList.toggle('on', fx.rulerActive); $('ruler-btn').textContent = fx.rulerActive ? 'Ruler on' : 'Ruler' })
 function paintScoreboard(f: RenderFrame): void {
   if ($('scoreboard').hidden || !sim.ready) return
-  const m = scoreboardModel(f, sim.ready.phases)
+  const m = scoreboardModel(f, sim.ready.phases, recorder.scoredShots)
+  setIfChanged($('sb-shots'), m.shotsFired > 0 || (m.shotsIn ?? 0) > 0 ? `${m.shotsIn ?? 0} of ${m.shotsFired} shots in` : '')
   setIfChanged($('sb-blue'), String(m.blue)); setIfChanged($('sb-red'), String(m.red)); setIfChanged($('sb-clock'), m.clock); setIfChanged($('sb-phase'), m.phase)
   const hubs = $('sb-hubs')
   const html = m.hubs ? `<span class="sb-hub blue ${m.hubs.blue}">HUB</span><span class="sb-hub red ${m.hubs.red}">HUB</span>` : ''

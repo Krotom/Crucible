@@ -447,12 +447,15 @@ public final class SimBridge {
     private void applyJoystick(FrameCodec.JoystickState joy) {
         if (joy == null || joy.counter() == lastJoyCounter) return;
         lastJoyCounter = joy.counter();
-        DriverStationSim.setJoystickAxisCount(0, 6);
-        DriverStationSim.setJoystickButtonCount(0, 10);
-        DriverStationSim.setJoystickPOVCount(0, 1);
-        for (int i = 0; i < 6; i++) DriverStationSim.setJoystickAxis(0, i, joy.axes()[i]);
-        DriverStationSim.setJoystickButtons(0, (int) joy.buttons());
-        DriverStationSim.setJoystickPOV(0, 0, joy.pov());
+        // the app has one gamepad: it is shown to the robot as both the driver (port 0) and the operator (port 1)
+        for (int port = 0; port < 2; port++) {
+            DriverStationSim.setJoystickAxisCount(port, 6);
+            DriverStationSim.setJoystickButtonCount(port, 10);
+            DriverStationSim.setJoystickPOVCount(port, 1);
+            for (int i = 0; i < 6; i++) DriverStationSim.setJoystickAxis(port, i, joy.axes()[i]);
+            DriverStationSim.setJoystickButtons(port, (int) joy.buttons());
+            DriverStationSim.setJoystickPOV(port, 0, joy.pov());
+        }
         DriverStationSim.notifyNewData();
     }
 
@@ -465,6 +468,15 @@ public final class SimBridge {
 
     /** real time: the exact pose from the app corrects the pose estimator only when it is further than this (m) from it */
     private static final double EXACT_POSE_DRIFT = 0.25;
+
+    private volatile Pose2d lastAppPose;
+    private static volatile boolean wheelsSlipping;
+
+    /** The latest pose the app sent (its exact pose, or the simulated camera's estimate), or null before the first one: for logging it next to the robot's own pose. */
+    public static Pose2d appPose() { SimBridge b = instance; return b == null ? null : b.lastAppPose; }
+
+    /** The robot code tells the bridge when its wheels are slipping (held by a wall): the exact pose then corrects the estimator at every message, not only after a drift of EXACT_POSE_DRIFT. */
+    public static void setWheelsSlipping(boolean slipping) { wheelsSlipping = slipping; }
 
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
@@ -484,13 +496,17 @@ public final class SimBridge {
         double stdYaw = Math.max(Math.toRadians(0.25), Math.toRadians(pose.path("stdYawDeg").asDouble(2.0)));
         if (lockstepDevice != null) { lockstepDevice.visionPose(x, y, yaw, stdXY, stdYaw); return; }
         Pose2d appPose = new Pose2d(x, y, Rotation2d.fromRadians(yaw));
+        lastAppPose = appPose;
         // Real time: the app's pose is as old as its message (tens of milliseconds, 10 cm at 2 m/s), and pulling the estimator to it at every message makes the pose,
         // and the turret's aim with it, saw-tooth. The odometry is good to a few centimetres while the wheels grip, so the exact pose (no tags in the message) only steps
         // in once the two have drifted apart, as when a wall holds the robot. A camera estimate (tags in the message) is a measurement and always goes in.
         if (pose.path("tags").asInt(-1) == 0) {
             Pose2d estimate = drivetrain.getState().Pose;
-            if (estimate != null && estimate.getTranslation().getDistance(appPose.getTranslation()) < EXACT_POSE_DRIFT) return;
+            if (!wheelsSlipping && estimate != null && estimate.getTranslation().getDistance(appPose.getTranslation()) < EXACT_POSE_DRIFT) return;
         }
+        // While the wheels slip the estimator only moves about half way to a measurement however small its std is given (the AdvantageKit log showed it
+        // removing 0.03 m of every 0.055 m of wheel drift, a creep of 0.1 m/s against a wall): ask for a near-exact fix.
+        if (wheelsSlipping && pose.path("tags").asInt(-1) == 0) stdXY = Math.min(stdXY, 0.0005);
         drivetrain.addVisionMeasurement(appPose, com.ctre.phoenix6.Utils.getCurrentTimeSeconds(), edu.wpi.first.math.VecBuilder.fill(stdXY, stdXY, stdYaw));
     }
 

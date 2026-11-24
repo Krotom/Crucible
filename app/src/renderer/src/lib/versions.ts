@@ -16,6 +16,12 @@ export interface Release { version: string; title: string; items: string[] }
 
 /** Newest first. Add an entry for each release. */
 export const CHANGELOG: Release[] = [
+  { version: '1.1.8', title: 'Shots in counter, pose fix against walls, two-controller robot library', items: [
+    'The scoreboard overlay (B) and the Robot section of the sim panel show how many launches of the robot went into a HUB ("6 of 9 shots in"), apart from the match score',
+    'The robot library (SimBridge) keeps the pose of the robot code on the physics while the robot is held by a wall with the stick pushed: while the wheels slip the exact pose is applied at every message and with a near-exact std (the estimator only moved about half way to each correction, so the pose crept past the wall at 0.1 m/s and the shoot-on-the-move aim crept out of the HUB). Needs the robot library of the OffSeasonCode protonme branch',
+    'The one gamepad of the app is shown to the robot as both joystick 0 and joystick 1, so robot code with a separate driver and operator controller works',
+    'npm run sweep: SWEEP_CROSS=1 records where each ball crosses the HUB opening height, and SWEEP_DIR (tangent, toward, away) picks the driving direction of the moving trials',
+  ] },
   { version: '1.1.7', title: 'Memory leak fixed: landing markers', items: [
     'Fixed the memory growth (7 GB in ten minutes of shooting): once there were more than 150 shots, every frame rebuilt the landing markers of the older ones and dropped them without freeing their graphics buffers. Only the newest 150 shots get a marker now, and markers and shot arcs free their graphics memory when they leave the scene',
     'The FUEL drawn inside the robot (1.1.6) is removed',
