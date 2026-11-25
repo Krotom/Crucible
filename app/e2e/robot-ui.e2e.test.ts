@@ -149,10 +149,10 @@ it('robot code UI e2e', async () => {
   }, page)
   await check('R4 applied volts move the mechanism: turret position changes, speed row non-zero, then settles', async () => {
     const p0 = parseFloat((await rows())['turret'])
-    robot.volts[8] = 6; await sleep(1500)
+    robot.volts[0] = 6; await sleep(1500)
     const r = await rows(); const p1 = parseFloat(r['turret']); const rps = parseFloat(r['turret'].split('·')[1])
     expect(Math.abs(p1 - p0) > 0.05 && Math.abs(rps) > 0.1, `turret ${p0} -> ${r['turret']}`)
-    robot.volts[8] = 0; await sleep(2500)
+    robot.volts[0] = 0; await sleep(2500)
     expect(Math.abs(parseFloat((await rows())['turret'].split('·')[1])) < Math.abs(rps), 'speed should decay after volts removed')
   }, page)
 
@@ -282,11 +282,11 @@ it('robot code UI e2e', async () => {
   await check('R16 faults reach the robot: brownout voltage, a dropped CAN device, sensor noise, latency; the battery model sags under drive load and shows in the panel', async () => {
     await page.click('[data-tab=robot]')
     const last = (): FromApp => live.recent[live.recent.length - 1]
-    await sleep(300); expect(last().batteryVolts === 12 && last().motors.some((m) => m.id === 8), 'clean state at first')
+    await sleep(300); expect(last().batteryVolts === 12 && last().motors.some((m) => m.id === 0), 'clean state at first')
     await page.check('#f-brown-on'); await page.fill('#f-brown', '6.5'); await page.press('#f-brown', 'Tab'); await sleep(400)
     expect(Math.abs(last().batteryVolts - 6.5) < 1e-6, 'brownout reaches the robot: ' + last().batteryVolts); await page.uncheck('#f-brown-on'); await sleep(400); eq(last().batteryVolts, 12, 'and goes away')
-    await page.fill('#f-drop', '8, 37'); await sleep(400); expect(!last().motors.some((m) => m.id === 8 || m.id === 37) && last().motors.some((m) => m.id === 38), 'ids 8 and 37 stop answering, others still do'); await page.fill('#f-drop', ''); await sleep(400); expect(last().motors.some((m) => m.id === 8), 'and answer again')
-    const spread = (): number => { const v = live.recent.slice(-30).map((f) => f.motors.find((m) => m.id === 38)!.rotorPositionRot); return Math.max(...v) - Math.min(...v) }
+    await page.fill('#f-drop', '0, 1'); await sleep(400); expect(!last().motors.some((m) => m.id === 0 || m.id === 1) && last().motors.some((m) => m.id === 4), 'ids 0 and 1 stop answering, others still do'); await page.fill('#f-drop', ''); await sleep(400); expect(last().motors.some((m) => m.id === 0), 'and answer again')
+    const spread = (): number => { const v = live.recent.slice(-30).map((f) => f.motors.find((m) => m.id === 4)!.rotorPositionRot); return Math.max(...v) - Math.min(...v) }
     await sleep(700); const quiet = spread(); await setRange('#f-noise', '3'); await sleep(900); const noisy = spread(); await setRange('#f-noise', '0'); await sleep(900)
     expect(noisy > quiet + 0.002, `noise visible in the rotor position: ${quiet} -> ${noisy}`); expect(spread() < 0.0005, 'noise off again')
     const base = live.latencies.slice(-20).reduce((a, b) => a + b, 0) / 20; live.latencies.length = 0; await setRange('#f-lat', '120'); await sleep(1500); const slow = live.latencies.slice(-15).reduce((a, b) => a + b, 0) / 15; await setRange('#f-lat', '0'); await sleep(600)
@@ -299,11 +299,11 @@ it('robot code UI e2e', async () => {
     await sleep(1200); await page.uncheck('#bat-on'); await sleep(400); eq(last().batteryVolts, 12, 'battery model off: back to what the robot reported')
   }, page)
   await check('R17 the mechanism inspector draws volts, speed, position and current for every mechanism, with the values the robot applies', async () => {
-    await page.click('[data-tab=robot]'); live.volts[8] = 6; await sleep(1500)
+    await page.click('[data-tab=robot]'); live.volts[0] = 6; await sleep(1500)
     const rows = await page.$$eval('#mech-inspector .mi-row .mi-name', (e: any[]) => e.map((x) => x.textContent)); for (const n of OFFSEASON.mechanisms.map((m) => m.name)) expect(rows.includes(n), 'inspector row for ' + n + ': ' + rows)
     const turret = await page.evaluate(() => { const r = [...document.querySelectorAll('#mech-inspector .mi-row')].find((x: any) => x.querySelector('.mi-name').textContent === 'turret') as any; return { paths: [...r.querySelectorAll('path')].map((p: any) => p.getAttribute('d').length), vals: [...r.querySelectorAll('.mi-cap b')].map((b: any) => b.textContent) } })
     expect(turret.paths.length === 4 && turret.paths.every((n: number) => n > 10), 'four charts with data: ' + JSON.stringify(turret.paths)); expect(/^6\.0 V$/.test(turret.vals[2]) && /^\d+ A$/.test(turret.vals[3]), 'volts and amps shown: ' + turret.vals)
-    live.volts[8] = 0; await sleep(300)
+    live.volts[0] = 0; await sleep(300)
   }, page)
   await check('R18 rebound driving keys drive the robot, the old key stops; the dialog and the robot agree', async () => {
     await page.click('[data-tab=robot]'); await page.click('#controls-btn'); await page.click('#kb-btn-forward'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('Escape'); await sleep(200)
