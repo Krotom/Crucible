@@ -138,7 +138,7 @@ describe('bridge session against a fake robot', () => {
 
   it('moves mechanisms from their Talon voltages and zeroes them on the reset flag', async () => {
     const { engine, fromApp } = await setup()
-    const HOOD = 40
+    const HOOD = 7
     const hoodState = (): { pos: number; vel: number } => { const m = fromApp().at(-1)!.motors.find((x) => x.id === HOOD)!; return { pos: m.rotorPositionRot, vel: m.rotorVelocityRps } }
     for (let i = 0; i < 100; i++) sendToApp(i, 1 + i * 0.005, { [HOOD]: 12 })
     await until(() => fromApp().length >= 100)
@@ -155,7 +155,7 @@ describe('bridge session against a fake robot', () => {
 
   it('reports mechanism states ahead by the lead, from the measured round trip', async () => {
     const { engine, fromApp } = await setup()
-    const HOOD = 40
+    const HOOD = 7
     session!.autoLead = false
     session!.lead = 0
     for (let i = 0; i < 40; i++) sendToApp(i, 1 + i * 0.005, { [HOOD]: 12 })

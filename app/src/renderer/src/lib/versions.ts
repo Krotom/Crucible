@@ -16,6 +16,11 @@ export interface Release { version: string; title: string; items: string[] }
 
 /** Newest first. Add an entry for each release. */
 export const CHANGELOG: Release[] = [
+  { version: '1.1.9', title: 'Faster shots in the sim, robot definition follows the new motor layout', items: [
+    'The shooter flywheel is heavier in the robot definition (inertia 0.1 instead of 0.01 kg m^2, still a guess): one shot now dips it by less than the ready tolerance, so the robot code keeps feeding and the simulated robot fires about 18 to 20 balls per second standing (it was about 9). The flywheel takes about 2 seconds to spin up; set shooter inertia in robots/offseason/robot.yaml to change it',
+    'Robot definition: the feeder has two motors (count 2). The motor ids are numbered from 0 in the order of the robot code and marked TODO until the real CAN ids are known: the robot code and robot.yaml must use the same ids or the app reports motors the robot does not register',
+    'The robot library example (EmuIOs) follows the robot project: the motor configs moved into the subsystem folders and the flywheel config is one config',
+  ] },
   { version: '1.1.8', title: 'Shots in counter, pose fix against walls, two-controller robot library', items: [
     'The scoreboard overlay (B) and the Robot section of the sim panel show how many launches of the robot went into a HUB ("6 of 9 shots in"), apart from the match score',
     'The robot library (SimBridge) keeps the pose of the robot code on the physics while the robot is held by a wall with the stick pushed: while the wheels slip the exact pose is applied at every message and with a near-exact std (the estimator only moved about half way to each correction, so the pose crept past the wall at 0.1 m/s and the shoot-on-the-move aim crept out of the HUB). Needs the robot library of the OffSeasonCode protonme branch',

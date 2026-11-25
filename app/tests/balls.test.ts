@@ -209,7 +209,7 @@ describe('stages and beam breaks', () => {
     const fly = e.mechanisms.get(ID.shooter)!
     const wheelVolts = 10
     e.setMotorVolts(ID.shooter, wheelVolts)
-    e.run(0.6)
+    e.run(2.0) // the flywheel is heavy (inertia 0.1): it needs a couple of seconds
     expect(fly.rps).toBeGreaterThan(30)
     expect(e.ballSystem!.shots).toBe(0) // the feeder is not pushing yet
     e.setMotorVolts(ID.feeder, 7)

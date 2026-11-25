@@ -27,7 +27,7 @@ describe('robot definition', () => {
     expect(() => parseDefinition('robot: x\n')).toThrow('chassis must be a mapping')
     expect(() => parseDefinition(raw.replace('motor: krakenX44', 'motor: nope'))).toThrow('not a known motor')
     expect(() => parseDefinition(raw.replace('gearRatio: 46.5,', 'gearRatio: fast,'))).toThrow('gearRatio must be a number')
-    expect(() => parseDefinition(raw.replace('id: 38,', 'id: 37,'))).toThrow('duplicate id 37')
+    expect(() => parseDefinition(raw.replace('id: 4,', 'id: 1,'))).toThrow('duplicate id 1')
   })
 
   it('agrees with a robot that registers exactly its devices', () => {
@@ -35,11 +35,11 @@ describe('robot definition', () => {
   })
 
   it('names every difference from the robot', () => {
-    const issues = checkAgainstHello(def, hello({ drop: [40], add: [99], ratio: { 8: 50 }, count: { 37: 2 } }))
-    expect(issues.join('\n')).toContain('does not register: 40')
+    const issues = checkAgainstHello(def, hello({ drop: [7], add: [99], ratio: { 0: 50 }, count: { 1: 2 } }))
+    expect(issues.join('\n')).toContain('does not register: 7')
     expect(issues.join('\n')).toContain('no model for (they will not move): 99')
-    expect(issues.join('\n')).toContain('turret (id 8): robot gear ratio 50, definition says 46.5')
-    expect(issues.join('\n')).toContain('shooter (id 37): robot has 2 x krakenX60, definition says 3 x krakenX60')
+    expect(issues.join('\n')).toContain('turret (id 0): robot gear ratio 50, definition says 46.5')
+    expect(issues.join('\n')).toContain('shooter (id 1): robot has 2 x krakenX60, definition says 3 x krakenX60')
     expect(checkAgainstHello(def, 'not json')).toEqual(["the robot's Hello message is not valid JSON"])
   })
 })

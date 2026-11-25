@@ -8,19 +8,19 @@ import frc.robot.Constants.IndexerConstants;
 import frc.robot.subsystems.intake.roller.RollerConstants;
 import frc.robot.Constants.ShooterConstants;
 import frc.robot.Constants.TurretConstants;
-import frc.robot.io.feeder.FeederConfig;
+import frc.robot.subsystems.feeder.FeederConfig;
 import frc.robot.io.feeder.FeederIOInterface;
-import frc.robot.io.hood.HoodConfig;
+import frc.robot.subsystems.hood.HoodConfig;
 import frc.robot.io.hood.HoodIOInterface;
-import frc.robot.io.indexer.IndexerConfig;
+import frc.robot.subsystems.indexer.IndexerConfig;
 import frc.robot.io.indexer.IndexerIOInterface;
-import frc.robot.io.intake.DriverConfig;
+import frc.robot.subsystems.intake.driver.DriverConfig;
 import frc.robot.io.intake.DriverIOInterface;
-import frc.robot.io.intake.RollerConfig;
+import frc.robot.subsystems.intake.roller.RollerConfig;
 import frc.robot.io.intake.RollerIOInterface;
-import frc.robot.io.shooter.ShooterConfig;
+import frc.robot.subsystems.shooter.ShooterConfig;
 import frc.robot.io.shooter.ShooterIOInterface;
-import frc.robot.io.turret.TurretConfig;
+import frc.robot.subsystems.turret.TurretConfig;
 import frc.robot.io.turret.TurretIOInterface;
 
 /**
@@ -39,8 +39,8 @@ public final class EmuIOs {
     }
 
     public static ShooterIOInterface shooter() {
-        // the three shooter motors share one CAN ID in the robot code, so they are one device; the last config applied is the second one
-        EmuTalon m = talon(ShooterConstants.MOTOR_ID, new ShooterConfig().config2(), false, 3, 0.01);
+        // the main motor stands for all three shooter motors
+        EmuTalon m = talon(ShooterConstants.MOTOR_ID, new ShooterConfig().config(), false, 3, 0.1);
         return new ShooterIOInterface() {
             @Override public void updateInputs(ShooterInputs i) {
                 i.velocity = m.velocity(); i.appliedVolts = m.appliedVolts(); i.statorCurrent = m.statorCurrent(); i.error = m.closedLoopError();
@@ -83,7 +83,7 @@ public final class EmuIOs {
     }
 
     public static FeederIOInterface feeder() {
-        EmuTalon m = talon(FeederConstants.MOTOR_ID, new FeederConfig().config(), false, 1, 0.003);
+        EmuTalon m = talon(FeederConstants.MOTOR_ID, new FeederConfig().config(), false, 2, 0.003);
         return new FeederIOInterface() {
             @Override public void updateInputs(FeederInputs i) { i.appliedVolts = m.appliedVolts(); i.statorCurrent = m.statorCurrent(); i.velocity = m.velocity(); }
 
