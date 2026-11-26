@@ -838,14 +838,14 @@ document.addEventListener('pointerdown', (e) => {
 })
 const vm = (id: string): boolean => $<HTMLInputElement>(id).checked
 function applyViewMenu(): void {
-  view.setOverlays({ boxes: vm('vm-boxes'), capture: vm('vm-capture'), sensors: vm('vm-sensors'), colliders: vm('vm-colliders') })
+  view.setOverlays({ boxes: vm('vm-boxes'), capture: vm('vm-capture'), sensors: vm('vm-sensors'), colliders: vm('vm-colliders'), cad: vm('vm-cad') })
   fx.show.rules = vm('vm-rules'); fx.show.trail = vm('vm-trail'); fx.show.arcs = vm('vm-arcs'); fx.apply()
   view.setRobotCam(vm('vm-cam') && sim.active ? ($<HTMLSelectElement>('vm-cammode').value as 'front' | 'top') : null)
   $('cam-label').hidden = !(vm('vm-cam') && sim.active)
   $('cam-label').textContent = $<HTMLSelectElement>('vm-cammode').value === 'top' ? 'robot camera: top-down' : 'robot camera: front'
   $('scoreboard').hidden = !(vm('vm-score') && sim.active)
 }
-for (const id of ['vm-boxes', 'vm-capture', 'vm-sensors', 'vm-colliders', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score']) $(id).addEventListener('change', applyViewMenu)
+for (const id of ['vm-boxes', 'vm-capture', 'vm-sensors', 'vm-colliders', 'vm-cad', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score']) $(id).addEventListener('change', applyViewMenu)
 $('ruler-btn').addEventListener('click', () => { fx.setRuler(!fx.rulerActive); $('ruler-btn').classList.toggle('on', fx.rulerActive); $('ruler-btn').textContent = fx.rulerActive ? 'Ruler on' : 'Ruler' })
 function paintScoreboard(f: RenderFrame): void {
   if ($('scoreboard').hidden || !sim.ready) return
@@ -1098,7 +1098,10 @@ $<HTMLSelectElement>('log-history').addEventListener('change', async (e) => {
 })
 
 // remembered between runs: the choices in the side panels and the log's severity toggles
-bindSettings(['bat-on', 'bat-open', 'bat-res', 'f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop', 'vis-on', 'vis-noise', 'bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time', 'robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-colliders', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'vm-burn', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'live-topics', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
+// a graphics card that runs on the CPU (software WebGL, as in the CI's virtual display) cannot draw the CAD field model and keep the simulation fed: start with it off (a saved choice wins)
+if (view.softwareRendering) $<HTMLInputElement>('vm-cad').checked = false
+bindSettings(['bat-on', 'bat-open', 'bat-res', 'f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop', 'vis-on', 'vis-noise', 'bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time', 'robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-colliders', 'vm-cad', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'vm-burn', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'live-topics', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
+view.setOverlays({ cad: vm('vm-cad') }) // before any field is drawn
 for (const el of hostEls) el.value = hostEls[0].value // restored values may differ if only one was saved
 robotLog.syncLevels()
 paintFaultNote(); paintVisionNote()

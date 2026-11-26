@@ -31,7 +31,7 @@ export class SceneView {
   private ro: ResizeObserver
   private sensorObjs: THREE.Object3D[] = []
   /** what the overlays show: the robot's collision box, the intake volume, the scoring volumes */
-  private show = { boxes: true, capture: true, sensors: true, colliders: false }
+  private show = { boxes: true, capture: true, sensors: true, colliders: false, cad: true }
   private fieldModel: THREE.Group | null = null
   private fieldLoad: Promise<string> | null = null
   /** the current field is REBUILT's: draw the CAD model, and the physics bodies only when asked */
@@ -42,9 +42,22 @@ export class SceneView {
   private pipCam = new THREE.PerspectiveCamera(70, 4 / 3, 0.03, 100)
   private robotHalfX = 0.43
 
+  /** true when WebGL runs on the CPU (SwiftShader, llvmpipe): the 400,000-triangle field model would starve everything else, so it starts switched off */
+  readonly softwareRendering: boolean
+
+  private static detectSoftware(r: THREE.WebGLRenderer): boolean {
+    try {
+      const gl = r.getContext()
+      const ext = gl.getExtension('WEBGL_debug_renderer_info')
+      const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : ''
+      return /swiftshader|llvmpipe|softpipe|software/i.test(name)
+    } catch { return false }
+  }
+
   constructor(private host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.softwareRendering = SceneView.detectSoftware(this.renderer)
     host.appendChild(this.renderer.domElement)
     this.scene.background = new THREE.Color(0x0b0c0e)
 
@@ -233,8 +246,8 @@ export class SceneView {
   private attachFieldModel(): void {
     const g = this.simGroup
     if (!g) return
-    if (this.cadField && !this.fieldModel) void this.loadFieldModel()
-    const draw = this.cadField && this.fieldModel !== null
+    if (this.cadField && this.show.cad && !this.fieldModel) void this.loadFieldModel()
+    const draw = this.cadField && this.show.cad && this.fieldModel !== null
     if (this.fieldModel) { if (draw) g.add(this.fieldModel); else g.remove(this.fieldModel) }
     for (const o of this.colliderObjs) o.visible = !draw || this.show.colliders
   }
@@ -323,7 +336,7 @@ export class SceneView {
   }
 
   /** Which overlays are drawn: the robot's collision box, the intake capture volume, the scoring volumes. */
-  setOverlays(o: { boxes?: boolean; capture?: boolean; sensors?: boolean; colliders?: boolean }): void {
+  setOverlays(o: { boxes?: boolean; capture?: boolean; sensors?: boolean; colliders?: boolean; cad?: boolean }): void {
     Object.assign(this.show, o)
     this.attachFieldModel()
     if (this.robotBox) this.robotBox.visible = this.show.boxes
