@@ -6,6 +6,8 @@ import type { FieldDefinition, PieceSpec, RenderFrame } from '../../../engine/ty
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { mergeByMaterial } from './mergemodel'
+// the official field model, built from the CAD by tools/build-field.mjs (fuel and fasteners left out: the simulator draws the pieces itself)
+import fieldUrl from '../../../../assets/field/rebuilt-field.glb?url'
 
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
 
@@ -29,7 +31,12 @@ export class SceneView {
   private ro: ResizeObserver
   private sensorObjs: THREE.Object3D[] = []
   /** what the overlays show: the robot's collision box, the intake volume, the scoring volumes */
-  private show = { boxes: true, capture: true, sensors: true }
+  private show = { boxes: true, capture: true, sensors: true, colliders: false }
+  private fieldModel: THREE.Group | null = null
+  private fieldLoad: Promise<string> | null = null
+  /** the current field is REBUILT's: draw the CAD model, and the physics bodies only when asked */
+  private cadField = false
+  private colliderObjs: THREE.Object3D[] = []
   /** robot-camera inset (drawn into the corner of the main view); null = off */
   private pip: { mode: 'front' | 'top'; frac: number } | null = null
   private pipCam = new THREE.PerspectiveCamera(70, 4 / 3, 0.03, 100)
@@ -132,9 +139,10 @@ export class SceneView {
   get componentCount(): number { return this.components.length }
 
   /** Replaces the placeholder field with a game module's field: colliders, sensors, and instanced game pieces. */
-  setSimField(field: FieldDefinition, pieces: PieceSpec[], robotHalf: [number, number, number], othersHalf: [number, number, number][] = []): void {
+  setSimField(field: FieldDefinition, pieces: PieceSpec[], robotHalf: [number, number, number], othersHalf: [number, number, number][] = [], cad = false): void {
     this.clearSim()
     this.base.visible = false
+    this.cadField = cad
     const g = new THREE.Group()
     for (const b of field.colliders) {
       const isFloor = b.label === 'floor'
@@ -147,6 +155,7 @@ export class SceneView {
         mesh.rotation.z = b.yaw ?? 0
       }
       g.add(mesh)
+      this.colliderObjs.push(mesh)
     }
     for (const sn of field.sensors) {
       const geo = new THREE.BoxGeometry(sn.half[0] * 2, sn.half[1] * 2, sn.half[2] * 2)
@@ -155,10 +164,12 @@ export class SceneView {
       const w = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color }))
       for (const o of [m, w]) { o.position.set(sn.center[0], sn.center[1], sn.center[2]); o.rotation.z = sn.yaw ?? 0; o.visible = this.show.sensors; g.add(o); this.sensorObjs.push(o) }
     }
-    const grid = new THREE.GridHelper(Math.max(field.length, field.width) * 2, Math.round(Math.max(field.length, field.width) * 2), 0x2d343d, 0x232830)
-    grid.rotation.x = Math.PI / 2
-    grid.position.set(field.length / 2, field.width / 2, 0.001)
-    g.add(grid)
+    if (!cad) {
+      const grid = new THREE.GridHelper(Math.max(field.length, field.width) * 2, Math.round(Math.max(field.length, field.width) * 2), 0x2d343d, 0x232830)
+      grid.rotation.x = Math.PI / 2
+      grid.position.set(field.length / 2, field.width / 2, 0.001)
+      g.add(grid)
+    }
     for (const spec of pieces) {
       const im = new THREE.InstancedMesh(new THREE.SphereGeometry(spec.radius, 16, 12), new THREE.MeshStandardMaterial({ color: spec.color, roughness: 0.6 }), 4000)
       im.count = 0
@@ -196,6 +207,63 @@ export class SceneView {
     this.controls.target.set(field.length / 2, field.width / 2, 0)
     this.camera.position.set(field.length / 2, -field.width * 0.9, field.width * 1.1)
     this.controls.update()
+    this.attachFieldModel()
+  }
+
+  /** Loads the official field model once; returns a status line. It is drawn when a REBUILT field is on screen. */
+  loadFieldModel(): Promise<string> {
+    if (!this.fieldLoad) {
+      this.fieldLoad = new GLTFLoader().loadAsync(fieldUrl).then((gltf) => {
+        gltf.scene.traverse((o) => {
+          const m = o as THREE.Mesh
+          if (!m.isMesh) return
+          const mat = m.material as THREE.Material
+          if (m.name.startsWith('TAPE')) { mat.polygonOffset = true; mat.polygonOffsetFactor = -4; mat.polygonOffsetUnits = -4 } // the tape lies on the carpet
+          if (mat.transparent) mat.depthWrite = false
+        })
+        this.fieldModel = gltf.scene
+        this.attachFieldModel()
+        return 'Field model loaded.'
+      }).catch((e: unknown) => { this.fieldLoad = null; return `Field model not loaded: ${(e as Error).message}` })
+    }
+    return this.fieldLoad
+  }
+
+  /** Puts the CAD model into the current field (and the physics bodies away unless asked for), or takes it out again. */
+  private attachFieldModel(): void {
+    const g = this.simGroup
+    if (!g) return
+    if (this.cadField && !this.fieldModel) void this.loadFieldModel()
+    const draw = this.cadField && this.fieldModel !== null
+    if (this.fieldModel) { if (draw) g.add(this.fieldModel); else g.remove(this.fieldModel) }
+    for (const o of this.colliderObjs) o.visible = !draw || this.show.colliders
+  }
+
+  /** The field for the live view: the walls and structures only. No game pieces, scoring volumes, collision box or capture volume. */
+  setLiveField(field: FieldDefinition, cad = true): void {
+    this.clearSim()
+    this.base.visible = false
+    this.cadField = cad
+    const g = new THREE.Group()
+    for (const b of field.colliders) {
+      const isFloor = b.label === 'floor'
+      const mesh = new THREE.Mesh(
+        b.hull ? new ConvexGeometry(b.hull.map((p) => new THREE.Vector3(p[0], p[1], p[2]))) : new THREE.BoxGeometry(b.half[0] * 2, b.half[1] * 2, b.half[2] * 2),
+        new THREE.MeshStandardMaterial({ color: isFloor ? 0x1b2027 : b.robotPass ? 0x6a5a2a : 0x55606e, roughness: 0.9 }),
+      )
+      if (!b.hull) {
+        mesh.position.set(b.center[0], b.center[1], b.center[2])
+        mesh.rotation.z = b.yaw ?? 0
+      }
+      g.add(mesh)
+      this.colliderObjs.push(mesh)
+    }
+    this.scene.add(g)
+    this.simGroup = g
+    this.controls.target.set(field.length / 2, field.width / 2, 0)
+    this.camera.position.set(field.length / 2, -field.width * 0.9, field.width * 1.1)
+    this.controls.update()
+    this.attachFieldModel()
   }
 
   clearSim(): void {
@@ -203,6 +271,8 @@ export class SceneView {
     this.pieceMeshes = []
     this.otherMeshes = []
     this.sensorObjs = []
+    this.colliderObjs = []
+    this.cadField = false
     if (this.robotBox) { this.robot.remove(this.robotBox); this.robotBox = null }
     this.captureBox = null
     this.base.visible = true
@@ -253,8 +323,9 @@ export class SceneView {
   }
 
   /** Which overlays are drawn: the robot's collision box, the intake capture volume, the scoring volumes. */
-  setOverlays(o: { boxes?: boolean; capture?: boolean; sensors?: boolean }): void {
+  setOverlays(o: { boxes?: boolean; capture?: boolean; sensors?: boolean; colliders?: boolean }): void {
     Object.assign(this.show, o)
+    this.attachFieldModel()
     if (this.robotBox) this.robotBox.visible = this.show.boxes
     for (const s of this.sensorObjs) s.visible = this.show.sensors
     if (this.captureBox && !this.show.capture) this.captureBox.visible = false

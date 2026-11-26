@@ -505,3 +505,24 @@ input.mini { width: 48px; padding: 1px 5px; margin: 0 3px; }
 .api-info { margin: 4px 0 6px; } .api-info code { display: block; margin-top: 6px; padding: 6px 8px; border-radius: 6px; background: var(--field); font-size: 11px; white-space: pre-wrap; word-break: break-all; color: var(--dim); }
 #share-note { width: 100%; box-sizing: border-box; margin: 2px 0 4px; }
 .sens-none td { color: var(--dim); }
+
+/* ---- live view (match): the field and the robot only, big readout */
+body.live-view .appbar { display: none; }
+body.live-view .shell { grid-template-columns: 1fr; }
+body.live-view #topics-panel, body.live-view #timeline, body.live-view #transport, body.live-view #plot { display: none; }
+body.live-view #center { grid-template-rows: 1fr; }
+body.live-view .hud > :not(#hud-camera) { display: none; }
+.livehud { position: absolute; left: 12px; top: 56px; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; min-width: 250px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); color: var(--text); z-index: 3; pointer-events: none; }
+.lh-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lh-clock { display: flex; align-items: baseline; gap: 12px; }
+.lh-clock b { font: 700 54px/1 ui-monospace, 'Cascadia Mono', Consolas, monospace; font-variant-numeric: tabular-nums; }
+.lh-clock span { font-size: 15px; letter-spacing: 0.18em; color: var(--dim); }
+.lh-chip { padding: 4px 10px; border-radius: 999px; font-size: 14px; font-weight: 700; letter-spacing: 0.08em; border: 1px solid var(--line); color: var(--dim); }
+.lh-chip.ok { color: #0b0c0e; background: #5bd490; border-color: #5bd490; }
+.lh-chip.warn { color: #0b0c0e; background: #e6a50a; border-color: #e6a50a; }
+.lh-chip.bad { color: #fff; background: #d64545; border-color: #d64545; }
+.lh-chip.blue.on { color: #fff; background: var(--blue); border-color: var(--blue); }
+.lh-chip.red.on { color: #fff; background: var(--red); border-color: var(--red); }
+.lh-chip.blue:not(.on), .lh-chip.red:not(.on) { opacity: 0.45; text-decoration: line-through; }
+.lh-dim { color: var(--dim); font-size: 13px; }
+.live-exit { position: absolute; right: 12px; top: 12px; z-index: 4; }

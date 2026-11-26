@@ -14,7 +14,13 @@ export class Nt4Live {
   private topics = new Map<number, Announced>()
   private stopped = false
   private retry: ReturnType<typeof setTimeout> | null = null
-  constructor(private store: DataStore, private host: string, private port: number, private onStatus: (s: NtStatus) => void) {}
+  /** performance.now() of the last data message (0 before the first one): how fresh the data is */
+  lastRx = 0
+  /**
+   * @param opts topics: name prefixes to subscribe to (default: everything); periodic: seconds between updates (default 0.01).
+   *   A few topics at 20 Hz is what the live view asks for on a field network, where the radio's bandwidth is limited.
+   */
+  constructor(private store: DataStore, private host: string, private port: number, private onStatus: (s: NtStatus) => void, private opts: { topics?: string[]; periodic?: number } = {}) {}
 
   start(): void {
     this.stopped = false
@@ -44,7 +50,7 @@ export class Nt4Live {
     ws.onopen = () => {
       this.onStatus('connected')
       this.topics.clear()
-      ws.send(JSON.stringify([{ method: 'subscribe', params: { topics: [''], subuid: 1, options: { prefix: true, periodic: 0.01 } } }]))
+      ws.send(JSON.stringify([{ method: 'subscribe', params: { topics: this.opts.topics ?? [''], subuid: 1, options: { prefix: true, periodic: this.opts.periodic ?? 0.01 } } }]))
     }
     ws.onmessage = (ev) => (typeof ev.data === 'string' ? this.onText(ev.data) : this.onBinary(new Uint8Array(ev.data as ArrayBuffer)))
     ws.onclose = () => { if (!this.stopped) { this.onStatus('connecting'); this.scheduleRetry() } }
@@ -64,6 +70,7 @@ export class Nt4Live {
   }
 
   private onBinary(bytes: Uint8Array): void {
+    this.lastRx = performance.now()
     for (const msg of decodeMulti(bytes)) {
       const [id, tsUs, , value] = msg as [number, number, number, unknown]
       if (id < 0) continue

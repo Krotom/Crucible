@@ -109,6 +109,8 @@
             <p class="hint">or drop a .wpilog anywhere in the window</p>
             <label class="field"><span>NT host</span><input id="host" value="127.0.0.1" spellcheck="false" /></label>
             <button id="connect" class="wide">Connect</button>
+            <button id="live-view" class="wide" title="A second pair of eyes at a match: the field and the robot from the robot's own data. No physics, no game pieces, light on the field network">Live view (match)</button>
+            <label class="field"><span>Live view topics</span><input id="live-topics" value="/AdvantageKit/RealOutputs/Swerve/Pose, /AdvantageKit/RealOutputs/Mechanism3d/Components, /AdvantageKit/RealOutputs/SuperStructure/, /AdvantageKit/DriverStation/, /FMSInfo/" spellcheck="false" title="Name prefixes the live view subscribes to, at 20 Hz. Only these cross the field network" /></label>
             <button id="ref-open" class="wide" title="A second log drawn dashed on the same plot (for example a real match to compare the sim with)">Reference log…</button>
             <input id="ref-file" type="file" accept=".wpilog" hidden />
             <div id="ref-info" class="refinfo" hidden>
@@ -350,13 +352,14 @@
             <label>Robot pose <select id="pose-select"></select></label>
             <label>Components <select id="comp-select"></select></label>
             <button id="focus">Focus robot</button>
-            <label>Camera <select id="camera-select" title="Camera presets (C cycles)"></select></label>
+            <label id="hud-camera">Camera <select id="camera-select" title="Camera presets (C cycles)"></select></label>
             <button id="ruler-btn" title="Measure on the floor: click two points (M)" disabled>Ruler</button>
             <button id="view-btn" title="Choose what is drawn over the field" aria-expanded="false">View ▾</button>
             <div id="view-menu" class="viewmenu" hidden>
               <label class="check"><input id="vm-boxes" type="checkbox" checked />Robot collision box</label>
               <label class="check"><input id="vm-capture" type="checkbox" checked />Intake volume</label>
               <label class="check"><input id="vm-sensors" type="checkbox" checked />Scoring volumes</label>
+              <label class="check" title="The simulator's physics bodies of the field, drawn instead of the CAD model's look"><input id="vm-colliders" type="checkbox" />Collision shapes</label>
               <label class="check"><input id="vm-rules" type="checkbox" />Rules zones and center line</label>
               <label class="check"><input id="vm-trail" type="checkbox" />Robot trail</label>
               <label class="check"><input id="vm-arcs" type="checkbox" checked />Shot arcs and landing spots</label>
@@ -371,6 +374,14 @@
             <div class="sb-mid"><b id="sb-clock">0:00</b><span id="sb-phase"></span><div id="sb-hubs" class="sb-hubs"></div><div id="sb-shots" class="sb-shots" title="Launches that went into a HUB / launches so far"></div></div>
             <div class="sb-side red"><b id="sb-red">0</b><span>RED</span></div>
           </div>
+          <div id="livehud" class="livehud" hidden>
+            <div class="lh-row"><span id="lh-conn" class="lh-chip">OFFLINE</span><span id="lh-age" class="lh-dim"></span><span id="lh-ally" class="lh-chip" hidden></span></div>
+            <div class="lh-clock"><b id="lh-time">-:--</b><span id="lh-mode">DISABLED</span></div>
+            <div class="lh-row"><span id="lh-hub-blue" class="lh-chip blue">BLUE HUB</span><span id="lh-hub-red" class="lh-chip red">RED HUB</span></div>
+            <div id="lh-next" class="lh-dim"></div>
+            <div class="lh-row"><span id="lh-shoot" class="lh-chip" hidden></span><span id="lh-state" class="lh-dim"></span></div>
+          </div>
+          <button id="live-exit" class="live-exit" hidden title="Back to the normal window (Esc)">Exit live view</button>
           <div id="ruler-label" class="ruler-label" hidden></div>
           <div id="cam-label" class="cam-label" hidden>robot camera</div>
           <div id="simhud" class="simhud" hidden>

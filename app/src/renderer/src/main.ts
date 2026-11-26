@@ -36,6 +36,9 @@ import { attempts, recordAttempt, setupApiPrefs, setupAttempts, setupBoard, setu
 import { makeRunFile, parseRunFile } from './lib/runfile'
 import { captureValues } from './lib/presets'
 import { overlayLines } from './lib/compose'
+import { PoseSmoother } from './lib/livepose'
+import { clock, hubStatus, matchElapsed, pickTopic, type RobotMode } from './lib/livehud'
+import { createRebuiltGame } from '../../games/rebuilt'
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
@@ -53,7 +56,7 @@ let lastInput: JoystickReading | null = null
 let lastInputSent = 0
 const sim = new SimSource(
   store,
-  (r) => { analysisView.setField(r.field); robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf, r.othersHalf); fx.start(r.field, r.gameId); visionView.start(); applyViewMenu(); sim.send({ type: 'speed', value: speed }); sendDs() },
+  (r) => { analysisView.setField(r.field); robotHalfZ = r.robotHalf[2]; view.setSimField(r.field, r.pieces, r.robotHalf, r.othersHalf, r.gameId === 'game-rebuilt'); fx.start(r.field, r.gameId); visionView.start(); applyViewMenu(); sim.send({ type: 'speed', value: speed }); sendDs() },
   (m) => setStatus(`Sim error: ${m}`),
 )
 
@@ -266,6 +269,130 @@ $('connect').addEventListener('click', () => {
   $('connect').textContent = 'Disconnect'
   updateTransportEnabled()
 })
+
+// ---- live view (match): the field and the robot from the robot's own data, no physics and no game pieces
+let liveOn = false
+let liveConn: NtStatus = 'closed'
+const smoother = new PoseSmoother()
+const liveTopic = { pose: '', comps: '', matchTime: '', enabled: '', auto: '', test: '', gameData: '', redAlliance: '', ready: '', state: '' }
+let liveResolved = 0
+let liveHudAt = 0
+
+function resolveLiveTopics(): void {
+  const names = store.topicNames()
+  liveTopic.pose = pickTopic(names, '/Swerve/Pose') ?? names.find((n) => store.series.get(n)?.type === 'struct:Pose2d') ?? ''
+  liveTopic.comps = pickTopic(names, '/Mechanism3d/Components') ?? ''
+  liveTopic.matchTime = pickTopic(names, '/DriverStation/MatchTime') ?? ''
+  liveTopic.enabled = pickTopic(names, '/DriverStation/Enabled') ?? ''
+  liveTopic.auto = pickTopic(names, '/DriverStation/Autonomous') ?? ''
+  liveTopic.test = pickTopic(names, '/DriverStation/Test') ?? ''
+  liveTopic.gameData = pickTopic(names, '/DriverStation/GameSpecificMessage') ?? ''
+  liveTopic.redAlliance = pickTopic(names, '/FMSInfo/IsRedAlliance') ?? ''
+  liveTopic.ready = pickTopic(names, '/SuperStructure/ReadyToShoot') ?? ''
+  liveTopic.state = pickTopic(names, '/SuperStructure/State') ?? ''
+}
+
+function enterLiveView(): void {
+  if (liveOn) return
+  stopSim()
+  live?.stop(); live = null
+  store.clear(); plot.clear(store)
+  const host = $<HTMLInputElement>('host').value.trim() || '127.0.0.1'
+  const topics = $<HTMLInputElement>('live-topics').value.split(',').map((t) => t.trim()).filter(Boolean)
+  liveConn = 'connecting'
+  live = new Nt4Live(store, host, 5810, (s) => { liveConn = s; setStatus(`Live view ${host}: ${statusText[s]}`, s === 'connected') }, { topics: topics.length ? topics : undefined, periodic: 0.05 })
+  live.start()
+  const field = createRebuiltGame().field()
+  view.setLiveField(field)
+  fx.start(field, 'game-rebuilt')
+  fx.show.rules = true; fx.show.trail = true; fx.apply()
+  smoother.clear()
+  liveResolved = 0
+  liveOn = true
+  document.body.classList.add('live-view')
+  $('livehud').hidden = false
+  $('live-exit').hidden = false
+  $('connect').textContent = 'Connect'
+  updateTransportEnabled()
+}
+
+function exitLiveView(): void {
+  if (!liveOn) return
+  liveOn = false
+  live?.stop(); live = null
+  smoother.clear()
+  view.clearSim(); fx.stop()
+  applyViewMenu()
+  document.body.classList.remove('live-view')
+  $('livehud').hidden = true
+  $('live-exit').hidden = true
+  store.clear(); plot.clear(store)
+  setStatus('No data')
+  updateTransportEnabled()
+}
+$('live-view').addEventListener('click', enterLiveView)
+$('live-exit').addEventListener('click', exitLiveView)
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && liveOn && !document.querySelector('dialog[open]')) exitLiveView() })
+
+function liveFrame(now: number): void {
+  if (now - liveResolved > 500) { liveResolved = now; resolveLiveTopics() }
+  const t = store.tMax
+  const sec = now / 1000
+  const pv = liveTopic.pose ? store.valueAt(liveTopic.pose, t) : undefined
+  if (pv instanceof Float64Array && pv.length >= 3) {
+    const is3d = store.series.get(liveTopic.pose)?.type === 'struct:Pose3d'
+    smoother.push(is3d ? { x: pv[0], y: pv[1], yaw: 2 * Math.atan2(pv[6], pv[3]) } : { x: pv[0], y: pv[1], yaw: pv[2] }, sec)
+  }
+  const p = smoother.at(sec)
+  if (p) { view.setRobotPose2d([p.x, p.y, p.yaw]); fx.addTrailPoint(sec, p.x, p.y) }
+  const comps = liveTopic.comps ? store.valueAt(liveTopic.comps, t) : undefined
+  view.setComponentPoses(comps instanceof Float64Array ? comps : undefined)
+  fx.updateCamera()
+  if (now - liveHudAt > 100) { liveHudAt = now; paintLiveHud(now) }
+}
+
+function paintLiveHud(now: number): void {
+  const val = (name: string) => (name ? store.valueAt(name, store.tMax) : undefined)
+  const age = live && live.lastRx > 0 ? (now - live.lastRx) / 1000 : null
+  const conn = $('lh-conn')
+  let text = 'OFFLINE', cls = 'bad'
+  if (liveConn === 'connecting') { text = 'CONNECTING'; cls = 'warn' }
+  else if (liveConn === 'connected') { if (age !== null && age < 1.5) { text = 'LIVE'; cls = 'ok' } else { text = 'NO DATA'; cls = 'warn' } }
+  conn.textContent = text; conn.className = `lh-chip ${cls}`
+  setIfChanged($('lh-age'), age === null ? '' : `${age.toFixed(1)} s ago`)
+
+  const red = val(liveTopic.redAlliance)
+  const ally = $('lh-ally')
+  ally.hidden = typeof red !== 'boolean'
+  if (typeof red === 'boolean') { ally.textContent = red ? 'RED' : 'BLUE'; ally.className = `lh-chip ${red ? 'red' : 'blue'} on` }
+
+  const enabled = val(liveTopic.enabled) === true
+  const mode: RobotMode = !enabled ? 'disabled' : val(liveTopic.auto) === true ? 'auto' : val(liveTopic.test) === true ? 'test' : 'teleop'
+  const mt = val(liveTopic.matchTime)
+  const matchTime = typeof mt === 'number' ? mt : null
+  setIfChanged($('lh-mode'), mode.toUpperCase())
+  setIfChanged($('lh-time'), clock(matchTime))
+
+  const gd = val(liveTopic.gameData)
+  const elapsed = matchElapsed(mode, matchTime)
+  const blue = $('lh-hub-blue'), redHub = $('lh-hub-red')
+  if (elapsed === null) {
+    blue.classList.remove('on'); redHub.classList.remove('on') // not in a match period: no HUB state to show
+    setIfChanged($('lh-next'), '')
+  } else {
+    const hs = hubStatus(elapsed, typeof gd === 'string' ? gd : '')
+    blue.classList.toggle('on', hs.blue); redHub.classList.toggle('on', hs.red)
+    const nextText = hs.untilChange === null ? 'match over' : `${hs.phase} - ${hs.next} in ${clock(hs.untilChange)}`
+    setIfChanged($('lh-next'), hs.known ? nextText : `${nextText} (waiting for Game Data)`)
+  }
+
+  const ready = val(liveTopic.ready)
+  const shoot = $('lh-shoot')
+  shoot.hidden = typeof ready !== 'boolean'
+  if (typeof ready === 'boolean') { shoot.textContent = ready ? 'READY TO SHOOT' : 'NOT READY'; shoot.className = `lh-chip ${ready ? 'ok' : ''}` }
+  const st = val(liveTopic.state)
+  setIfChanged($('lh-state'), typeof st === 'string' ? st : '')
+}
 
 // ---- transport
 const seekEl = $<HTMLInputElement>('seek')
@@ -525,8 +652,7 @@ function frame(now: number): void {
     $('time').textContent = `${(time - store.tMin).toFixed(2)} / ${(store.tMax - store.tMin).toFixed(2)} s`
   } else if (store.mode === 'live') {
     time = store.tMax
-    $('time').textContent = `live ${time.toFixed(2)} s`
-    plot.build(store)
+    if (!liveOn) { $('time').textContent = `live ${time.toFixed(2)} s`; plot.build(store) }
   } else {
     $('time').textContent = '0.00 / 0.00 s'
   }
@@ -535,6 +661,8 @@ function frame(now: number): void {
   if (sim.active) {
     if (sim.latest) { view.setSimFrame(sim.latest, robotHalfZ); fx.update(sim.latest, recorder); visionView.update(sim.bridge?.vision); paintScoreboard(sim.latest) }
     view.setComponentPoses(sim.bridge?.components ?? undefined)
+  } else if (liveOn) {
+    liveFrame(now)
   } else {
     const pose = poseSel.value ? store.valueAt(poseSel.value, time) : undefined
     if (pose instanceof Float64Array) {
@@ -710,14 +838,14 @@ document.addEventListener('pointerdown', (e) => {
 })
 const vm = (id: string): boolean => $<HTMLInputElement>(id).checked
 function applyViewMenu(): void {
-  view.setOverlays({ boxes: vm('vm-boxes'), capture: vm('vm-capture'), sensors: vm('vm-sensors') })
+  view.setOverlays({ boxes: vm('vm-boxes'), capture: vm('vm-capture'), sensors: vm('vm-sensors'), colliders: vm('vm-colliders') })
   fx.show.rules = vm('vm-rules'); fx.show.trail = vm('vm-trail'); fx.show.arcs = vm('vm-arcs'); fx.apply()
   view.setRobotCam(vm('vm-cam') && sim.active ? ($<HTMLSelectElement>('vm-cammode').value as 'front' | 'top') : null)
   $('cam-label').hidden = !(vm('vm-cam') && sim.active)
   $('cam-label').textContent = $<HTMLSelectElement>('vm-cammode').value === 'top' ? 'robot camera: top-down' : 'robot camera: front'
   $('scoreboard').hidden = !(vm('vm-score') && sim.active)
 }
-for (const id of ['vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score']) $(id).addEventListener('change', applyViewMenu)
+for (const id of ['vm-boxes', 'vm-capture', 'vm-sensors', 'vm-colliders', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score']) $(id).addEventListener('change', applyViewMenu)
 $('ruler-btn').addEventListener('click', () => { fx.setRuler(!fx.rulerActive); $('ruler-btn').classList.toggle('on', fx.rulerActive); $('ruler-btn').textContent = fx.rulerActive ? 'Ruler on' : 'Ruler' })
 function paintScoreboard(f: RenderFrame): void {
   if ($('scoreboard').hidden || !sim.ready) return
@@ -970,7 +1098,7 @@ $<HTMLSelectElement>('log-history').addEventListener('change', async (e) => {
 })
 
 // remembered between runs: the choices in the side panels and the log's severity toggles
-bindSettings(['bat-on', 'bat-open', 'bat-res', 'f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop', 'vis-on', 'vis-noise', 'bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time', 'robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'vm-burn', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
+bindSettings(['bat-on', 'bat-open', 'bat-res', 'f-brown-on', 'f-brown', 'f-lat', 'f-noise', 'f-drop', 'vis-on', 'vis-noise', 'bp-launch', 'bp-capture', 'bp-score', 'bp-foul', 'bp-phase', 'bp-impact-on', 'bp-impact', 'bp-time-on', 'bp-time', 'robot-env', 'vm-boxes', 'vm-capture', 'vm-sensors', 'vm-colliders', 'vm-rules', 'vm-trail', 'vm-arcs', 'vm-cam', 'vm-cammode', 'vm-score', 'vm-burn', 'alliance', 'start-x', 'start-y', 'start-yaw', 'an-popup', 'an-k-score', 'an-k-foul', 'an-k-shot', 'an-k-pickup', 'an-k-impact', 'an-k-phase', 'game-select', 'sim-mode', 'opponent', 'step-dt', 'seed', 'host', 'robot-host', 'live-topics', 'auto-sim', 'lv-error', 'lv-warn', 'lv-info'])
 for (const el of hostEls) el.value = hostEls[0].value // restored values may differ if only one was saved
 robotLog.syncLevels()
 paintFaultNote(); paintVisionNote()

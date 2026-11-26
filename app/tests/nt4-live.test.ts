@@ -74,5 +74,15 @@ describe('Nt4Live', () => {
     expect(store.mode).toBe('live')
     expect(store.tMax).toBe(3)
     expect(statuses).toContain('connected')
+    expect(live.lastRx).toBeGreaterThan(0) // the live view tells stale data from fresh by this
+  })
+
+  it('can ask for a few topics at a slower rate (the live view on a field network)', async () => {
+    const store = new DataStore()
+    const live = new Nt4Live(store, '127.0.0.1', port, () => {}, { topics: ['/Swerve/Pose'], periodic: 0.05 })
+    live.start()
+    await expect.poll(() => store.series.get('/Swerve/Pose')?.times.length ?? 0, { timeout: 3000 }).toBe(2)
+    live.stop()
+    expect((subscribeSeen as { params: { topics: string[]; options: { prefix: boolean; periodic: number } } }[])[0].params).toMatchObject({ topics: ['/Swerve/Pose'], options: { prefix: true, periodic: 0.05 } })
   })
 })

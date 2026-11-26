@@ -16,6 +16,13 @@ export interface Release { version: string; title: string; items: string[] }
 
 /** Newest first. Add an entry for each release. */
 export const CHANGELOG: Release[] = [
+  { version: '1.2.0', title: 'Live view for matches, and the field rebuilt from the official CAD', items: [
+    'Live view (match): a second pair of eyes for the driver. Connect to the robot and see the field and the robot from its own data, with no physics and no game pieces: smooth robot motion, the turret, hood and intake, camera presets, and a big readout with the match clock, which HUB is active and when it changes, and whether the robot is ready to shoot. It subscribes to a few topics at 20 Hz (editable in the Live view topics field), so it stays light on the field network. Esc leaves it',
+    'The field is built from the official FIRST CAD (FE-2026 REBUILT Playing Field): a 7 MB model made by tools/build-field.mjs is drawn in the live view and in REBUILT sims (View: Collision shapes shows the physics bodies instead). docs/FIELD.md explains where every number comes from',
+    'Physics from the CAD: the HUB is a hexagonal funnel narrowing to a throat 0.395 m below the 1.829 m rim (it was a square opening), the BUMP is the real gable (15 mm at the edges, 0.1654 m at the crest), the TOWER and the 1.99 m alliance walls exist, and the DEPOTS are 0.1 m from where they were. A quick aim sweep still scores 47 of 48',
+    'FUEL starts exactly where the CAD puts it: 360 in the neutral zone (a 12 by 30 grid, it was 408) and 24 in each DEPOT',
+    'The simulated AprilTag camera uses the official 2026 layout of 32 tags (it was a guess of 14), which agrees with the CAD to 3.3 mm',
+  ] },
   { version: '1.1.9', title: 'Faster shots in the sim, robot definition follows the new motor layout', items: [
     'The shooter flywheel is heavier in the robot definition (inertia 0.1 instead of 0.01 kg m^2, still a guess): one shot now dips it by less than the ready tolerance, so the robot code keeps feeding and the simulated robot fires about 18 to 20 balls per second standing (it was about 9). The flywheel takes about 2 seconds to spin up; set shooter inertia in robots/offseason/robot.yaml to change it',
     'Robot definition: the feeder has two motors (count 2). The motor ids are numbered from 0 in the order of the robot code and marked TODO until the real CAN ids are known: the robot code and robot.yaml must use the same ids or the app reports motors the robot does not register',

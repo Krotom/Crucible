@@ -14,7 +14,7 @@ import { botsToOthers } from './bots'
 export async function createWorld(script: RunScript): Promise<Engine> {
   const rebuilt = script.game === 'rebuilt'
   const preload = script.preload ?? OFFSEASON.balls?.preload ?? 0
-  const game = rebuilt ? createRebuiltGame({ preload, neutralFuel: script.neutralFuel ?? 408 }) : createTestGame()
+  const game = rebuilt ? createRebuiltGame({ preload, neutralFuel: script.neutralFuel }) : createTestGame()
   const start = script.start ?? (rebuilt ? { x: 1.6, y: 4.0, yaw: 0 } : OFFSEASON.start)
   const balls = OFFSEASON.balls ? { ...OFFSEASON.balls, preload } : undefined
   const others: OtherRobotSpec[] = botsToOthers(script.bots ?? [])

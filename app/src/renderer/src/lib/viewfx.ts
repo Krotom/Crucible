@@ -152,6 +152,14 @@ export class ViewFx {
 
   update(f: RenderFrame, rec: MatchRecorder): void {
     if (!this.field) return
+    this.updateCamera()
+    this.updateShots(f, rec)
+    this.updateRulerLabel()
+  }
+
+  /** The camera presets that follow the robot (Follow, Driver), and the ruler label: everything per frame except the shots, which need a sim. */
+  updateCamera(): void {
+    if (!this.field) return
     const r = this.view.robotObject.position
     const cam = this.view.camera, c = this.view.controls
     if (this.preset === 'follow') {
@@ -164,18 +172,20 @@ export class ViewFx {
       c.target.set(r.x + fx * 3, r.y + fy * 3, 0.3)
       cam.lookAt(c.target)
     }
-    this.updateShots(f, rec)
     this.updateRulerLabel()
   }
 
   /** Adds a trail point; called for every frame the worker sends, so a slow screen does not thin the trail out. */
-  sampleTrail(f: RenderFrame): void {
-    if (f.time < this.lastTrail - 1e-9) this.clearTrail()
-    if (f.time - this.lastTrail < TRAIL_EVERY) return
-    this.lastTrail = f.time
+  sampleTrail(f: RenderFrame): void { this.addTrailPoint(f.time, f.robot[0], f.robot[1]) }
+
+  /** A trail point for the robot at (x, y) at `time` seconds; points closer in time than TRAIL_EVERY are dropped. */
+  addTrailPoint(time: number, x: number, y: number): void {
+    if (time < this.lastTrail - 1e-9) this.clearTrail()
+    if (time - this.lastTrail < TRAIL_EVERY) return
+    this.lastTrail = time
     if (this.trailN === TRAIL_MAX) { this.trailBuf.copyWithin(0, 3); this.trailN-- }
     const o = this.trailN * 3
-    this.trailBuf[o] = f.robot[0]; this.trailBuf[o + 1] = f.robot[1]; this.trailBuf[o + 2] = 0.03
+    this.trailBuf[o] = x; this.trailBuf[o + 1] = y; this.trailBuf[o + 2] = 0.03
     this.trailN++
     this.trail.geometry.getAttribute('position').needsUpdate = true
     this.trail.geometry.setDrawRange(0, this.trailN)

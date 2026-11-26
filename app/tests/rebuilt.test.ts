@@ -56,27 +56,27 @@ describe('match flow and HUB activation (rules extract sections 4)', () => {
 })
 
 describe('layout (6.3.4)', () => {
-  it('stages 408 minus the preload in the neutral zone and 24 per DEPOT, without overlaps', async () => {
+  it('stages the 360 FUEL minus the preload in the neutral zone and 24 per DEPOT, without overlaps', async () => {
     const e = await Engine.create({ game: createRebuiltGame({ preload: 3 }), robot: robot({ x: 1, y: 7, yaw: 0 }), seed: 1 })
-    expect(e.pieceCount).toBe(408 - 3 + 48)
+    expect(e.pieceCount).toBe(360 - 3 + 48)
     const ids = e.pieceIds
     const pos = ids.map((id) => e.pieceState(id)!.position)
     let minD = Infinity
     for (let i = 0; i < pos.length; i += 7) for (let j = i + 1; j < pos.length; j++) minD = Math.min(minD, Math.hypot(pos[i][0] - pos[j][0], pos[i][1] - pos[j][1]))
     expect(minD).toBeGreaterThan(0.149)
     const inPile = pos.filter((p) => Math.abs(p[0] - CENTER_LINE) < 1)
-    expect(inPile.length).toBeGreaterThanOrEqual(404)
+    expect(inPile.length).toBe(360 - 3) // the 12 by 30 grid of the CAD, one layer
     expect(ids.every((id) => e.pieceState(id)!.sleeping)).toBe(true) // at rest, costing nothing
   })
-  it('puts each DEPOT against its own alliance wall, blue on the +y side and red on the -y side (mirrored across the long axis from the first version)', async () => {
+  it('puts each DEPOT against its own alliance wall, blue on the +y side and red on the -y side, where the CAD has them', async () => {
     const e = await Engine.create({ game: createRebuiltGame({ preload: 0 }), robot: robot({ x: 1, y: 7, yaw: 0 }), seed: 1 })
     const pos = e.pieceIds.map((id) => e.pieceState(id)!.position)
     const L = 16.541, W = 8.069
     const blueDepot = pos.filter((p) => p[0] < 0.7), redDepot = pos.filter((p) => p[0] > L - 0.7) // against the alliance walls, clear of the pile
     expect(blueDepot).toHaveLength(24); expect(redDepot).toHaveLength(24)
     const mean = (v: number[]): number => v.reduce((a, b) => a + b, 0) / v.length
-    expect(mean(blueDepot.map((p) => p[1]))).toBeCloseTo(W - 2.0, 1) // blue: the +y side
-    expect(mean(redDepot.map((p) => p[1]))).toBeCloseTo(2.0, 1) // red: the -y side
+    expect(mean(blueDepot.map((p) => p[1]))).toBeCloseTo(5.927, 2) // blue: the +y side (the CAD's depot centre is 5.965; the 4 by 6 balls sit a little to one side of it)
+    expect(mean(redDepot.map((p) => p[1]))).toBeCloseTo(2.142, 2) // red: the -y side
     for (const p of [...blueDepot, ...redDepot]) { expect(p[1]).toBeGreaterThan(0.5); expect(p[1]).toBeLessThan(W - 0.5) } // inside the field
   })
 })

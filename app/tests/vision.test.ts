@@ -11,24 +11,25 @@ describe('the camera', () => {
 })
 
 describe('tag detection', () => {
-  it('has a tag layout with unique ids, all on the field', () => {
+  it('has the official 2026 tag layout: 32 unique ids, all on the field', () => {
+    expect(TAGS.length).toBe(32)
     expect(new Set(TAGS.map((t) => t.id)).size).toBe(TAGS.length)
-    for (const t of TAGS) { expect(t.x >= 0 && t.x <= 16.6 && t.y > 0 && t.y < 8.1 && t.z > 0 && t.z < 2.5, 'tag ' + t.id).toBe(true) }
+    for (const t of TAGS) { expect(t.x >= 0 && t.x <= 16.6 && t.y > 0 && t.y < 8.1 && t.z > 0.5 && t.z < 1.2, 'tag ' + t.id).toBe(true) }
   })
-  it('sees the blue HUB tag that faces the robot from the blue start, and not the ones behind or facing away', () => {
+  it('sees the blue HUB tags that face the robot from the blue start, and not the ones behind or facing away', () => {
     const seen = detectTags({ x: 1.6, y: 4.03, yaw: 0 })
     const ids = seen.map((d) => d.id)
-    expect(ids).toContain(1) // the HUB's field-side tag faces the robot
-    expect(ids).not.toContain(2); expect(ids).not.toContain(9); expect(ids).not.toContain(5) // facing away, behind the robot, too far
-    const d = seen.find((x) => x.id === 1)!
-    expect(d.distance).toBeCloseTo(Math.hypot(4.025 - 1.9, 1.2 - 0.55) + 0, 0); expect(Math.abs(d.bearingDeg)).toBeLessThan(2); expect(d.viewAngleDeg).toBeLessThan(2)
+    expect(ids).toContain(26) // the HUB's alliance-side tags face the robot (official ids 25 and 26)
+    expect(ids).not.toContain(20); expect(ids).not.toContain(31); expect(ids).not.toContain(10) // facing away (20), behind the robot (31), too far (10)
+    const d = seen.find((x) => x.id === 26)!
+    expect(d.distance).toBeCloseTo(Math.hypot(4.0219 - 1.9, 1.124 - 0.55), 1); expect(Math.abs(d.bearingDeg)).toBeLessThan(2); expect(d.viewAngleDeg).toBeLessThan(2)
   })
   it('respects the field of view, the range and the camera heading', () => {
-    expect(detectTags({ x: 1.6, y: 4.03, yaw: Math.PI }).map((d) => d.id)).toContain(10) // turned around: the blue wall tags
-    expect(detectTags({ x: 1.6, y: 4.03, yaw: Math.PI / 2 }).map((d) => d.id)).not.toContain(1) // turned 90°: the HUB tag is outside 35°
+    expect(detectTags({ x: 1.6, y: 4.03, yaw: Math.PI }).map((d) => d.id)).toContain(32) // turned around: the tags on the blue alliance wall
+    expect(detectTags({ x: 1.6, y: 4.03, yaw: Math.PI / 2 }).map((d) => d.id)).not.toContain(26) // turned 90°: the HUB tag is outside 35°
     expect(detectTags({ x: 1.6, y: 4.03, yaw: 0 }, { ...DEFAULT_CAMERA, maxRange: 1 })).toEqual([]) // too far
-    expect(detectTags({ x: 4.0, y: 4.03, yaw: 0 }, { ...DEFAULT_CAMERA, minRange: 0.4 }).map((d) => d.id)).not.toContain(1) // too close (about 0.3 m)
-    expect(detectTags({ x: 1.6, y: 4.03, yaw: 0 }, { ...DEFAULT_CAMERA, hfovDeg: 2 }).map((d) => d.id)).toContain(1) // straight ahead even through a keyhole
+    expect(detectTags({ x: 4.0, y: 4.03, yaw: 0 }, { ...DEFAULT_CAMERA, minRange: 0.4 }).map((d) => d.id)).not.toContain(26) // the tag is behind the camera
+    expect(detectTags({ x: 1.6, y: 4.03, yaw: 0 }, { ...DEFAULT_CAMERA, hfovDeg: 2 }).map((d) => d.id)).toContain(26) // straight ahead even through a keyhole
   })
   it('does not see a tag from far off to the side (its face points away at a grazing angle)', () => {
     const grazing = detectTags({ x: 6.2, y: 0.8, yaw: Math.PI / 2 + 0.25 }) // looking up the field at the HUB's side tags from low on the right

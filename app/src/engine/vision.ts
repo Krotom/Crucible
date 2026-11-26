@@ -1,25 +1,44 @@
 // Vision simulation: a robot-mounted camera that sees AprilTags on the field, and the pose estimate a vision pipeline would hand the robot code.
-// The tag layout below is ASSUMED (the REBUILT drawings were not available): four tags around each HUB and three on each alliance wall.
-// Replace TAGS when the official layout is known.
+// The tag layout is FIRST's official 2026 REBUILT layout (the WPILib AprilTagFieldLayout 2026-rebuilt-welded.json, 32 tags); it agrees with the field CAD to 3.3 mm.
 import { Noise } from './bridge/faults'
 
 export interface Tag { id: number; x: number; y: number; z: number; /** the direction the tag faces, rad */ facing: number; label: string }
 
-const L = 16.541, W = 8.069, HUB_X = 4.625, HUB_Y = W / 2, HUB_HALF = 0.6
+const rad = (d: number): number => (d * Math.PI) / 180
+/** Field frame: origin at the blue wall corner, +X toward the red wall. facing is the tag's yaw in the layout (the direction its face points). */
 export const TAGS: Tag[] = [
-  // around the blue HUB, facing away from it
-  { id: 1, x: HUB_X - HUB_HALF, y: HUB_Y, z: 1.2, facing: Math.PI, label: 'blue HUB, field side' },
-  { id: 2, x: HUB_X + HUB_HALF, y: HUB_Y, z: 1.2, facing: 0, label: 'blue HUB, neutral side' },
-  { id: 3, x: HUB_X, y: HUB_Y - HUB_HALF, z: 1.2, facing: -Math.PI / 2, label: 'blue HUB, right' },
-  { id: 4, x: HUB_X, y: HUB_Y + HUB_HALF, z: 1.2, facing: Math.PI / 2, label: 'blue HUB, left' },
-  // around the red HUB
-  { id: 5, x: L - HUB_X + HUB_HALF, y: HUB_Y, z: 1.2, facing: 0, label: 'red HUB, field side' },
-  { id: 6, x: L - HUB_X - HUB_HALF, y: HUB_Y, z: 1.2, facing: Math.PI, label: 'red HUB, neutral side' },
-  { id: 7, x: L - HUB_X, y: HUB_Y - HUB_HALF, z: 1.2, facing: -Math.PI / 2, label: 'red HUB, right' },
-  { id: 8, x: L - HUB_X, y: HUB_Y + HUB_HALF, z: 1.2, facing: Math.PI / 2, label: 'red HUB, left' },
-  // alliance walls
-  { id: 9, x: 0, y: HUB_Y - 1.5, z: 0.9, facing: 0, label: 'blue wall' }, { id: 10, x: 0, y: HUB_Y, z: 0.9, facing: 0, label: 'blue wall' }, { id: 11, x: 0, y: HUB_Y + 1.5, z: 0.9, facing: 0, label: 'blue wall' },
-  { id: 12, x: L, y: HUB_Y - 1.5, z: 0.9, facing: Math.PI, label: 'red wall' }, { id: 13, x: L, y: HUB_Y, z: 0.9, facing: Math.PI, label: 'red wall' }, { id: 14, x: L, y: HUB_Y + 1.5, z: 0.9, facing: Math.PI, label: 'red wall' },
+  { id: 1, x: 11.878, y: 7.4248, z: 0.889, facing: rad(180), label: 'red TRENCH' },
+  { id: 2, x: 11.9154, y: 4.638, z: 1.124, facing: rad(90), label: 'red HUB' },
+  { id: 3, x: 11.3119, y: 4.3902, z: 1.124, facing: rad(180), label: 'red HUB' },
+  { id: 4, x: 11.3119, y: 4.0346, z: 1.124, facing: rad(180), label: 'red HUB' },
+  { id: 5, x: 11.9154, y: 3.4312, z: 1.124, facing: rad(-90), label: 'red HUB' },
+  { id: 6, x: 11.878, y: 0.6445, z: 0.889, facing: rad(180), label: 'red TRENCH' },
+  { id: 7, x: 11.9529, y: 0.6445, z: 0.889, facing: rad(0), label: 'red TRENCH' },
+  { id: 8, x: 12.271, y: 3.4312, z: 1.124, facing: rad(-90), label: 'red HUB' },
+  { id: 9, x: 12.5192, y: 3.679, z: 1.124, facing: rad(0), label: 'red HUB' },
+  { id: 10, x: 12.5192, y: 4.0346, z: 1.124, facing: rad(0), label: 'red HUB' },
+  { id: 11, x: 12.271, y: 4.638, z: 1.124, facing: rad(90), label: 'red HUB' },
+  { id: 12, x: 11.9529, y: 7.4248, z: 0.889, facing: rad(0), label: 'red TRENCH' },
+  { id: 13, x: 16.5333, y: 7.4033, z: 0.5524, facing: rad(180), label: 'red TOWER / OUTPOST wall' },
+  { id: 14, x: 16.5333, y: 6.9715, z: 0.5524, facing: rad(180), label: 'red TOWER / OUTPOST wall' },
+  { id: 15, x: 16.533, y: 4.3236, z: 0.5524, facing: rad(180), label: 'red TOWER / OUTPOST wall' },
+  { id: 16, x: 16.533, y: 3.8918, z: 0.5524, facing: rad(180), label: 'red TOWER / OUTPOST wall' },
+  { id: 17, x: 4.6631, y: 0.6445, z: 0.889, facing: rad(0), label: 'blue TRENCH' },
+  { id: 18, x: 4.6256, y: 3.4312, z: 1.124, facing: rad(-90), label: 'blue HUB' },
+  { id: 19, x: 5.2292, y: 3.679, z: 1.124, facing: rad(0), label: 'blue HUB' },
+  { id: 20, x: 5.2292, y: 4.0346, z: 1.124, facing: rad(0), label: 'blue HUB' },
+  { id: 21, x: 4.6256, y: 4.638, z: 1.124, facing: rad(90), label: 'blue HUB' },
+  { id: 22, x: 4.6631, y: 7.4248, z: 0.889, facing: rad(0), label: 'blue TRENCH' },
+  { id: 23, x: 4.5882, y: 7.4248, z: 0.889, facing: rad(180), label: 'blue TRENCH' },
+  { id: 24, x: 4.27, y: 4.638, z: 1.124, facing: rad(90), label: 'blue HUB' },
+  { id: 25, x: 4.0219, y: 4.3902, z: 1.124, facing: rad(180), label: 'blue HUB' },
+  { id: 26, x: 4.0219, y: 4.0346, z: 1.124, facing: rad(180), label: 'blue HUB' },
+  { id: 27, x: 4.27, y: 3.4312, z: 1.124, facing: rad(-90), label: 'blue HUB' },
+  { id: 28, x: 4.5882, y: 0.6445, z: 0.889, facing: rad(180), label: 'blue TRENCH' },
+  { id: 29, x: 0.0077, y: 0.666, z: 0.5524, facing: rad(0), label: 'blue TOWER / OUTPOST wall' },
+  { id: 30, x: 0.0077, y: 1.0978, z: 0.5524, facing: rad(0), label: 'blue TOWER / OUTPOST wall' },
+  { id: 31, x: 0.0081, y: 3.7457, z: 0.5524, facing: rad(0), label: 'blue TOWER / OUTPOST wall' },
+  { id: 32, x: 0.0081, y: 4.1775, z: 0.5524, facing: rad(0), label: 'blue TOWER / OUTPOST wall' },
 ]
 
 export interface CameraConfig {
@@ -47,7 +66,6 @@ export interface Detection {
 }
 
 const deg = (r: number): number => (r * 180) / Math.PI
-const rad = (d: number): number => (d * Math.PI) / 180
 const wrap = (a: number): number => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a }
 
 /** The camera's place and heading in the field: position (x, y, z) and yaw. */

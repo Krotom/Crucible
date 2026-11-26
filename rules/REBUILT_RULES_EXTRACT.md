@@ -152,6 +152,8 @@ Your robot's mass guess of 52 kg is at the limit; bumpers and battery add to it.
 4. **Scored FUEL:** return it to the field through the HUB exits after a delay (what the manual describes), or just remove it? I recommend returning it, with the exit positions as assumptions until the drawings.
 5. **TOWER** (climb scoring): v1 or later? The robot code has no climber, so I suggest later.
 
+> **Update (field from the CAD):** the geometry assumptions below that concern the HUB opening (a square), the DEPOT positions, the BUMP shape, the TOWER, the 408 FUEL in the neutral zone and the wall height are replaced by numbers measured in the official CAD: see docs/FIELD.md. The HUB opening is a hexagonal funnel narrowing to a throat 0.395 m below the rim; the neutral zone holds 360 FUEL (a 12 by 30 grid); the depots are centred on y = 2.104 m (red) and 5.965 m (blue).
+
 ## 10. What was implemented (M6) and what was assumed
 
 `app/src/games/rebuilt.ts`, tested in `app/tests/rebuilt.test.ts`. Your answer was G403 and G407 as the only rule fouls; the other questions were taken at my recommendation (return processed FUEL through

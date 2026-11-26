@@ -4,7 +4,8 @@ import type { EngineTuning } from '../src/engine/types'
 import { createRebuiltGame } from '../src/games/rebuilt'
 import { OFFSEASON } from '../src/robots/offseason'
 
-async function world(tuning: EngineTuning | undefined, fuel = 200, start = { x: 5.6, y: 2.6, yaw: 0 }): Promise<Engine> {
+// the CAD pile starts 0.1 m nearer the robot than the old layout did, so the robot starts a little further back
+async function world(tuning: EngineTuning | undefined, fuel = 200, start = { x: 5.2, y: 2.6, yaw: 0 }): Promise<Engine> {
   return Engine.create({
     game: createRebuiltGame({ neutralFuel: fuel, preload: 0 }),
     robot: { half: OFFSEASON.bumper, start, script: [], drivetrain: OFFSEASON.drivetrain, mechanisms: OFFSEASON.mechanisms, alliance: 'blue', chassis: OFFSEASON.contact },
